@@ -1,7 +1,7 @@
 # AM Oferty — notatki do kontynuacji
 
 Repo: lewym90/ogloszenia (aplikacja: https://lewym90.github.io/ogloszenia/).
-Stan: wersja 1.0.0 (18.11.2026). Firma rusza ok. luty/marzec 2027 — do tego czasu aplikacja testowa.
+Stan: wersja 1.0.1 (18.11.2026). Firma rusza ok. luty/marzec 2027 — do tego czasu aplikacja testowa.
 
 ## Zasady (od właściciela)
 - Zero ściemy: ogłoszenie tylko z faktów, wizualizacje oznaczone + oryginał, bez pustych słów i presji.
@@ -21,6 +21,7 @@ Stan: wersja 1.0.0 (18.11.2026). Firma rusza ok. luty/marzec 2027 — do tego cz
 - `wstaw(el, html)` nie podmienia fragmentu, w którym ktoś pisze; po wyjściu z pola odświeża.
 - Pole wyboru plików (`#zdj-dodaj`) nie może zależeć od stanu (inaczej podmiana w trakcie wyboru gubi zdjęcia) — wartość selecta ustawiana po renderze.
 - Status „Gotowa do publikacji” / „Opublikowana” blokowany, dopóki checklista ma braki.
+- Cały ekran: `body` i `.uklad` mają `position: fixed; inset: 0` (na iPhonie z ekranu początkowego „100%” nie liczy paska statusu), przewijają się tylko kolumny. Blokada powiększania: viewport `maximum-scale=1, user-scalable=no`, `touch-action: pan-x pan-y`, blokada gestów w `app.js` (od 1.0.1).
 
 ## Testy (wszystkie przechodzą 18.11.2026)
 - model 8, serwer 12, przeglądarka: pełny scenariusz telefon → laptop wspólnika (zmiana na żywo < 1 s), offline → online, ZIP 12 zdjęć, zero błędów konsoli.
