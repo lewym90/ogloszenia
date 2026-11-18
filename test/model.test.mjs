@@ -73,6 +73,18 @@ test('prowizja równa czynszowi przelicza się z ceną', () => {
   assert.equal(M.poleWidoczne(pole('prowizjaKlCzynsz'), { ...n, transakcja: 'sprzedaz' }), false, 'przy sprzedaży nie ma czynszu');
   assert.match(M.opis({ ...n, transakcja: 'sprzedaz', prowizjaKlTekst: '2% ceny' }), /Prowizja od kupującego: 2% ceny/);
 });
+test('brak informacji nie trafia do ogłoszenia, wymiary liczą metraż', () => {
+  const n = { ...o, technologia: 'nieznane', ogrzewanie: 'nieznane', okna: 'nieznane', material: 'blok', rok: undefined, rokNieznany: true,
+    pom: [{ id: 'p1', nazwa: 'Salon', a: 4.2, b: 4.24, m: M.metrazZWymiarow(4.2, 4.24) }] };
+  const t = M.opis(n);
+  assert.doesNotMatch(t, /Brak informacji|nieznane/);
+  assert.match(t, /Budynek: blok\n/);
+  assert.doesNotMatch(t, /Ogrzewanie:|Okna:/);
+  assert.match(t, /Salon: 17,81\u00a0m² \(4,2 × 4,24 m\)/);
+  assert.ok(!M.polaPortalu(n).some((p) => /Brak informacji/.test(p.v)));
+  assert.equal(M.metrazZWymiarow(3, 0), null); assert.equal(M.metrazZWymiarow('2.5', 4), 10);
+  assert.ok(M.checklista(n).find((x) => x.id === 'rok').ok, 'nie wiem = punkt zaliczony');
+});
 test('kontrola słów', () => {
   assert.equal(M.kontrolaSlow(o).length, 0);
   const z = M.kontrolaSlow({ ...o, lead: 'Prawdziwa PEREŁKA! Okazja, nie przegap', atuty: [{ t: 'idealne dla rodziny' }] });

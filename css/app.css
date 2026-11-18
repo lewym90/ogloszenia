@@ -372,3 +372,97 @@ a { color: var(--gold-l); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 .blok-og .check li { padding-left: 0; }
 .blok-og .check li::before { display: none; }
+
+/* ================= 1.2.0: karta jako spis + sekcje na osobnych ekranach ================= */
+/* filtry na liście mieszczą się na ekranie telefonu */
+.chip { height: 42px; padding: 0 15px; font-size: 14.5px; border-radius: 14px; }
+.chipy { gap: 7px; }
+
+/* nagłówek spisu i pasek oferty ze zdjęciem */
+.naglowek-spisu { display: flex; align-items: center; gap: 12px; padding: calc(var(--st) + 12px) 18px 8px; }
+.naglowek-spisu .marka img { height: 36px; }
+.naglowek-spisu .marka h1 { font-size: 38px; }
+.wstecz-maly { color: var(--gold-l); display: grid; place-items: center; margin-right: -4px; }
+.wstecz-maly .ik { width: 22px; height: 22px; }
+@media (min-width: 760px) { .naglowek-spisu { display: none; } }
+.pasek-oferty { position: relative; margin: 6px 14px 14px; height: 148px; border-radius: 20px; overflow: hidden; border: 1px solid var(--ramka); isolation: isolate; box-shadow: var(--cien); }
+.pasek-oferty .foto { z-index: -2; }
+.pasek-oferty::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, rgba(8, 8, 9, .9) 0%, rgba(8, 8, 9, .55) 55%, rgba(8, 8, 9, .15) 100%); }
+.pasek-oferty-tresc { position: absolute; left: 20px; right: 70px; bottom: 16px; }
+.pasek-oferty h2 { font-size: 30px; line-height: 1.05; color: #F3EEE3; overflow-wrap: anywhere; }
+.pasek-oferty .zlota-linia { margin: 6px 0 4px; width: min(200px, 80%); }
+.pasek-cena { font-family: var(--display); font-weight: 600; font-size: 30px; line-height: 1.1; font-variant-numeric: lining-nums; font-feature-settings: "lnum" 1; }
+.pasek-cena small { font-size: 18px; margin-left: 3px; }
+.pasek-cena.brak { color: var(--ash); font-size: 22px; }
+.pasek-oferty-akcje { position: absolute; top: 12px; right: 12px; bottom: 12px; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; }
+.pasek-oferty-akcje .okragly { width: 40px; height: 40px; }
+.pasek-oferty-akcje .serce { position: static; width: 44px; height: 44px; }
+
+/* spis kafelków */
+.spis { display: grid; gap: 8px; }
+.kafel { display: flex; align-items: center; gap: 12px; min-height: 66px; padding: 8px 12px 8px 12px; border-radius: 16px; text-decoration: none; color: inherit; }
+.kafel:active { transform: scale(.99); }
+.kafel.prywatna { border-style: dashed; }
+.kafel-ik { width: 40px; display: grid; place-items: center; flex: none; }
+.ik-zlota { width: 34px; height: 34px; display: block; }
+.kafel-kreska { width: 1px; align-self: stretch; margin: 6px 0; background: linear-gradient(180deg, transparent, var(--ramka), transparent); flex: none; }
+.kafel .sek-nr { width: 26px; flex: none; }
+.kafel-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.kafel .sek-tyt { font-size: clamp(15px, 4.2cqi, 18.5px); letter-spacing: .16em; }
+.kafel-pod { font-size: 13.5px; color: var(--ash); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kafel .sek-ok { width: 30px; height: 30px; flex: none; }
+.kafel .strz { flex: none; }
+.kafel .strz .ik { width: 20px; height: 20px; }
+
+/* ekran sekcji */
+.naglowek-ekranu .ik-zlota { width: 40px; height: 40px; flex: none; }
+.naglowek-ekranu h1 { font-size: clamp(24px, 7.1vw, 40px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.naglowek-ekranu { gap: 12px; }
+.naglowek-ekranu .ik-zlota { width: 34px; height: 34px; }
+.licz-ekranu .pierscien.maly, .licz-ekranu .sek-ok { width: 46px; height: 46px; }
+.grupa { padding: 16px 16px 18px; margin-bottom: 14px; border-radius: 20px; }
+.grupa:nth-of-type(even) { background: var(--szklo-2); }
+.grupa-tyt { font-size: 17px; letter-spacing: .24em; text-transform: uppercase; color: var(--gold-l); padding-bottom: 10px; margin-bottom: 4px; border-bottom: 1px solid; border-image: linear-gradient(90deg, var(--gold-l), rgba(200, 164, 77, .15)) 1; }
+.grupa .siatka { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 12px; }
+.grupa .siatka > .pole { grid-column: 1 / -1; }
+.grupa .siatka > .pole.pol { grid-column: auto; }
+.grupa .siatka > .przel, .grupa .siatka > .pole > .przel { padding-top: 4px; }
+.grupa .sek-opis:first-of-type { margin-top: 10px; }
+.sek-opis { line-height: 1.45; }
+
+/* znacznik źródła w polu i „brak informacji” */
+.zr-tag { align-self: center; margin-right: 8px; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px; border-radius: 10px; border: 1px solid rgba(237, 233, 225, .18); background: rgba(20, 19, 17, .6); color: var(--ash); font-size: 13.5px; white-space: nowrap; flex: none; }
+.zr-tag .ik { width: 17px; height: 17px; }
+.zr-tag.akt { border-color: var(--ramka); color: var(--gold-j); background: linear-gradient(180deg, rgba(60, 52, 36, .7), rgba(26, 23, 18, .8)); }
+.zr-tag.akt .ik { color: var(--gold-l); }
+.zr-tag.brak { border-color: rgba(233, 144, 127, .55); color: var(--zle); }
+.nie-wiem { margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 99px; border: 1px dashed rgba(237, 233, 225, .25); background: none; color: var(--ash); font-size: 13.5px; }
+.nie-wiem.akt { border-style: solid; border-color: var(--ramka); color: var(--gold-l); }
+.nie-wiem .ik { width: 15px; height: 15px; }
+.menu-lista button.akt { border-color: var(--ramka); color: var(--gold-j); }
+.menu-lista button .ok { margin-left: auto; }
+
+/* wymiary pomieszczenia: długość × szerokość = metraż */
+.wymiary { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1.05fr); gap: 6px; align-items: center; }
+.wymiary .wejscie { min-height: 52px; }
+.wymiary .wejscie input { padding: 10px 8px 10px 12px; font-size: 17px; }
+.wymiary .jedn { padding-right: 10px; font-size: 14px; }
+.razy { color: var(--gold-l); font-size: 18px; font-family: var(--display); }
+.wejscie.wyliczone { border-color: var(--ramka); background: linear-gradient(180deg, rgba(60, 52, 36, .45), rgba(26, 23, 18, .6)); }
+.wejscie.wyliczone input { color: var(--gold-j); font-weight: 600; }
+.okol .dwa { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 8px; }
+.weryf .w:not(.zazn) { grid-template-columns: minmax(0, 1fr); }
+.weryf .w.zazn { border-color: var(--ramka-s); }
+
+/* poprzednia / następna sekcja */
+.nawigacja-sek { position: sticky; bottom: calc(var(--sb) + 10px); z-index: 5; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 14px 6px; }
+.nawigacja-sek .btn { height: 52px; padding: 0 12px; gap: 8px; border-radius: 16px; background: linear-gradient(180deg, rgba(46, 42, 36, .88), rgba(18, 17, 15, .94)); -webkit-backdrop-filter: var(--rozmycie); backdrop-filter: var(--rozmycie); min-width: 0; }
+.nawigacja-sek .btn:last-child { justify-content: flex-end; }
+.nawigacja-sek .nr { font-family: var(--display); font-weight: 600; color: var(--gold-l); font-size: 18px; font-variant-numeric: lining-nums; font-feature-settings: "lnum" 1; }
+.nawigacja-sek .tx { color: var(--bone); font-weight: 500; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.nawigacja-sek .ik { color: var(--gold-l); flex: none; }
+.tresc { padding-bottom: 20px; }
+
+.grupa .siatka { align-items: end; }
+.grupa .siatka > .pole.pol .et { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wejscie input::placeholder { font-size: 15px; }

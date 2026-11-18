@@ -41,23 +41,25 @@ with sync_playwright() as p:
     # nowa oferta
     pg.click('#dol [data-a=nowa]')
     pg.wait_for_selector('#sek-podstawy input[data-k=roboczy]')
-    otworz = lambda k: (pg.click(f'#sek-{k} .sek-glowa'), pg.wait_for_timeout(120)) if not pg.evaluate(f"document.querySelector('#sek-{k}').classList.contains('otwarta')") else None
-    for k in ['lokalizacja','lokal','pom','koszty','atuty','minusy','okolica','weryfikacja','energia','tekst']: otworz(k)
+    oid = pg.evaluate("location.hash.split('/')[2]")
+    def sekcja(k): pg.evaluate(f"location.hash = '#/o/{oid}/s/{k}'"); pg.wait_for_selector(f'#sek-{k}'); pg.wait_for_timeout(150)
+    def zrodlo(k, v): pg.click(f'[data-a=zr-menu][data-k={k}]'); pg.click(f'[data-zr={v}]'); pg.wait_for_timeout(150)
     wpisz(pg, '#f-roboczy', 'Wileńska 7/12')
     pg.click('[data-a=wybor][data-k=transakcja][data-v=sprzedaz]'); pg.select_option('#f-rodzaj', 'mieszkanie')
     wpisz(pg, '#f-cena', '489 000')
     pg.click('[data-a=wybor][data-k=prowizjaKl][data-v=brak]')
-    wpisz(pg, '#f-dzielnica', 'Czuby Północne'); wpisz(pg, '#f-ulica', 'Wileńska')
-    wpisz(pg, '#f-pow', '52,4'); pg.click('#sek-lokal [data-a=zr][data-k=pow][data-v=pom]')
+    sekcja('lokalizacja'); wpisz(pg, '#f-dzielnica', 'Czuby Północne'); wpisz(pg, '#f-ulica', 'Wileńska')
+    sekcja('lokal'); wpisz(pg, '#f-pow', '52,4'); zrodlo('pow', 'pom')
     wpisz(pg, '#f-pokoje', '3'); pg.click('#sek-lokal label.przel:has(input[data-k=nieprzechodnie])')
     wpisz(pg, '#f-pietro', '3'); wpisz(pg, '#f-pieter', '4'); pg.click('[data-a=wybor][data-k=winda][data-v=nie]')
-    wpisz(pg, '#f-rok', '1978'); pg.click('#sek-lokal [data-a=zr][data-k=rok][data-v=dok]')
+    wpisz(pg, '#f-rok', '1978'); zrodlo('rok', 'dok')
     pg.select_option('#f-material', 'blok'); pg.select_option('#f-technologia', 'wielka_plyta'); pg.select_option('#f-stan', 'odswiezenie')
     pg.select_option('#f-ogrzewanie', 'miejskie'); pg.select_option('#f-balkon', 'balkon')
     pg.wait_for_selector('#f-balkonPow'); wpisz(pg, '#f-balkonPow', '3,2')
-    pg.select_option('#f-wlasnosc', 'spoldzielcze'); pg.click('#sek-lokal [data-a=zr][data-k=wlasnosc][data-v=dok]')
-    wpisz(pg, '#f-czynsz', '640'); pg.click('#sek-koszty [data-a=zr][data-k=czynsz][data-v=dok]')
-    wpisz(pg, '#f-media', '180'); pg.click('#sek-koszty [data-a=zr][data-k=media][data-v=wl]')
+    pg.select_option('#f-wlasnosc', 'spoldzielcze'); zrodlo('wlasnosc', 'dok')
+    sekcja('koszty'); wpisz(pg, '#f-czynsz', '640'); zrodlo('czynsz', 'dok')
+    wpisz(pg, '#f-media', '180'); zrodlo('media', 'wl')
+    sekcja('pom')
     # pomieszczenia
     pomy = [('Pokój dzienny', '17,8', 'wyjście na balkon'), ('Sypialnia', '11,2', ''), ('Pokój', '8,9', ''), ('Kuchnia', '6,1', 'z oknem'), ('Łazienka z WC', '3,4', 'remont 2021')]
     for i, (n, m, o) in enumerate(pomy):
@@ -67,23 +69,25 @@ with sync_playwright() as p:
         wpisz(pg, f'#sek-pom input[data-i="{i}"][data-p=m]', m)
         if o: wpisz(pg, f'#sek-pom input[data-i="{i}"][data-p=opis]', o)
     for l, teksty in (('atuty', ['okna wymienione w 2019', 'piony wymienione w 2023']), ('minusy', ['brak windy, 3. piętro'])):
+        sekcja(l)
         for i, t in enumerate(teksty):
             pg.click(f'#sek-{l} [data-a=dodaj-wiersz]'); pg.wait_for_selector(f'#sek-{l} input[data-i="{i}"]')
             wpisz(pg, f'#sek-{l} input[data-i="{i}"]', t)
+    sekcja('okolica')
     for i, (n, m) in enumerate([('przystanek MPK', '3'), ('szkoła podstawowa nr 51', '7'), ('Biedronka', '4')]):
         pg.click('#sek-okolica [data-a=dodaj-wiersz]'); pg.wait_for_selector(f'#sek-okolica input[data-i="{i}"][data-p=nazwa]')
         wpisz(pg, f'#sek-okolica input[data-i="{i}"][data-p=nazwa]', n); wpisz(pg, f'#sek-okolica input[data-i="{i}"][data-p=min]', m)
-    pg.click('#sek-weryfikacja label:has(input[data-w=kw][data-p=ok])')
-    pg.click('[data-a=wybor][data-k=swiad][data-v=tak]')
+    sekcja('weryfikacja'); pg.click('#sek-weryfikacja label:has(input[data-w=kw][data-p=ok])')
+    sekcja('energia'); pg.click('[data-a=wybor][data-k=swiad][data-v=tak]')
     for k, v in (('eu', '98,4'), ('ek', '120,1'), ('ep', '145,7'), ('oze', '0'), ('co2', '0,0412')):
         pg.wait_for_selector(f'#f-{k}'); wpisz(pg, f'#f-{k}', v)
+    pg.evaluate(f"location.hash = '#/o/{oid}/ogloszenie'"); pg.wait_for_selector('#f-lead')
     wpisz(pg, '#f-lead', 'Prawdziwa perełka! Okazja')
     pg.wait_for_timeout(1200)
     zrzut_kontenera(pg, '.kol-edytor', '02-telefon-karta', 8)
 
     # zdjęcia: po 2 na pomieszczenie + rzut
-    pg.evaluate("location.hash = location.hash.replace(/\\/[a-z]+$/, '/zdjecia')"); pg.wait_for_selector('#dodaj-zdj', state='attached')
-    oid = pg.evaluate("location.hash.split('/')[2]")
+    pg.evaluate(f"location.hash = '#/o/{oid}/zdjecia'"); pg.wait_for_selector('#dodaj-zdj', state='attached')
     pom_ids = pg.evaluate("[...document.querySelectorAll('#pom-dodaj optgroup[label=Pomieszczenia] option')].map(o => o.value)")
     k = 0
     for pid in pom_ids:
@@ -103,18 +107,18 @@ with sync_playwright() as p:
     zrzut_kontenera(pg, '.kol-edytor', '03-telefon-zdjecia', 3)
 
     # ogłoszenie z pustymi słowami -> status zablokowany
-    pg.evaluate("location.hash = location.hash.replace(/\\/[a-z]+$/, '/ogloszenie')"); pg.wait_for_selector('.uwagi')
+    pg.evaluate(f"location.hash = '#/o/{oid}/ogloszenie'"); pg.wait_for_selector('.uwagi')
     zrzut_kontenera(pg, '.kol-edytor', '04-telefon-ogloszenie-z-uwagami', 2)
-    pg.evaluate("location.hash = location.hash.replace(/\\/[a-z]+$/, '/karta')"); pg.wait_for_selector('.hero-status select')
-    pg.select_option('.hero-status select', 'gotowa')
+    pg.evaluate(f"location.hash = '#/o/{oid}/kontrola'"); pg.wait_for_selector('select[data-k=status]')
+    pg.select_option('select[data-k=status]', 'gotowa')
     pg.wait_for_timeout(500)
     assert 'kontrola' in pg.evaluate('location.hash'), 'status powinien przenieść do kontroli'
     pg.screenshot(path=f'{OUT}/05-telefon-kontrola-blokada.png')
     # poprawka wstępu -> gotowa
-    pg.evaluate("location.hash = location.hash.replace(/\\/[a-z]+$/, '/karta')"); pg.wait_for_selector('#f-lead')
+    pg.evaluate(f"location.hash = '#/o/{oid}/ogloszenie'"); pg.wait_for_selector('#f-lead')
     wpisz(pg, '#f-lead', 'Mieszkanie po jednym właścicielu, regularnie remontowane.')
     pg.wait_for_timeout(800)
-    pg.evaluate("location.hash = location.hash.replace(/\\/[a-z]+$/, '/kontrola')"); pg.wait_for_selector('.check')
+    pg.evaluate(f"location.hash = '#/o/{oid}/kontrola'"); pg.wait_for_selector('.check')
     pg.screenshot(path=f'{OUT}/06-telefon-kontrola.png')
     braki = pg.evaluate("[...document.querySelectorAll('.check .nie')].map(e => e.closest('li').innerText)")
     print('braki wymagane:', braki)
@@ -140,20 +144,21 @@ with sync_playwright() as p:
     pl = lap.new_page(); loguj_bledy(pl, 'laptop')
     zaloguj(pl, 'anna', 'haslo456')
     pl.wait_for_selector('.karta'); pl.wait_for_timeout(1500)
-    pl.click('.karta'); pl.wait_for_selector('#sek-podstawy'); pl.wait_for_timeout(1200)
+    pl.click('.karta'); pl.wait_for_selector('.spis'); pl.wait_for_timeout(1200)
     pl.screenshot(path=f'{OUT}/07-laptop-karta-podglad.png')
     pl.click('[data-a=podglad][data-v=kontrola]'); pl.wait_for_timeout(400)
     pl.screenshot(path=f'{OUT}/08-laptop-kontrola.png')
-    pl.click('.segment a[href$="/zdjecia"]'); pl.wait_for_timeout(1500)
+    pl.click('.kafel[href$="/zdjecia"]'); pl.wait_for_timeout(1500)
     pl.screenshot(path=f'{OUT}/09-laptop-zdjecia.png')
-    pl.click('.segment a[href$="/karta"]'); pl.wait_for_selector('#f-cena')
+    pl.evaluate(f"location.hash = '#/o/{oid}/s/podstawy'"); pl.wait_for_selector('#f-cena')
     t0 = time.time()
-    pg.evaluate("location.hash = location.hash.replace(/\\/[a-z]+$/, '/karta')"); pg.wait_for_selector('#f-cena')
+    sekcja('podstawy')
     wpisz(pg, '#f-cena', '479 000')
     pl.wait_for_function("document.querySelector('#f-cena').value.replace(/\\s/g, '') === '479000'", timeout=10000)
     print(f'zmiana ceny dotarła na laptop po {time.time() - t0:.1f} s')
 
     # offline na telefonie
+    sekcja('koszty')
     tel.set_offline(True)
     pg.wait_for_timeout(300)
     wpisz(pg, '#f-media', '200')
@@ -171,9 +176,9 @@ with sync_playwright() as p:
     tab = b.new_context(viewport={'width': 820, 'height': 1180}, device_scale_factor=2, has_touch=True, locale='pl-PL')
     pt = tab.new_page(); loguj_bledy(pt, 'tablet')
     zaloguj(pt, 'marek', 'tajne123'); pt.wait_for_selector('.karta'); pt.wait_for_timeout(1000)
-    pt.click('.karta'); pt.wait_for_selector('#sek-podstawy'); pt.wait_for_timeout(1200)
+    pt.click('.karta'); pt.wait_for_selector('.spis'); pt.wait_for_timeout(1200)
     pt.screenshot(path=f'{OUT}/11-tablet-karta.png')
-    pt.click('.segment a[href$="/ogloszenie"]'); pt.wait_for_timeout(600)
+    pt.click('.kafel[href$="/ogloszenie"]'); pt.wait_for_timeout(600)
     pt.screenshot(path=f'{OUT}/12-tablet-ogloszenie.png')
     # lista i ustawienia na telefonie
     pg.goto(URL + '#/'); pg.wait_for_selector('.karta'); pg.wait_for_timeout(1500)
@@ -181,11 +186,11 @@ with sync_playwright() as p:
     pg.click('#dol a[href="#/ustawienia"]'); pg.wait_for_timeout(500)
     pg.screenshot(path=f'{OUT}/14-telefon-ustawienia.png')
     # historia
-    pl.click('[data-a=menu]'); pl.click('[data-m=historia]'); pl.wait_for_selector('.hist li', timeout=8000); pl.wait_for_timeout(300)
+    pl.evaluate(f"location.hash = '#/o/{oid}'"); pl.wait_for_selector('[data-a=menu]'); pl.click('[data-a=menu]'); pl.click('[data-m=historia]'); pl.wait_for_selector('.hist li', timeout=8000); pl.wait_for_timeout(300)
     pl.screenshot(path=f'{OUT}/15-laptop-historia.png')
     # pobieranie ZIP na laptopie
     pl.keyboard.press('Escape'); pl.click('.okno-tlo [data-zamknij]')
-    pl.click('.segment a[href$="/zdjecia"]'); pl.wait_for_selector('[data-a=pobierz-zdj]')
+    pl.evaluate(f"location.hash = '#/o/{oid}/zdjecia'"); pl.wait_for_selector('[data-a=pobierz-zdj]')
     with pl.expect_download(timeout=30000) as dl:
         pl.click('[data-a=pobierz-zdj]')
     sciezka = dl.value.path(); import zipfile

@@ -3,7 +3,7 @@ import * as M from './model.js';
 import * as D from './dane.js';
 import { zrobZip } from './zip.js';
 
-export const WERSJA = '1.1.0';
+export const WERSJA = '1.2.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -29,7 +29,7 @@ const IK = {
 const ik = (n, kl = '') => `<svg class="ik ${kl}" viewBox="0 0 24 24" aria-hidden="true">${IK[n]}</svg>`;
 
 // ---------- stan interfejsu ----------
-const S = { ekran: 'lista', id: null, tab: 'karta', podglad: 'ogloszenie', q: '', filtr: 'aktywne', wiecej: false, pomDodawania: '', postep: '', otwarte: new Set(['podstawy']) };
+const S = { ekran: 'lista', id: null, tab: 'karta', sek: null, podglad: 'ogloszenie', q: '', filtr: 'aktywne', wiecej: false, pomDodawania: '', postep: '' };
 const szeroki = matchMedia('(min-width: 1180px)');
 const telefon = matchMedia('(max-width: 759px)');
 const obrazy = new Map(); // `${id}:${rodzaj}` -> url
@@ -41,10 +41,12 @@ function toast(t, ms = 2200) {
 }
 function trasa() {
   const h = location.hash.replace(/^#\/?/, '').split('/');
-  if (h[0] === 'o' && h[1]) { S.ekran = 'oferta'; if (S.id !== h[1]) { S.id = h[1]; resetEdytora(); } S.tab = h[2] || 'karta'; }
+  if (h[0] === 'o' && h[1]) {
+    S.ekran = 'oferta'; if (S.id !== h[1]) { S.id = h[1]; resetEdytora(); }
+    if (h[2] === 's' && h[3]) { S.tab = 'sekcja'; S.sek = h[3]; } else { S.tab = h[2] || 'karta'; S.sek = null; }
+  }
   else if (h[0] === 'ustawienia') { S.ekran = 'ustawienia'; S.id = null; resetEdytora(); }
   else { S.ekran = 'lista'; S.id = null; resetEdytora(); }
-  if (szeroki.matches && ['ogloszenie', 'kontrola'].includes(S.tab)) { S.podglad = S.tab; S.tab = 'karta'; }
   odswiez();
 }
 const idzDo = (h) => { if (location.hash !== h) location.hash = h; else trasa(); };
@@ -196,7 +198,7 @@ function odswiezListe() {
   } else {
     html = lista.map((o) => {
       const g = M.gotowosc(o);
-      return `<a class="karta ${o.id === S.id ? 'akt' : ''}" href="#/o/${o.id}/karta">
+      return `<a class="karta ${o.id === S.id ? 'akt' : ''}" href="#/o/${o.id}">
         ${fotoHTML(o)}
         <button class="serce ${o.ulubiona ? 'akt' : ''}" data-a="ulub" data-oid="${o.id}" aria-label="${o.ulubiona ? 'Usuń z wyróżnionych' : 'Wyróżnij'}">${ik('serce')}</button>
         <div class="karta-tresc">
@@ -216,7 +218,82 @@ function odswiezPusty() {
 }
 
 // ---------- oferta ----------
-const ZAKLADKI = { karta: 'Karta', zdjecia: 'Zdjęcia', ogloszenie: 'Ogłoszenie', kontrola: 'Kontrola' };
+// Karta = spis kafelków; każda sekcja, zdjęcia, ogłoszenie i kontrola to osobny ekran.
+const SEK_KARTY = [
+  ['podstawy', 'Podstawy'], ['lokalizacja', 'Lokalizacja'], ['lokal', 'Nieruchomość'], ['pom', 'Pomieszczenia'], ['koszty', 'Koszty'],
+  ['atuty', 'Atuty'], ['minusy', 'Co warto wiedzieć'], ['okolica', 'Okolica'], ['weryfikacja', 'Sprawdziliśmy'], ['energia', 'Świadectwo'],
+  ['wlasciciel', 'Właściciel i umowa'],
+];
+const EKRANY = [...SEK_KARTY.map(([k, n]) => ({ k, n, sek: true })), { k: 'zdjecia', n: 'Zdjęcia' }, { k: 'ogloszenie', n: 'Ogłoszenie' }, { k: 'kontrola', n: 'Kontrola' }];
+const hashEkranu = (oid, k) => (['zdjecia', 'ogloszenie', 'kontrola'].includes(k) ? `#/o/${oid}/${k}` : `#/o/${oid}/s/${k}`);
+// ikony kafelków bez grafiki z arkusza — złota linia w tym samym stylu
+const IK_ZLOTE = {
+  zdjecia: '<path d="M4 8.5h3.2l1.9-2.6h5.8l1.9 2.6H20V19H4z"/><circle cx="12" cy="13.4" r="3.6"/><path d="M17.3 10.6h.01"/>',
+  ogloszenie: '<path d="M6.5 3.5h8l3.5 3.5v13.5h-11.5z"/><path d="M14.5 3.5V7H18M9 10.5h6M9 13.5h6M9 16.5h4"/>',
+  kontrola: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3.2"/>',
+};
+const ikonaEkranu = (k) => (IK_ZLOTE[k]
+  ? `<svg class="ik-zlota" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="url(#zloto)" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">${IK_ZLOTE[k]}</g></svg>`
+  : `<img class="ik-zlota" src="img/ikony/${k}.png" alt="">`);
+
+// grupy pól w sekcjach; pola z POL stają po dwa obok siebie
+const GRUPY = {
+  podstawy: [['Oferta', ['transakcja', 'rodzaj', 'roboczy']], ['Cena', ['cena', 'cenaNeg']], ['Prowizja od klienta', ['prowizjaKl', 'prowizjaKlCzynsz', 'prowizjaKlTekst']]],
+  lokalizacja: [['Adres', ['miasto', 'dzielnica', 'ulica', 'pokazUlice']]],
+  lokal: [['Wielkość', ['pow', 'dzialkaPow', 'pokoje', 'nieprzechodnie']], ['Piętro', ['pietro', 'pieter', 'winda']], ['Budynek', ['rok', 'material', 'technologia']],
+    ['Stan i wnętrze', ['stan', 'ogrzewanie', 'okna', 'ekspozycja', 'umeblowanie']], ['Dodatki', ['balkon', 'balkonPow', 'piwnica', 'parking', 'parkingCena']], ['Własność', ['wlasnosc']]],
+  koszty: [['Opłaty miesięczne', ['czynsz', 'czynszObejmuje', 'media']], ['Dostępność', ['dostepneOd', 'minOkres', 'umowaNajmu']], ['Najemca', ['kaucja', 'zwierzeta']]],
+  energia: [['Świadectwo', ['swiad']], ['Wskaźniki', ['eu', 'ek', 'ep', 'oze', 'co2']], ['Dokument', ['swiadNr', 'swiadDo']]],
+  wlasciciel: [['Właściciel', ['wlImie', 'wlTel', 'wlEmail']], ['Umowa pośrednictwa', ['umowaNr', 'umowaData', 'umowaDo', 'wylacznosc', 'prowizjaWl']], ['Notatki', ['notatki']]],
+};
+// krótkie etykiety dla pól stojących po dwa obok siebie
+const KROTKIE = { pietro: 'Piętro', pieter: 'Pięter', material: 'Rodzaj', balkonPow: 'Powierzchnia', parkingCena: 'Dopłata', dostepneOd: 'Dostępne od', minOkres: 'Min. okres',
+  umowaData: 'Data umowy', umowaDo: 'Ważna do', swiadNr: 'Numer', swiadDo: 'Ważne do', eu: 'EU', ek: 'EK', ep: 'EP', oze: 'Udział OZE', co2: 'Emisja CO₂', umowaNr: 'Numer umowy', dzielnica: 'Dzielnica', parking: 'Parking', ogrzewanie: 'Ogrzewanie', technologia: 'Technologia' };
+const PODPOWIEDZI = { pietro: '0 = parter', eu: 'kWh/(m²·rok)', ek: 'kWh/(m²·rok)', ep: 'kWh/(m²·rok)' };
+const POL = new Set(['pietro', 'pieter', 'rok', 'material', 'technologia', 'stan', 'ogrzewanie', 'okna', 'balkonPow', 'parkingCena', 'dostepneOd', 'minOkres',
+  'kaucja', 'eu', 'ek', 'ep', 'oze', 'co2', 'swiadNr', 'swiadDo', 'umowaNr', 'umowaData', 'umowaDo', 'miasto', 'dzielnica', 'piwnica', 'parking', 'umeblowanie']);
+const POLE = Object.fromEntries(M.SEKCJE.flatMap((s) => s.pola.map((p) => [p.k, p])));
+const puste = (v) => v === undefined || v === null || v === '';
+
+function licznikSekcji(k, o) {
+  const sek = M.SEKCJE.find((s) => s.id === k);
+  if (sek) {
+    const pola = sek.pola.filter((p) => M.poleWidoczne(p, o) && p.t !== 'b');
+    return { z: pola.filter((p) => !puste(o[p.k]) || (p.nieWiem && o[p.nieWiem])).length, w: pola.length };
+  }
+  if (k === 'pom') { const p = (o.pom || []).filter((x) => x.nazwa); return { z: p.filter((x) => !puste(x.m)).length, w: Math.max(p.length, 1) }; }
+  if (k === 'atuty') return { z: Math.min(2, (o.atuty || []).filter((a) => a.t).length), w: 2 };
+  if (k === 'minusy') return { z: Math.min(1, (o.minusy || []).filter((a) => a.t).length), w: 1 };
+  if (k === 'okolica') return { z: Math.min(3, (o.okolica || []).filter((a) => a.nazwa && a.min).length), w: 3 };
+  if (k === 'weryfikacja') { const l = M.WERYFIKACJA.filter((x) => !x.dla || x.dla === o.transakcja); return { z: l.filter((x) => o.weryf?.[x.k]?.ok).length, w: l.length }; }
+  const L = M.checklista(o);
+  if (k === 'zdjecia') { const z = L.filter((x) => x.zakladka === 'zdjecia'); return { z: z.filter((x) => x.ok).length, w: z.length }; }
+  if (k === 'ogloszenie') { const n = M.kontrolaSlow(o).length; return { z: n ? 0 : 1, w: 1 }; }
+  if (k === 'kontrola') { const t = L.filter((x) => x.twarde); return { z: t.filter((x) => x.ok).length, w: t.length }; }
+  return null;
+}
+const wsk = (l) => (!l ? '' : l.z >= l.w && l.w > 0 ? ik('okKolo', 'sek-ok') : pierscien(Math.round((l.z / Math.max(1, l.w)) * 100), 'maly'));
+function podsumowanie(k, o) {
+  const najem = o.transakcja === 'najem';
+  const j = (a) => a.filter(Boolean).join('  ·  ');
+  switch (k) {
+    case 'podstawy': return j([M.TRANSAKCJE[o.transakcja] && (najem ? 'Wynajem' : 'Sprzedaż'), M.RODZAJE[o.rodzaj], o.cena && `${M.zl(o.cena)}${najem ? '/mies.' : ''}`]);
+    case 'lokalizacja': return j([o.miasto, o.dzielnica, o.ulica && `ul. ${o.ulica}`]);
+    case 'lokal': return j([o.pow && M.m2(o.pow), o.pokoje && `${o.pokoje} ${M.pokojeSlowo(o.pokoje)}`, !puste(o.pietro) && `${Number(o.pietro) === 0 ? 'parter' : o.pietro}${o.pieter ? `/${o.pieter}` : ''}`, o.winda === 'tak' && 'winda', o.rok]);
+    case 'pom': { const p = (o.pom || []).filter((x) => x.nazwa); const s = p.reduce((a, x) => a + (Number(x.m) || 0), 0); return p.length ? j([`${p.length} ${p.length === 1 ? 'pomieszczenie' : p.length < 5 ? 'pomieszczenia' : 'pomieszczeń'}`, s && M.m2(Math.round(s * 100) / 100)]) : 'brak'; }
+    case 'koszty': return j([!puste(o.czynsz) && `czynsz ${M.zl(o.czynsz)}`, o.media && `media ${M.zl(o.media)}`, najem && o.kaucja && `kaucja ${M.zl(o.kaucja)}`]) || 'brak';
+    case 'atuty': case 'minusy': { const n = (o[k] || []).filter((a) => a.t).length; return n ? `${n} ${n === 1 ? 'punkt' : n < 5 ? 'punkty' : 'punktów'}` : 'brak'; }
+    case 'okolica': { const n = (o.okolica || []).filter((a) => a.nazwa).length; return n ? `${n} ${n === 1 ? 'miejsce' : n < 5 ? 'miejsca' : 'miejsc'}` : 'brak'; }
+    case 'weryfikacja': { const l = licznikSekcji(k, o); return `${l.z} z ${l.w} sprawdzone`; }
+    case 'energia': return o.swiad === 'tak' ? j(['sporządzone', !puste(o.ep) && `EP ${M.liczba(o.ep)}`]) : o.swiad === 'nie' ? 'w przygotowaniu' : 'brak odpowiedzi';
+    case 'wlasciciel': return j([o.wlImie, o.umowaNr && `umowa ${o.umowaNr}`, o.wylacznosc && 'wyłączność']) || 'brak';
+    case 'zdjecia': { const z = o.zdj || []; return z.length ? j([`${z.length} zdjęć`, z.some((x) => x.pom === 'rzut') && 'rzut', z.some((x) => x.wiz) && 'wizualizacje']) : 'brak'; }
+    case 'ogloszenie': { const n = M.kontrolaSlow(o).length; return j([`${M.opis(o, { agent: agent() }).length} znaków`, n ? `${n} do poprawy` : 'bez uwag']); }
+    case 'kontrola': { const g = M.gotowosc(o); return j([M.STATUSY[o.status], g.braki.length ? `${g.braki.length} do uzupełnienia` : 'komplet']); }
+  }
+  return '';
+}
+
 function odswiezOferte() {
   const o = D.oferta(S.id);
   const e = $('#edytor');
@@ -225,95 +302,87 @@ function odswiezOferte() {
     e.innerHTML = `<div class="naglowek-ekranu"><a class="okragly" href="#/">${ik('wstecz')}</a></div><div class="pusto"><h2>Nie ma tej oferty</h2><p>Mogła zostać usunięta.</p><a class="btn" href="#/">Wróć do listy</a></div>`;
     return;
   }
-  if (e.dataset.tryb !== 'oferta') {
-    e.dataset.tryb = 'oferta';
-    e.innerHTML = '<div id="of-hero" data-wstaw></div><div class="segment-pas" id="of-seg" data-wstaw></div><div class="tresc" id="ed-tresc"></div>';
-  }
-  const g = M.gotowosc(o);
-  const slowa = M.kontrolaSlow(o).length;
-  const osobnyEkran = telefon.matches && ['ogloszenie', 'kontrola'].includes(S.tab);
-  // nagłówek: duże zdjęcie (karta, zdjęcia) albo nagłówek ekranu (ogłoszenie, kontrola na telefonie)
-  if (osobnyEkran) {
-    const prawy = S.tab === 'ogloszenie'
-      ? `<button class="btn kontur maly" data-a="kopiuj" data-co="opis">${ik('kopiuj')}Kopiuj</button>`
-      : pierscien(g.procent);
-    wstaw($('#of-hero'), `<div class="naglowek-ekranu"><a class="okragly" href="#/o/${o.id}/karta" aria-label="Wróć do karty">${ik('wstecz')}</a><h1 class="zloty-tekst">${ZAKLADKI[S.tab]}</h1>${prawy}</div>`);
-    wstaw($('#of-seg'), ''); $('#of-seg').hidden = true;
-  } else {
-    $('#of-seg').hidden = false;
-    wstaw($('#of-hero'), `<div class="hero">${fotoHTML(o)}
-      <div class="hero-gora"><a class="okragly tylko-telefon" href="#/" aria-label="Wróć do listy">${ik('wstecz')}</a><span class="rozp"></span><button class="okragly" data-a="menu" aria-label="Więcej">${ik('kropki')}</button></div>
-      <div class="hero-tresc">
-        <h1>${esc(o.roboczy || M.tytul(o))}</h1><div class="zlota-linia"></div>
-        <div class="hero-dol">${cenaHTML(o, 'hero-cena')}<button class="serce ${o.ulubiona ? 'akt' : ''}" data-a="ulub" data-oid="${o.id}" aria-label="Wyróżnij">${ik('serce')}</button></div>
-        <label class="hero-status">${statusHTML(o.status, ik('dol', 'dol-ik'))}<select data-k="status" aria-label="Status oferty">${Object.entries(M.STATUSY).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
-        <span class="hero-postep">${pierscien(g.procent, 'maly')}${g.braki.length ? `${g.procent}% · <span style="color:var(--zle)">${g.braki.length} do uzupełnienia</span>` : '<span style="color:var(--ok)">gotowa</span>'}</span>
-      </div></div>`);
-    const zak = szeroki.matches ? ['karta', 'zdjecia'] : Object.keys(ZAKLADKI);
-    wstaw($('#of-seg'), `<nav class="segment">${zak.map((k) => `<a href="#/o/${o.id}/${k}" class="${S.tab === k ? 'akt' : ''}">${ZAKLADKI[k]}${k === 'kontrola' && g.braki.length ? ` <span class="licznik">${g.braki.length}</span>` : ''}${k === 'ogloszenie' && slowa ? ` <span class="licznik">${slowa}</span>` : ''}</a>`).join('')}</nav>`);
+  const klucz = `${o.id}:${S.tab}:${S.sek || ''}`;
+  if (e.dataset.tryb !== 'oferta' || e.__klucz !== klucz) {
+    e.dataset.tryb = 'oferta'; e.__klucz = klucz; e.scrollTop = 0;
+    e.innerHTML = '<div id="of-gora" data-wstaw></div><div class="tresc" id="ed-tresc"></div><div id="of-dol" data-wstaw></div>';
   }
   const t = $('#ed-tresc');
-  const klucz = `${o.id}:${S.tab}`;
-  if (t.__klucz !== klucz) { t.__klucz = klucz; t.innerHTML = ''; t.__html = null; }
-  if (S.tab === 'karta') tabKarta(t, o);
-  else if (S.tab === 'zdjecia') tabZdjecia(t, o);
-  else if (S.tab === 'ogloszenie') wstaw(t, htmlOgloszenie(o));
-  else if (S.tab === 'kontrola') wstaw(t, htmlKontrola(o));
+  if (S.tab === 'karta') {
+    wstaw($('#of-gora'), naglowekSpisu(o));
+    wstaw(t, spisHTML(o));
+    wstaw($('#of-dol'), '');
+  } else {
+    const k = S.tab === 'sekcja' ? S.sek : S.tab;
+    const ekr = EKRANY.find((x) => x.k === k);
+    if (!ekr) { idzDo(`#/o/${o.id}`); return; }
+    const prawy = k === 'ogloszenie'
+      ? `<button class="btn kontur maly" data-a="kopiuj" data-co="opis">${ik('kopiuj')}Kopiuj</button>`
+      : k === 'kontrola' ? pierscien(M.gotowosc(o).procent) : `<span class="licz-ekranu">${(() => { const l = licznikSekcji(k, o); return l ? `${wsk(l)}` : ''; })()}</span>`;
+    wstaw($('#of-gora'), `<div class="naglowek-ekranu"><a class="okragly" href="#/o/${o.id}" aria-label="Wróć do karty">${ik('wstecz')}</a>${ikonaEkranu(k)}<h1 class="zloty-tekst">${esc(ekr.n)}</h1>${prawy}</div>`);
+    if (k === 'zdjecia') tabZdjecia(t, o);
+    else if (k === 'ogloszenie') wstaw(t, htmlTekstOgloszenia(o) + htmlOgloszenie(o, false));
+    else if (k === 'kontrola') wstaw(t, htmlKontrola(o));
+    else wstaw(t, ekranSekcji(k, o));
+    const i = EKRANY.findIndex((x) => x.k === k);
+    const pop = EKRANY[i - 1], nast = EKRANY[i + 1];
+    wstaw($('#of-dol'), `<nav class="nawigacja-sek">${pop ? `<a class="btn kontur" href="${hashEkranu(o.id, pop.k)}">${ik('lewo')}<span class="nr">${String(i).padStart(2, '0')}</span><span class="tx">${esc(pop.n)}</span></a>` : '<span></span>'}
+      ${nast ? `<a class="btn kontur" href="${hashEkranu(o.id, nast.k)}"><span class="nr">${String(i + 2).padStart(2, '0')}</span><span class="tx">${esc(nast.n)}</span>${ik('prawo')}</a>` : `<a class="btn kontur" href="#/o/${o.id}"><span class="tx">Spis karty</span>${ik('prawo')}</a>`}</nav>`);
+  }
   const p = $('#podglad');
   if (szeroki.matches) {
+    const g = M.gotowosc(o), slowa = M.kontrolaSlow(o).length;
     const zk = `<div class="podglad-zakl"><nav class="segment"><button data-a="podglad" data-v="ogloszenie" class="${S.podglad === 'ogloszenie' ? 'akt' : ''}">Ogłoszenie${slowa ? ` <span class="licznik">${slowa}</span>` : ''}</button><button data-a="podglad" data-v="kontrola" class="${S.podglad === 'kontrola' ? 'akt' : ''}">Kontrola${g.braki.length ? ` <span class="licznik">${g.braki.length}</span>` : ''}</button></nav></div>`;
     wstaw(p, `${zk}<div class="tresc">${S.podglad === 'kontrola' ? htmlKontrola(o) : htmlOgloszenie(o)}</div>`);
   }
 }
-
-// ----- karta: sekcje-akordeony -----
-const SEK_KARTY = [
-  ['podstawy', 'Podstawy'], ['lokalizacja', 'Lokalizacja'], ['lokal', 'Nieruchomość'], ['pom', 'Pomieszczenia'], ['koszty', 'Koszty'],
-  ['atuty', 'Atuty'], ['minusy', 'Co warto wiedzieć'], ['okolica', 'Okolica'], ['weryfikacja', 'Sprawdziliśmy'], ['energia', 'Świadectwo'],
-  ['tekst', 'Tytuł i wstęp'], ['wlasciciel', 'Właściciel i umowa'],
-];
-const puste = (v) => v === undefined || v === null || v === '';
-function licznikSekcji(k, o) {
-  const sek = M.SEKCJE.find((s) => s.id === k);
-  if (sek) {
-    const pola = sek.pola.filter((p) => M.poleWidoczne(p, o) && p.t !== 'b');
-    return { z: pola.filter((p) => !puste(o[p.k])).length, w: pola.length };
+function naglowekSpisu(o) {
+  return `<div class="naglowek-spisu"><a class="marka" href="#/" aria-label="Wróć do listy ofert"><span class="wstecz-maly">${ik('wstecz')}</span><img src="img/monogram.png" alt="AM"><i></i><h1 class="zloty-tekst">Karta</h1></a><span class="rozp"></span>
+    <button class="dzwonek" data-a="aktywnosc" aria-label="Zmiany wspólnika">${ik('dzwonek')}${D.nowaAktywnosc() ? '<b></b>' : ''}</button></div>
+    <div class="pasek-oferty">${fotoHTML(o)}
+      <div class="pasek-oferty-tresc"><h2>${esc(o.roboczy || M.tytul(o))}</h2><div class="zlota-linia"></div>${cenaHTML(o, 'pasek-cena')}</div>
+      <div class="pasek-oferty-akcje"><button class="okragly" data-a="menu" aria-label="Więcej">${ik('kropki')}</button><button class="serce ${o.ulubiona ? 'akt' : ''}" data-a="ulub" data-oid="${o.id}" aria-label="Wyróżnij">${ik('serce')}</button></div>
+    </div>`;
+}
+function spisHTML(o) {
+  return `<div class="spis">${EKRANY.map((x, i) => {
+    const l = licznikSekcji(x.k, o);
+    return `<a class="kafel szklo ${x.k === 'wlasciciel' ? 'prywatna' : ''}" href="${hashEkranu(o.id, x.k)}">
+      <span class="kafel-ik">${ikonaEkranu(x.k)}</span><i class="kafel-kreska"></i>
+      <span class="sek-nr">${String(i + 1).padStart(2, '0')}</span>
+      <span class="kafel-tx"><span class="sek-tyt">${esc(x.n)}</span><span class="kafel-pod">${esc(podsumowanie(x.k, o))}</span></span>
+      ${wsk(l)}<span class="strz">${ik('prawo')}</span></a>`;
+  }).join('')}</div>`;
+}
+function ekranSekcji(k, o) {
+  const opisy = {
+    lokal: 'Przy polach ze źródłem stuknij znacznik i wybierz, skąd jest informacja. „Wg właściciela” pojawi się w ogłoszeniu jako dopisek.',
+    energia: 'Jeśli świadectwo jest sporządzone, ustawa wymaga podania w ogłoszeniu wszystkich pięciu wskaźników.',
+    wlasciciel: 'Te dane widzicie tylko Wy dwaj. Nigdy nie trafiają do ogłoszenia.',
+  };
+  let h = opisy[k] ? `<p class="sek-opis">${opisy[k]}</p>` : '';
+  if (GRUPY[k]) {
+    for (const [nazwa, klucze] of GRUPY[k]) {
+      const pola = klucze.map((x) => POLE[x]).filter((p) => p && M.poleWidoczne(p, o));
+      if (!pola.length) continue;
+      // pola „połówkowe” łączymy w pary; jeśli któreś zostaje samo, dostaje całą szerokość
+      const html = []; let seria = [];
+      const zamknij = () => { seria.forEach((p, i) => html.push(poleHTML(p, o, seria.length % 2 === 1 && i === seria.length - 1))); seria = []; };
+      for (const p of pola) { if (POL.has(p.k) && !p.zr && p.t !== 'b' && !(p.t === 'w' && pigulkiPasuja(p))) seria.push(p); else { zamknij(); html.push(poleHTML(p, o)); } }
+      zamknij();
+      h += grupa(nazwa, `<div class="siatka">${html.join('')}</div>`);
+    }
+    if (k === 'lokalizacja') h += `<datalist id="dl-dzielnice">${M.DZIELNICE_LUBLIN.map((d) => `<option value="${d}">`).join('')}</datalist>`;
+    return `<div id="sek-${k}">${h}</div>`;
   }
-  if (k === 'pom') { const p = (o.pom || []).filter((x) => x.nazwa); return { z: p.filter((x) => !puste(x.m)).length, w: Math.max(p.length, 1) }; }
-  if (k === 'atuty') return { z: Math.min(2, (o.atuty || []).filter((a) => a.t).length), w: 2 };
-  if (k === 'minusy') return { z: Math.min(1, (o.minusy || []).filter((a) => a.t).length), w: 1 };
-  if (k === 'okolica') return { z: Math.min(3, (o.okolica || []).filter((a) => a.nazwa && a.min).length), w: 3 };
-  if (k === 'weryfikacja') { const l = M.WERYFIKACJA.filter((x) => !x.dla || x.dla === o.transakcja); return { z: l.filter((x) => o.weryf?.[x.k]?.ok).length, w: l.length }; }
-  if (k === 'tekst') return null;
-  return null;
+  if (k === 'pom') h = sekcjaPom(o);
+  else if (k === 'atuty') h = grupa('Atuty', sekcjaListy(o, 'atuty', 'Tylko fakty, które da się sprawdzić: co, kiedy, ile. Bez ocen.', 'np. okna wymienione w 2019 r.'));
+  else if (k === 'minusy') h = grupa('Uczciwe minusy', sekcjaListy(o, 'minusy', 'Zanim ktoś je odkryje na prezentacji. To buduje zaufanie i oszczędza czas obu stronom.', 'np. brak windy, 4. piętro'));
+  else if (k === 'okolica') h = grupa('Miejsca w pobliżu', sekcjaOkolicy(o));
+  else if (k === 'weryfikacja') h = grupa('Sprawdzone dokumenty i fakty', sekcjaWeryfikacji(o));
+  return `<div id="sek-${k}">${h}</div>`;
 }
-function glowaSekcji(k, nazwa, i, o) {
-  const l = licznikSekcji(k, o);
-  let wsk = '';
-  if (l) {
-    const pelne = l.z >= l.w && l.w > 0;
-    wsk = `<span class="sek-licz">${l.z}/${l.w}</span>${pelne ? ik('okKolo', 'sek-ok') : pierscien(Math.round((l.z / Math.max(1, l.w)) * 100), 'maly')}`;
-  } else wsk = '<span class="sek-licz wyc male">opcjonalnie</span>';
-  return `<button class="sek-glowa" data-a="sekcja" data-v="${k}" aria-expanded="${S.otwarte.has(k)}">
-    <img src="img/ikony/${k}.png" alt=""><span class="sek-nr">${String(i + 1).padStart(2, '0')}</span><span class="sek-tyt">${esc(nazwa)}</span>${wsk}<span class="sek-strz">${ik('dol')}</span></button>`;
-}
-function tabKarta(t, o) {
-  if (!t.firstChild) t.innerHTML = SEK_KARTY.map(([k]) => `<section class="sek szklo ${k === 'wlasciciel' ? 'prywatna' : ''}" id="sek-${k}" data-wstaw></section>`).join('');
-  const sek = Object.fromEntries(M.SEKCJE.map((s) => [s.id, s]));
-  SEK_KARTY.forEach(([k, nazwa], i) => {
-    let h = '';
-    if (sek[k]) h = sekcjaPol(sek[k], o);
-    else if (k === 'pom') h = sekcjaPom(o);
-    else if (k === 'atuty') h = sekcjaListy(o, 'atuty', 'Tylko fakty, które da się sprawdzić: co, kiedy, ile. Bez ocen.', 'np. okna wymienione w 2019 r.');
-    else if (k === 'minusy') h = sekcjaListy(o, 'minusy', 'Uczciwe minusy, zanim ktoś je odkryje na prezentacji. To buduje zaufanie i oszczędza czas obu stronom.', 'np. brak windy, 4. piętro');
-    else if (k === 'okolica') h = sekcjaOkolicy(o);
-    else if (k === 'weryfikacja') h = sekcjaWeryfikacji(o);
-    else if (k === 'tekst') h = sekcjaTekstu(o);
-    const el = $(`#sek-${k}`, t);
-    el.classList.toggle('otwarta', S.otwarte.has(k));
-    wstaw(el, glowaSekcji(k, nazwa, i, o) + `<div class="sek-tresc">${h}</div>`);
-  });
-}
+const grupa = (nazwa, tresc) => `<section class="grupa szklo"><h2 class="grupa-tyt">${esc(nazwa)}</h2>${tresc}</section>`;
 function wartoscPola(p, o) {
   const v = o[p.k];
   if (v === undefined || v === null) return '';
@@ -322,49 +391,52 @@ function wartoscPola(p, o) {
 }
 const ZR_IK = { dok: 'dok', pom: 'linijka', ogl: 'oko', wl: 'osoba' };
 function pigulkiPasuja(p) { const w = Object.values(p.o); return w.length <= 3 && w.join('').length <= 30; }
-function poleHTML(p, o) {
+function poleHTML(p, o, calaSzerokosc = false) {
   const id = `f-${p.k}`;
   const v = wartoscPola(p, o);
+  const pol = POL.has(p.k) && !calaSzerokosc ? 'pol' : '';
   if (p.t === 'b') {
     const inf = p.info ? p.info(o) : '';
     return `<div class="pole pelna"><label class="przel"><span class="tekst">${esc(p.e)}</span><input type="checkbox" data-k="${p.k}" data-t="b" ${o[p.k] ? 'checked' : ''}><span class="suwak"></span></label>${inf ? `<div class="info-pola">${esc(inf)}</div>` : ''}</div>`;
   }
   if (p.t === 'w' && pigulkiPasuja(p)) {
-    return `<div class="pole ${Object.values(p.o).join('').length > 16 ? 'pelna' : ''}"><span class="et">${esc(p.e)}</span><div class="pigulki" role="group" aria-label="${esc(p.e)}">${Object.entries(p.o).map(([k, n]) => `<button type="button" data-a="wybor" data-k="${p.k}" data-v="${k}" class="${v === k ? 'akt' : ''}" aria-pressed="${v === k}">${esc(n)}</button>`).join('')}</div></div>`;
+    return `<div class="pole pelna"><span class="et">${esc(p.e)}</span><div class="pigulki" role="group" aria-label="${esc(p.e)}">${Object.entries(p.o).map(([k, n]) => `<button type="button" data-a="wybor" data-k="${p.k}" data-v="${k}" class="${v === k ? 'akt' : ''}" aria-pressed="${v === k}">${esc(n)}</button>`).join('')}</div></div>`;
   }
   let we;
   const jedn = p.k === 'cena' && o.transakcja === 'najem' ? p.jNajem : p.j;
   if (p.t === 'w') we = `<select id="${id}" data-k="${p.k}" data-t="w"><option value="">— wybierz —</option>${Object.entries(p.o).map(([k, n]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`;
-  else if (p.t === 'n') we = `<input id="${id}" data-k="${p.k}" data-t="n" inputmode="decimal" autocomplete="off" value="${esc(v)}">`;
+  else if (p.t === 'n') we = `<input id="${id}" data-k="${p.k}" data-t="n" inputmode="decimal" autocomplete="off" value="${esc(v)}" placeholder="${p.nieWiem && o[p.nieWiem] ? 'brak informacji' : esc(PODPOWIEDZI[p.k] || '')}">`;
   else if (p.t === 'd') we = `<input id="${id}" data-k="${p.k}" data-t="d" type="date" value="${esc(v)}">`;
   else if (p.dlugi) we = `<textarea id="${id}" data-k="${p.k}" data-t="t" rows="3">${esc(v)}</textarea>`;
   else we = `<input id="${id}" data-k="${p.k}" data-t="t" type="${p.typ || 'text'}" ${p.lista ? `list="dl-${p.lista}"` : ''} placeholder="${esc(p.pl || '')}" value="${esc(v)}" autocomplete="off">`;
   let zr = '';
-  if (p.zr) {
+  if (p.zr && !(p.nieWiem && o[p.nieWiem])) {
     const akt = o.zr?.[p.k];
-    zr = `<div class="zrodla-et">Źródło danych</div><div class="zrodla ${!akt && v !== '' ? 'brak' : ''}">${Object.entries(M.ZRODLA).map(([k, n]) => `<button type="button" data-a="zr" data-k="${p.k}" data-v="${k}" class="${akt === k ? 'akt' : ''}" aria-pressed="${akt === k}">${ik(ZR_IK[k])}<span>${n}</span>${ik('ok', 'ok')}</button>`).join('')}</div>`;
+    const brak = !akt && v !== '' && v !== 'nieznane';
+    zr = `<button type="button" class="zr-tag ${akt ? 'akt' : brak ? 'brak' : ''}" data-a="zr-menu" data-k="${p.k}" aria-label="Źródło: ${akt ? M.ZRODLA[akt] : 'nie wybrano'}">${akt ? ik(ZR_IK[akt]) : ''}<span>${akt ? M.ZRODLA[akt] : brak ? 'Źródło?' : 'Źródło'}</span>${ik('dol')}</button>`;
   }
-  return `<div class="pole ${p.dlugi || p.zr ? 'pelna' : ''}"><label class="et" for="${id}">${esc(p.e)}</label><div class="wejscie">${we}${jedn ? `<span class="jedn">${esc(jedn)}</span>` : ''}</div>${zr}</div>`;
-}
-function sekcjaPol(s, o) {
-  const pola = s.pola.filter((p) => M.poleWidoczne(p, o));
-  let opis = '';
-  if (s.id === 'lokal') opis = 'Przy polach ze źródłem zaznacz, skąd jest informacja. „Wg właściciela” pojawi się w ogłoszeniu jako dopisek.';
-  if (s.id === 'energia') opis = 'Jeśli świadectwo jest sporządzone, ustawa wymaga podania w ogłoszeniu wszystkich pięciu wskaźników.';
-  if (s.id === 'wlasciciel') opis = 'Te dane widzicie tylko Wy dwaj. Nigdy nie trafiają do ogłoszenia.';
-  const dl = pola.some((p) => p.lista === 'dzielnice') ? `<datalist id="dl-dzielnice">${M.DZIELNICE_LUBLIN.map((d) => `<option value="${d}">`).join('')}</datalist>` : '';
-  return `${opis ? `<p class="sek-opis">${opis}</p>` : ''}<div class="siatka">${pola.map((p) => poleHTML(p, o)).join('')}</div>${dl}`;
+  const nieWiem = p.nieWiem ? `<button type="button" class="nie-wiem ${o[p.nieWiem] ? 'akt' : ''}" data-a="nie-wiem" data-k="${p.k}" data-f="${p.nieWiem}">${o[p.nieWiem] ? ik('ok') : ''}Brak informacji</button>` : '';
+  const et = (pol && KROTKIE[p.k]) || p.e;
+  return `<div class="pole ${p.dlugi || p.zr ? 'pelna' : pol}"><label class="et" for="${id}" title="${esc(p.e)}">${esc(et)}</label><div class="wejscie">${we}${jedn ? `<span class="jedn">${esc(jedn)}</span>` : ''}${zr}</div>${nieWiem}</div>`;
 }
 function sekcjaPom(o) {
   const pom = o.pom || [];
   const suma = pom.reduce((s, p) => s + (Number(p.m) || 0), 0);
-  return `<p class="sek-opis">Każde pomieszczenie dostanie swoje zdjęcia. Suma: <b style="color:var(--gold-l)">${M.m2(Math.round(suma * 100) / 100)}</b>${o.pow ? ` z ${M.m2(o.pow)}` : ''}.</p>
+  const num = (v) => (puste(v) ? '' : String(v).replace('.', ','));
+  return `<p class="sek-opis">Wpisz długość i szerokość — metraż policzy się sam. Pomieszczenie nieregularne? Zostaw wymiary puste i wpisz metraż ręcznie. Suma: <b style="color:var(--gold-l)">${M.m2(Math.round(suma * 100) / 100)}</b>${o.pow ? ` z ${M.m2(o.pow)}` : ''}.</p>
     <datalist id="dl-pom">${M.TYPY_POM.map((x) => `<option value="${x}">`).join('')}</datalist>
-    <div class="wiersze">${pom.map((p, i) => `<div class="wiersz"><div class="pola pom">
-      <div class="wejscie"><input data-l="pom" data-i="${i}" data-p="nazwa" data-t="t" list="dl-pom" placeholder="Nazwa, np. Sypialnia" value="${esc(p.nazwa || '')}" aria-label="Nazwa pomieszczenia"></div>
-      <div class="wejscie"><input data-l="pom" data-i="${i}" data-p="m" data-t="n" inputmode="decimal" placeholder="metraż" value="${esc(puste(p.m) ? '' : String(p.m).replace('.', ','))}" aria-label="Metraż"><span class="jedn">m²</span></div>
-      <div class="wejscie op"><input data-l="pom" data-i="${i}" data-p="opis" data-t="t" placeholder="Krótko, faktami: okno na zachód, zabudowa 2021" value="${esc(p.opis || '')}" aria-label="Opis"></div>
-    </div><button class="usun-w" data-a="usun-wiersz" data-l="pom" data-i="${i}" aria-label="Usuń pomieszczenie">${ik('x')}</button></div>`).join('')}</div>
+    ${pom.map((p, i) => grupa(p.nazwa || `Pomieszczenie ${i + 1}`, `<div class="siatka">
+      <div class="pole pelna"><span class="et">Nazwa</span><div class="wejscie"><input data-l="pom" data-i="${i}" data-p="nazwa" data-t="t" list="dl-pom" placeholder="np. Sypialnia" value="${esc(p.nazwa || '')}" aria-label="Nazwa pomieszczenia"></div></div>
+      <div class="pole pelna"><span class="et">Wymiary i metraż</span><div class="wymiary">
+        <div class="wejscie"><input data-l="pom" data-i="${i}" data-p="a" data-t="n" inputmode="decimal" placeholder="długość" value="${esc(num(p.a))}" aria-label="Długość w metrach"><span class="jedn">m</span></div>
+        <span class="razy">×</span>
+        <div class="wejscie"><input data-l="pom" data-i="${i}" data-p="b" data-t="n" inputmode="decimal" placeholder="szerokość" value="${esc(num(p.b))}" aria-label="Szerokość w metrach"><span class="jedn">m</span></div>
+        <span class="razy">=</span>
+        <div class="wejscie ${p.a && p.b ? 'wyliczone' : ''}"><input data-l="pom" data-i="${i}" data-p="m" data-t="n" inputmode="decimal" placeholder="m²" value="${esc(num(p.m))}" aria-label="Metraż" ${p.a && p.b ? 'readonly' : ''}><span class="jedn">m²</span></div>
+      </div></div>
+      <div class="pole pelna"><span class="et">Opis</span><div class="wejscie"><input data-l="pom" data-i="${i}" data-p="opis" data-t="t" placeholder="Krótko, faktami: okno na zachód, zabudowa 2021" value="${esc(p.opis || '')}" aria-label="Opis"></div></div>
+      <div class="pole pelna"><button class="btn zly maly" data-a="usun-wiersz" data-l="pom" data-i="${i}">${ik('kosz')}Usuń pomieszczenie</button></div>
+    </div>`)).join('')}
     <button class="dodaj" data-a="dodaj-wiersz" data-l="pom">${ik('plus')}Dodaj pomieszczenie</button>`;
 }
 function sekcjaListy(o, l, opis, pl) {
@@ -379,8 +451,8 @@ function sekcjaOkolicy(o) {
   const jak = { pieszo: 'pieszo', rower: 'rowerem', auto: 'autem', mpk: 'komunikacją' };
   return `<p class="sek-opis">Czas zmierz na mapie albo przejdź sam. Podawaj tylko to, co sprawdzone.</p><div class="wiersze">${L.map((a, i) => `<div class="wiersz"><div class="pola okol">
     <div class="wejscie"><input data-l="okolica" data-i="${i}" data-p="nazwa" data-t="t" placeholder="np. przystanek MPK, szkoła nr 51" value="${esc(a.nazwa || '')}" aria-label="Miejsce"></div>
-    <div class="wejscie"><input data-l="okolica" data-i="${i}" data-p="min" data-t="n" inputmode="numeric" placeholder="czas" value="${esc(a.min ?? '')}" aria-label="Minuty"><span class="jedn">min</span></div>
-    <div class="wejscie"><select data-l="okolica" data-i="${i}" data-p="jak" data-t="w" aria-label="Jak">${Object.entries(jak).map(([k, v]) => `<option value="${k}" ${(a.jak || 'pieszo') === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+    <div class="dwa"><div class="wejscie"><input data-l="okolica" data-i="${i}" data-p="min" data-t="n" inputmode="numeric" placeholder="czas" value="${esc(a.min ?? '')}" aria-label="Minuty"><span class="jedn">min</span></div>
+    <div class="wejscie"><select data-l="okolica" data-i="${i}" data-p="jak" data-t="w" aria-label="Jak">${Object.entries(jak).map(([k, v]) => `<option value="${k}" ${(a.jak || 'pieszo') === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div></div>
     </div><button class="usun-w" data-a="usun-wiersz" data-l="okolica" data-i="${i}" aria-label="Usuń">${ik('x')}</button></div>`).join('')}</div>
     <button class="dodaj" data-a="dodaj-wiersz" data-l="okolica">${ik('plus')}Dodaj miejsce</button>`;
 }
@@ -388,15 +460,14 @@ function sekcjaWeryfikacji(o) {
   const w = o.weryf || {};
   const lista = M.WERYFIKACJA.filter((x) => !x.dla || x.dla === o.transakcja);
   return `<p class="sek-opis">Zaznaczone punkty trafią do ogłoszenia jako „Sprawdziliśmy” z datą. Tak „Sprawdzone do końca” staje się konkretem.</p>
-    <div class="weryf">${lista.map((x) => `<div class="w"><label><span class="ptaszek"><input type="checkbox" data-w="${x.k}" data-p="ok" ${w[x.k]?.ok ? 'checked' : ''}><i></i></span><span>${esc(x.t)}</span></label>
-    <input type="date" data-w="${x.k}" data-p="d" value="${esc(w[x.k]?.d || '')}" aria-label="Data: ${esc(x.t)}"></div>`).join('')}</div>`;
+    <div class="weryf">${lista.map((x) => `<div class="w ${w[x.k]?.ok ? 'zazn' : ''}"><label><span class="ptaszek"><input type="checkbox" data-w="${x.k}" data-p="ok" ${w[x.k]?.ok ? 'checked' : ''}><i></i></span><span>${esc(x.t)}</span></label>
+    ${w[x.k]?.ok ? `<input type="date" data-w="${x.k}" data-p="d" value="${esc(w[x.k]?.d || '')}" aria-label="Data: ${esc(x.t)}">` : ''}</div>`).join('')}</div>`;
 }
-function sekcjaTekstu(o) {
-  return `<p class="sek-opis">Puste pola = tytuł i wstęp złożą się same z faktów. Wstęp to 1–2 zdania od Was, bez ocen.</p>
-    <div class="siatka">
+function htmlTekstOgloszenia(o) {
+  return grupa('Własny tytuł i wstęp', `<p class="sek-opis">Opcjonalnie. Puste = tytuł i wstęp złożą się same z faktów. Wstęp to 1–2 zdania od Was, bez ocen.</p><div class="siatka">
       <div class="pole pelna"><label class="et" for="f-tytul">Własny tytuł</label><div class="wejscie"><input id="f-tytul" data-k="tytul" data-t="t" placeholder="${esc(M.tytul({ ...o, tytul: '' }))}" value="${esc(o.tytul || '')}"></div></div>
       <div class="pole pelna"><label class="et" for="f-lead">Wstęp</label><div class="wejscie"><textarea id="f-lead" data-k="lead" data-t="t" rows="3" placeholder="np. Mieszkanie po jednym właścicielu, regularnie remontowane.">${esc(o.lead || '')}</textarea></div></div>
-    </div>`;
+    </div>`);
 }
 
 // ----- zdjęcia -----
@@ -473,12 +544,12 @@ function liniaHTML(l, tyt) {
   }
   return l.trim() ? `<p>${esc(l)}</p>` : '';
 }
-function htmlOgloszenie(o) {
+function htmlOgloszenie(o, zGora = true) {
   const uw = M.kontrolaSlow(o);
   const tyt = M.tytul(o), op = M.opis(o, { agent: agent() }), kr = M.krotki(o, { agent: agent() });
   const pola = M.polaPortalu(o);
   const bloki = blokiOpisu(op);
-  const gora = telefon.matches && S.ekran === 'oferta' && S.tab === 'ogloszenie' ? '' : `<div class="rzad" style="margin:0 0 12px"><span class="znaki">Opis: ${op.length} znaków</span><span class="rozp"></span><button class="btn kontur maly" data-a="kopiuj" data-co="opis">${ik('kopiuj')}Kopiuj całość</button></div>`;
+  const gora = !zGora ? '' : `<div class="rzad" style="margin:0 0 12px"><span class="znaki">Opis: ${op.length} znaków</span><span class="rozp"></span><button class="btn kontur maly" data-a="kopiuj" data-co="opis">${ik('kopiuj')}Kopiuj całość</button></div>`;
   return `${uw.length ? `<div class="uwagi szklo"><h3>${ik('uwaga')}Do poprawy (${uw.length})</h3><ul>${uw.map((u) => `<li><b>${esc(u.gdzie)}:</b> „${esc(u.fraza)}” — ${esc(u.porada)}</li>`).join('')}</ul></div>` : ''}
     ${gora}
     <div class="karta-og szklo">${bloki.map((b, i) => `<div class="blok-og ${b.tyt === 'SPRAWDZILIŚMY' ? 'spr' : ''}">
@@ -556,6 +627,7 @@ function zapisz(el) {
     if (!arr[i]) return;
     const v = wartosc(el);
     if (v === null) delete arr[i][p]; else arr[i][p] = v;
+    if (l === 'pom' && (p === 'a' || p === 'b')) { const m = M.metrazZWymiarow(arr[i].a, arr[i].b); if (m !== null) arr[i].m = m; }
     D.zmien(S.id, { [l]: arr });
   } else if (el.dataset.w) {
     const w = { ...(o.weryf || {}) };
@@ -740,8 +812,7 @@ document.addEventListener('click', async (e) => {
       e.preventDefault();
       const id = M.noweId(10);
       await D.zmien(id, M.nowaOferta(id, D.stan.konto?.nazwa));
-      S.otwarte = new Set(['podstawy']);
-      idzDo(`#/o/${id}/karta`);
+      idzDo(`#/o/${id}/s/podstawy`);
       break;
     }
     case 'filtr': S.filtr = b.dataset.v; odswiezListe(); break;
@@ -751,11 +822,19 @@ document.addEventListener('click', async (e) => {
     case 'otworz': $$('.okno-tlo').forEach((x) => x.remove()); idzDo(`#/o/${b.dataset.oid}/karta`); break;
     case 'podglad': e.preventDefault(); S.podglad = b.dataset.v; odswiez(); break;
     case 'ulub': { const x = D.oferta(b.dataset.oid); if (x) D.zmien(x.id, { ulubiona: x.ulubiona ? null : true }); break; }
-    case 'sekcja': {
-      const k = b.dataset.v;
-      if (S.otwarte.has(k)) S.otwarte.delete(k); else S.otwarte.add(k);
-      const el = $(`#sek-${k}`); el?.classList.toggle('otwarta', S.otwarte.has(k)); b.setAttribute('aria-expanded', S.otwarte.has(k));
-      if (S.otwarte.has(k)) setTimeout(() => el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 30);
+    case 'zr-menu': {
+      const k = b.dataset.k, akt = o.zr?.[k];
+      const w = okno(`Źródło: ${POLE[k]?.e || ''}`, `<p class="sek-opis" style="margin-top:0">Skąd wiemy, że to prawda?</p><div class="menu-lista">${Object.entries(M.ZRODLA).map(([z, n]) => `<button data-zr="${z}" class="${akt === z ? 'akt' : ''}">${ik(ZR_IK[z])}${n}${akt === z ? ik('ok', 'ok') : ''}</button>`).join('')}${akt ? `<button data-zr="">${ik('x')}Usuń źródło</button>` : ''}</div>`);
+      w.addEventListener('click', (ev) => {
+        const z = ev.target.closest('[data-zr]'); if (!z) return;
+        const zr = { ...(D.oferta(o.id).zr || {}) }; zr[k] = z.dataset.zr || undefined;
+        D.zmien(o.id, { zr: JSON.parse(JSON.stringify(zr)) }); w.remove();
+      });
+      break;
+    }
+    case 'nie-wiem': {
+      const f = b.dataset.f, k = b.dataset.k;
+      D.zmien(o.id, o[f] ? { [f]: null } : { [f]: true, [k]: null });
       break;
     }
     case 'wybor': D.zmien(o.id, { [b.dataset.k]: o[b.dataset.k] === b.dataset.v && b.dataset.k !== 'transakcja' ? null : b.dataset.v }); break;
@@ -768,7 +847,7 @@ document.addEventListener('click', async (e) => {
     case 'dodaj-wiersz': {
       const l = b.dataset.l;
       D.zmien(o.id, { [l]: [...(o[l] || []), { id: M.noweId(6) }] });
-      setTimeout(() => { const w = $$(`#sek-${l} .wiersz`); w[w.length - 1]?.querySelector('input')?.focus(); }, 60);
+      setTimeout(() => { const w = $$(`#sek-${l} input[data-l="${l}"][data-p="${l === 'pom' ? 'nazwa' : l === 'okolica' ? 'nazwa' : 't'}"]`); w[w.length - 1]?.focus(); }, 80);
       break;
     }
     case 'usun-wiersz': {
@@ -838,12 +917,8 @@ document.addEventListener('click', async (e) => {
       const id = b.dataset.id, zak = b.dataset.zak;
       const sekc = SEK_DLA[id];
       if (zak === 'zdjecia') idzDo(`#/o/${o.id}/zdjecia`);
-      else if (zak === 'ogloszenie') { if (szeroki.matches) { S.podglad = 'ogloszenie'; odswiez(); } else idzDo(`#/o/${o.id}/ogloszenie`); }
-      else {
-        if (sekc) S.otwarte.add(sekc);
-        idzDo(`#/o/${o.id}/karta`);
-        if (sekc) setTimeout(() => { const s = $(`#sek-${sekc}`); s?.classList.add('otwarta'); s?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80);
-      }
+      else if (zak === 'ogloszenie') idzDo(`#/o/${o.id}/ogloszenie`);
+      else idzDo(sekc ? `#/o/${o.id}/s/${sekc}` : `#/o/${o.id}`);
       break;
     }
     case 'push-on': try { await D.wlaczPush(); toast('Powiadomienia włączone'); } catch (er) { toast(er.message, 4500); } break;

@@ -56,12 +56,12 @@ export const SEKCJE = [
     { k: 'pietro', e: 'Piętro (0 = parter)', t: 'n', dla: ['mieszkanie', 'lokal', 'pokoj'] },
     { k: 'pieter', e: 'Liczba pięter w budynku', t: 'n', dla: ['mieszkanie', 'lokal', 'pokoj', 'dom'] },
     { k: 'winda', e: 'Winda', t: 'w', o: { tak: 'Jest', nie: 'Brak' }, dla: ['mieszkanie', 'lokal', 'pokoj'] },
-    { k: 'rok', e: 'Rok budowy', t: 'n', zr: true, dla: ['mieszkanie', 'dom', 'lokal', 'pokoj', 'garaz'] },
-    { k: 'material', e: 'Budynek', t: 'w', o: { blok: 'Blok', kamienica: 'Kamienica', apartamentowiec: 'Apartamentowiec', szeregowiec: 'Szeregowiec', blizniak: 'Bliźniak', wolnostojacy: 'Wolnostojący', biurowiec: 'Budynek usługowy / biurowy' }, dla: BUD },
-    { k: 'technologia', e: 'Technologia', t: 'w', o: { cegla: 'Cegła', wielka_plyta: 'Wielka płyta', zelbet: 'Żelbet / monolit', pustak: 'Pustak / bloczek', drewno: 'Drewno', inna: 'Inna' }, dla: BUD },
+    { k: 'rok', e: 'Rok budowy', t: 'n', zr: true, nieWiem: 'rokNieznany', dla: ['mieszkanie', 'dom', 'lokal', 'pokoj', 'garaz'] },
+    { k: 'material', e: 'Budynek', t: 'w', o: { blok: 'Blok', kamienica: 'Kamienica', apartamentowiec: 'Apartamentowiec', szeregowiec: 'Szeregowiec', blizniak: 'Bliźniak', wolnostojacy: 'Wolnostojący', biurowiec: 'Budynek usługowy / biurowy', nieznane: 'Brak informacji' }, dla: BUD },
+    { k: 'technologia', e: 'Technologia', t: 'w', o: { cegla: 'Cegła', wielka_plyta: 'Wielka płyta', zelbet: 'Żelbet / monolit', pustak: 'Pustak / bloczek', drewno: 'Drewno', inna: 'Inna', nieznane: 'Brak informacji' }, dla: BUD },
     { k: 'stan', e: 'Stan', t: 'w', o: { gotowy: 'Do zamieszkania', odswiezenie: 'Do odświeżenia', remont: 'Do remontu', wykonczenie: 'Do wykończenia (stan deweloperski)' }, dla: BUD },
-    { k: 'ogrzewanie', e: 'Ogrzewanie', t: 'w', o: { miejskie: 'Miejskie', gazowe: 'Gazowe', elektryczne: 'Elektryczne', pompa: 'Pompa ciepła', kominek: 'Kominek', piec: 'Piec / kocioł', inne: 'Inne' }, dla: BUD, zr: true },
-    { k: 'okna', e: 'Okna', t: 'w', o: { plastikowe: 'Plastikowe', drewniane: 'Drewniane', aluminiowe: 'Aluminiowe' }, dla: BUD },
+    { k: 'ogrzewanie', e: 'Ogrzewanie', t: 'w', o: { miejskie: 'Miejskie', gazowe: 'Gazowe', elektryczne: 'Elektryczne', pompa: 'Pompa ciepła', kominek: 'Kominek', piec: 'Piec / kocioł', inne: 'Inne', nieznane: 'Brak informacji' }, dla: BUD, zr: true },
+    { k: 'okna', e: 'Okna', t: 'w', o: { plastikowe: 'Plastikowe', drewniane: 'Drewniane', aluminiowe: 'Aluminiowe', nieznane: 'Brak informacji' }, dla: BUD },
     { k: 'ekspozycja', e: 'Strony świata okien', t: 't', pl: 'np. wschód, zachód', dla: BUD },
     { k: 'balkon', e: 'Balkon / taras / ogródek', t: 'w', o: { brak: 'Brak', balkon: 'Balkon', loggia: 'Loggia', taras: 'Taras', ogrodek: 'Ogródek' }, dla: BUD },
     { k: 'balkonPow', e: 'Powierzchnia balkonu / tarasu / ogródka', t: 'n', j: 'm²', gdy: (o) => o.balkon && o.balkon !== 'brak', dla: BUD },
@@ -152,7 +152,9 @@ export function prowizjaKlienta(o) {
   return String(o.prowizjaKlTekst || '').trim();
 }
 const wg = (o, k) => (o.zr && o.zr[k] === 'wl' ? ' (wg właściciela)' : '');
-const wybor = (k, v) => { for (const s of SEKCJE) for (const p of s.pola) if (p.k === k && p.o) return p.o[v] || ''; return ''; };
+// „Brak informacji” nigdy nie trafia do ogłoszenia
+const wybor = (k, v) => { if (v === 'nieznane') return ''; for (const s of SEKCJE) for (const p of s.pola) if (p.k === k && p.o) return p.o[v] || ''; return ''; };
+export const znane = (v) => v !== undefined && v !== null && v !== '' && v !== 'nieznane';
 const zdanie = (s) => { s = String(s || '').trim(); if (!s) return ''; s = s[0].toUpperCase() + s.slice(1); return /[.!?…]$/.test(s) ? s : `${s}.`; };
 const punkt = (s) => { s = String(s || '').trim().replace(/[.;]+$/, ''); return s ? s[0].toUpperCase() + s.slice(1) : ''; };
 
@@ -206,7 +208,7 @@ export function opis(o, ctx = {}) {
   const pt = pietroTekst(o);
   if (pt) l2.push(pt + (o.winda === 'tak' ? ', winda' : o.winda === 'nie' ? ', bez windy' : ''));
   if (o.rok) l2.push(`budynek z${nbsp}${o.rok}${nbsp}r.${wg(o, 'rok')}`);
-  if (o.stan) l2.push(wybor('stan', o.stan).toLowerCase());
+  if (znane(o.stan)) l2.push(wybor('stan', o.stan).toLowerCase());
   A.push([l1, l2.length ? zdanie(l2.join(', ')) : ''].filter(Boolean).join(' '));
   if (o.lead && o.lead.trim()) A.push(zdanie(o.lead));
 
@@ -219,8 +221,8 @@ export function opis(o, ctx = {}) {
   const bud = [wybor('material', o.material), wybor('technologia', o.technologia)].filter(Boolean).join(', ').toLowerCase();
   if (o.rok || bud) s.push(`Budynek: ${[bud, o.rok ? `rok budowy ${o.rok}${wg(o, 'rok')}` : ''].filter(Boolean).join(', ')}`);
   if (o.stan) s.push(`Stan: ${wybor('stan', o.stan).toLowerCase()}`);
-  if (o.ogrzewanie) s.push(`Ogrzewanie: ${wybor('ogrzewanie', o.ogrzewanie).toLowerCase()}${wg(o, 'ogrzewanie')}`);
-  if (o.okna) s.push(`Okna: ${wybor('okna', o.okna).toLowerCase()}${o.ekspozycja ? `, strony: ${o.ekspozycja}` : ''}`);
+  if (znane(o.ogrzewanie)) s.push(`Ogrzewanie: ${wybor('ogrzewanie', o.ogrzewanie).toLowerCase()}${wg(o, 'ogrzewanie')}`);
+  if (znane(o.okna)) s.push(`Okna: ${wybor('okna', o.okna).toLowerCase()}${o.ekspozycja ? `, strony: ${o.ekspozycja}` : ''}`);
   else if (o.ekspozycja) s.push(`Okna na: ${o.ekspozycja}`);
   if (o.balkon && o.balkon !== 'brak') s.push(`${wybor('balkon', o.balkon)}${o.balkonPow ? ` ${m2(o.balkonPow)}` : ''}`);
   if (o.piwnica && o.piwnica !== 'brak') s.push(wybor('piwnica', o.piwnica));
@@ -240,7 +242,7 @@ export function opis(o, ctx = {}) {
   // pomieszczenia
   const pom = (o.pom || []).filter((p) => p.nazwa || p.typ);
   if (pom.length) {
-    A.push(`POMIESZCZENIA\n${pom.map((p) => `– ${p.nazwa || p.typ}${p.m ? `: ${m2(p.m)}` : ''}${p.opis ? ` — ${punkt(p.opis).replace(/^./, (c) => c.toLowerCase())}` : ''}`).join('\n')}`);
+    A.push(`POMIESZCZENIA\n${pom.map((p) => `– ${p.nazwa || p.typ}${p.m ? `: ${m2(p.m)}` : ''}${p.a && p.b ? ` (${liczba(p.a)} × ${liczba(p.b)} m)` : ''}${p.opis ? ` — ${punkt(p.opis).replace(/^./, (c) => c.toLowerCase())}` : ''}`).join('\n')}`);
   }
 
   // atuty
@@ -410,6 +412,8 @@ export function kontrolaSlow(o) {
 
 // ---------- checklista ----------
 const puste = (v) => v === undefined || v === null || v === '';
+// metraż pomieszczenia z dwóch wymiarów (m), zaokrąglony do 0,01 m²
+export function metrazZWymiarow(a, b) { const x = Number(a), y = Number(b); return x > 0 && y > 0 ? Math.round(x * y * 100) / 100 : null; }
 export function minZdjec(o) { return ['mieszkanie', 'dom', 'lokal'].includes(o.rodzaj) ? 10 : o.rodzaj === 'pokoj' ? 5 : 3; }
 export function checklista(o) {
   const L = [];
@@ -449,7 +453,7 @@ export function checklista(o) {
   const slowa = kontrolaSlow(o);
   add('slowa', 'Bez pustych słów, wykrzykników i presji', slowa.length === 0, true, 'ogloszenie', slowa.length ? `Do poprawy: ${slowa.length}` : '');
   // zalecane
-  if (BUD.includes(r) && r !== 'pokoj') add('rok', 'Rok budowy podany', !puste(o.rok), false, 'karta');
+  if (BUD.includes(r) && r !== 'pokoj') add('rok', 'Rok budowy podany (albo zaznaczone „nie wiem”)', !puste(o.rok) || !!o.rokNieznany, false, 'karta');
   if (BUD.includes(r)) add('ogrzewanie', 'Ogrzewanie podane', !!o.ogrzewanie, false, 'karta');
   add('minusy', '„Co warto wiedzieć” — co najmniej jedna uczciwa uwaga', (o.minusy || []).some((m) => m.t), false, 'karta');
   add('okolica', 'Okolica — co najmniej 3 punkty z czasem dojścia', (o.okolica || []).filter((x) => x.nazwa && x.min).length >= 3, false, 'karta');
