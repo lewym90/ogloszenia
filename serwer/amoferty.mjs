@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
-export const WERSJA = '1.2.0';
+export const WERSJA = '1.3.0';
 const PORT = Number(process.env.PORT || 18930);
 const DANE = process.env.AM_DANE || './dane';
 const ORIGINS = (process.env.AM_ORIGINS || 'https://lewym90.github.io,http://localhost:8766,http://127.0.0.1:8766').split(',');
@@ -22,7 +22,9 @@ const MAX_JSON = 4 * MB;
 const P_ZDJ = path.join(DANE, 'zdjecia');
 const P_KOPIE = path.join(DANE, 'kopie');
 const P_PLIKI = path.join(DANE, 'pliki');
-for (const d of [DANE, P_ZDJ, P_KOPIE, P_PLIKI]) fs.mkdirSync(d, { recursive: true });
+const P_KOSZ = path.join(DANE, 'kosz');
+const KOSZ_DNI = 30;
+for (const d of [DANE, P_ZDJ, P_KOPIE, P_PLIKI, P_KOSZ]) fs.mkdirSync(d, { recursive: true });
 
 export const db = new DatabaseSync(path.join(DANE, 'amoferty.db'));
 db.exec(`
@@ -184,7 +186,7 @@ function wolneNaDysku() { try { const s = fs.statfsSync(DANE); return s.bavail *
 function cors(req) {
   const o = req.headers.origin;
   const h = { 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Max-Age': '86400', Vary: 'Origin' };
+    'Access-Control-Max-Age': '86400', 'Access-Control-Expose-Headers': 'X-Nazwa', Vary: 'Origin' };
   if (o && ORIGINS.includes(o)) h['Access-Control-Allow-Origin'] = o;
   return h;
 }
@@ -281,6 +283,40 @@ export function zmianyOd(od) {
   return { seq: Number(ust('seq') || 0), oferty: rows.map((r) => ({ id: r.id, dane: r.usunieta ? null : JSON.parse(r.dane), seq: r.seq, utworzona: r.utworzona, zmieniona: r.zmieniona, kto: r.kto, usunieta: !!r.usunieta })) };
 }
 
+// ---------- kosz: usunięte zdjęcia i dokumenty czekają 30 dni ----------
+function doKosza(plik, rodzaj) {
+  if (!fs.existsSync(plik)) return;
+  const cel = path.join(P_KOSZ, `${rodzaj}--${path.basename(plik)}`);
+  fs.renameSync(plik, cel);
+  const t = new Date(); fs.utimesSync(cel, t, t); // data wrzucenia do kosza
+}
+function oproznijKosz() {
+  for (const f of fs.readdirSync(P_KOSZ)) {
+    const p = path.join(P_KOSZ, f);
+    try { if (teraz() - fs.statSync(p).mtimeMs > KOSZ_DNI * 86400e3) fs.rmSync(p, { force: true }); } catch { /* */ }
+  }
+}
+// przywrócenie z kosza ręcznie: mv kosz/zdjecia--<plik> zdjecia/<plik> (patrz KONTYNUACJA.md)
+
+// ---------- kopia na komputer wspólnika (aplikacja na laptopie ściąga brakujące pliki) ----------
+const RE_PLIK_KOPII = /^(zdjecia|pliki)\/[A-Za-z0-9_-]{6,40}(\.(mini|sr))?\.(jpg|pdf|png)$/;
+export function spisKopii() {
+  const pliki = [];
+  for (const [kat, P] of [['zdjecia', P_ZDJ], ['pliki', P_PLIKI]]) {
+    for (const f of fs.readdirSync(P)) {
+      const s = `${kat}/${f}`;
+      if (!RE_PLIK_KOPII.test(s)) continue;
+      try { pliki.push({ s, r: fs.statSync(path.join(P, f)).size }); } catch { /* */ }
+    }
+  }
+  return pliki;
+}
+function najnowszaKopiaBazy() {
+  kopia();
+  const f = fs.readdirSync(P_KOPIE).filter((x) => /^amoferty-\d{10}\.db$/.test(x)).sort().pop();
+  return f ? path.join(P_KOPIE, f) : null;
+}
+
 // ---------- kopie bazy ----------
 export function kopia() {
   const d = new Date();
@@ -298,6 +334,7 @@ export function kopia() {
     fs.rmSync(path.join(P_KOPIE, f), { force: true });
   });
   db.prepare('DELETE FROM przyjete WHERE kiedy < ?').run(teraz() - 30 * 86400e3);
+  oproznijKosz();
 }
 
 function wyslijPlik(res, nag, id) {
@@ -350,7 +387,8 @@ export function utworzSerwer() {
 
       if (p === '/ja' && req.method === 'GET') {
         const konta = db.prepare('SELECT id, login, nazwa, telefon FROM konta ORDER BY id').all();
-        return json(res, nag, 200, { konto: konta.find((k) => k.id === dev.konto), konta, urzadzenie: dev.nazwa, push: !!dev.push, vapid: VAPID_PUB });
+        let kopiaKomp = null; try { kopiaKomp = JSON.parse(ust('kopia_komputer') || 'null'); } catch { /* */ }
+        return json(res, nag, 200, { konto: konta.find((k) => k.id === dev.konto), konta, urzadzenie: dev.nazwa, push: !!dev.push, vapid: VAPID_PUB, kopia: kopiaKomp });
       }
       if (p === '/ja' && req.method === 'POST') {
         const b = await cialoJson(req);
@@ -427,10 +465,34 @@ export function utworzSerwer() {
           return fs.createReadStream(plik).pipe(res);
         }
         if (req.method === 'DELETE') {
-          for (const f of [`${id}.jpg`, `${id}.sr.jpg`, `${id}.mini.jpg`]) fs.rmSync(path.join(P_ZDJ, f), { force: true });
+          for (const f of [`${id}.jpg`, `${id}.sr.jpg`, `${id}.mini.jpg`]) doKosza(path.join(P_ZDJ, f), 'zdjecia');
           db.prepare('DELETE FROM zdjecia WHERE id = ?').run(id);
           return json(res, nag, 200, { ok: true });
         }
+      }
+      if (p === '/kopia/spis' && req.method === 'GET') {
+        const b = najnowszaKopiaBazy();
+        return json(res, nag, 200, { pliki: spisKopii(), baza: b ? { nazwa: path.basename(b), r: fs.statSync(b).size } : null });
+      }
+      if (p === '/kopia/plik' && req.method === 'GET') {
+        const sc = String(u.searchParams.get('s') || '');
+        if (!RE_PLIK_KOPII.test(sc)) return json(res, nag, 400, { blad: 'Zła ścieżka.' });
+        const plik = path.join(DANE, sc);
+        if (!fs.existsSync(plik)) return json(res, nag, 404, { blad: 'Brak pliku.' });
+        res.writeHead(200, { ...nag, 'Content-Type': 'application/octet-stream', 'Content-Length': fs.statSync(plik).size, 'Cache-Control': 'no-store' });
+        return fs.createReadStream(plik).pipe(res);
+      }
+      if (p === '/kopia/baza' && req.method === 'GET') {
+        const b = najnowszaKopiaBazy();
+        if (!b) return json(res, nag, 404, { blad: 'Brak kopii bazy.' });
+        res.writeHead(200, { ...nag, 'Content-Type': 'application/octet-stream', 'Content-Length': fs.statSync(b).size, 'Cache-Control': 'no-store', 'X-Nazwa': path.basename(b) });
+        return fs.createReadStream(b).pipe(res);
+      }
+      if (p === '/kopia/zrobiona' && req.method === 'POST') {
+        const b = await cialoJson(req);
+        const zapis = { kiedy: teraz(), kto: dev.konto_nazwa, urzadzenie: dev.nazwa, pliki: Number(b.pliki) || 0, bajty: Number(b.bajty) || 0, nowe: Number(b.nowe) || 0 };
+        ustaw('kopia_komputer', JSON.stringify(zapis));
+        return json(res, nag, 200, { ok: true, kopia: zapis });
       }
       if (p === '/klucz-plikow' && req.method === 'GET') return json(res, nag, 200, kluczPlikow(dev.id));
       // dokumenty: /plik/<id>?oferta=<oid>&nazwa=<nazwa> — PDF, JPG lub PNG
@@ -454,7 +516,7 @@ export function utworzSerwer() {
         if (req.method === 'GET') return wyslijPlik(res, nag, id);
         if (req.method === 'DELETE') {
           const r = db.prepare('SELECT typ FROM pliki WHERE id = ?').get(id);
-          if (r) fs.rmSync(path.join(P_PLIKI, `${id}.${r.typ}`), { force: true });
+          if (r) doKosza(path.join(P_PLIKI, `${id}.${r.typ}`), 'pliki');
           db.prepare('DELETE FROM pliki WHERE id = ?').run(id);
           return json(res, nag, 200, { ok: true });
         }

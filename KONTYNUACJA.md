@@ -1,7 +1,7 @@
 # AM Oferty — notatki do kontynuacji
 
 Repo: lewym90/ogloszenia (aplikacja: https://lewym90.github.io/ogloszenia/).
-Stan: wersja 1.3.1 (pola dat nie wychodzą poza ekran, tytuł i wstęp z ołówkiem; wcześniej 1.3.0: Wyposażenie, Klienci, Wizyty, Dokumenty) (18.11.2026). Firma rusza ok. luty/marzec 2027 — do tego czasu aplikacja testowa.
+Stan: wersja 1.4.0 (kopia zapasowa na komputerze, kosz 30 dni, ikony z arkusza właściciela) (18.11.2026). Serwer 1.3.0. Firma rusza ok. luty/marzec 2027 — do tego czasu aplikacja testowa.
 
 ## Zasady (od właściciela)
 - Zero ściemy: ogłoszenie tylko z faktów, wizualizacje oznaczone + oryginał, bez pustych słów i presji.
@@ -17,6 +17,12 @@ Stan: wersja 1.3.1 (pola dat nie wychodzą poza ekran, tytuł i wstęp z ołówk
 - Zdjęcia: `PUT /zdjecie/<id>?oferta=&rodzaj=mini|pelne` (tylko JPG), `GET`, `DELETE`. Kopie bazy co godzinę (48 ostatnich + 1 dziennie przez 60 dni). Zdjęcia nie są w kopii bazy.
 - Push: powiadamia tylko konta wspólnika (nie autora): nowa oferta, zmiana statusu, nowa prezentacja (otwiera ekran Wizyty).
 - Dokumenty (serwer 1.2.0): `PUT /plik/<id>?oferta=&nazwa=` (PDF/JPG/PNG po sygnaturze, maks. 30 MB), `GET` (Bearer albo `?k=`), `DELETE`, `GET /klucz-plikow`. Klucz `k` = id urządzenia + ważność 24 h + HMAC (sekret `sekret_plikow` w ustawieniach), wylogowanie urządzenia go unieważnia. Potrzebny, bo PDF otwiera się w przeglądarce telefonu (iPhone: okno z „Gotowe”) bez nagłówka Authorization. Pliki nie są w kopii bazy (jak zdjęcia).
+
+## Kopia zapasowa (od 1.4.0, serwer 1.3.0)
+- Serwer: baza co godzinę (`kopie/`), usunięte zdjęcia i dokumenty idą do `kosz/` (nazwa `zdjecia--<plik>` / `pliki--<plik>`) i znikają po 30 dniach (`oproznijKosz` w `kopia()`). Przywrócenie z kosza ręcznie: `sudo mv /var/lib/amoferty/kosz/zdjecia--X.jpg /var/lib/amoferty/zdjecia/X.jpg`.
+- Kopia na komputer (`js/kopia.js`): aplikacja w Chrome/Edge na laptopie, folder wybrany raz (uchwyt w IndexedDB `meta.kopiaFolder`), przy starcie (+8 s) i co 6 h ściąga brakujące pliki (`GET /kopia/spis`, `/kopia/plik?s=`, `/kopia/baza`), trzyma 14 baz, pisze `CZYTAJ-MNIE.txt` z instrukcją odtworzenia serwera. Pliki usunięte w aplikacji zostają w kopii. Stan kopii na serwerze (`POST /kopia/zrobiona`, `/ja` → `kopia`) — przypomnienie na liście po 7 dniach bez kopii, na każdym urządzeniu.
+- Gdy przeglądarka cofnie zgodę na folder (Chrome po restarcie), kopia czeka na kliknięcie „Zrób kopię teraz” w Ustawieniach.
+- Odtworzenie przetestowane: folder kopii → nowy katalog danych → serwer → 32/32 oferty identyczne, zdjęcia i dokumenty bajt w bajt. Klient po odtworzeniu (niższy `seq` na serwerze) pobiera wszystko od nowa.
 
 ## Interfejs — ważne
 - `wstaw(el, html)` nie podmienia fragmentu, w którym ktoś pisze; po wyjściu z pola odświeża. Od 1.3.0 zapamiętuje i przywraca przewinięcie kolumny — Safari (iPhone) zeruje je przy podmianie treści, przez co każde stuknięcie (źródło, pigułka) wyrzucało na górę ekranu. Chrome tego nie robi, więc testować w WebKit (`test/ui_safari_test.py`).
@@ -57,7 +63,7 @@ Stan: wersja 1.3.1 (pola dat nie wychodzą poza ekran, tytuł i wstęp z ołówk
 - Dokumenty: lista zależna od transakcji/rodzaju/formy własności/rodzaju umowy najmu (`dokumentyWymagane`) + własne. Status w arkuszu (Brak/Zamówiony/Jest/Nie dotyczy), pliki PDF lub zdjęcia (zdjęcie skalowane do 2400 px). Dodanie pliku ustawia „Jest”. Zdjęcie dokumentu otwiera się w aplikacji, PDF w przeglądarce telefonu.
 
 ## Testy (wszystkie przechodzą 18.11.2026, wersja 1.3.0)
-- model 13, serwer 15 (`node --experimental-sqlite` na Node 22), przeglądarka `test/ui_test.py`: pełny scenariusz telefon → laptop wspólnika (zmiana na żywo < 1 s), offline → online, ZIP 12 zdjęć, zero błędów konsoli.
+- model 13, serwer 16 (`node --experimental-sqlite` na Node 22), przeglądarka `test/ui_test.py`: pełny scenariusz telefon → laptop wspólnika (zmiana na żywo < 1 s), offline → online, ZIP 12 zdjęć, zero błędów konsoli.
 - `test/ui_safari_test.py webkit`: silnik iPhone'a — spis na szerokość, przewinięcie po zmianie, wyposażenie, klient → prezentacja, dokumenty (PDF + zdjęcie). WebKit w trybie prywatnym nie zapisuje Blobów w IndexedDB, dlatego test używa profilu trwałego.
 
 ## Plan dalszej pracy (uzgodniony 18.11.2026, kolejność proponowana — każdy punkt wymaga zgody właściciela przed budową)
@@ -66,7 +72,7 @@ Ocena repozytoriów z GitHuba: claude/nieruchomosci-ogloszenia-plan.md → „Oc
 Po stronie właściciela: zaktualizować serwer (install.sh) do 1.2.0, sprawdzić pola dat na iPhonie, opcjonalnie wygenerować złote ikony dla Wyposażenia/Klientów/Wizyt/Dokumentów.
 
 A. Przed startem firmy
-1. Kopie zdjęć i dokumentów (dziś kopia obejmuje tylko bazę) — codzienna kopia katalogów zdjecia/ i pliki/ (np. rsync na laptop/dysk) + sprawdzenie odtworzenia.
+1. ZROBIONE (1.4.0): kopia na komputer + kosz 30 dni.
 2. Rzut: własna kopia openPlan3D na serwerze (bez Firebase i analityki), przycisk „Narysuj rzut” w Zdjęciach, eksport PNG/PDF → zdjęcie „Rzut”; potem import JSON skanu (iPhone LiDAR) → Pomieszczenia z metrażami (źródło „Pomiar”).
 3. Raport dla właściciela: strona na link / PDF — wizyty, wrażenia klientów, kontakty, zmiany ceny (obiecany na stronie amnieruchomosci).
 4. Uczciwa korekta zdjęć (sharp na serwerze): kadr pod portale, piony, jasność, balans bieli; zamknięta lista operacji, bez retuszu.

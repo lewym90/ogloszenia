@@ -2,8 +2,9 @@
 import * as M from './model.js';
 import * as D from './dane.js';
 import { zrobZip } from './zip.js';
+import * as K from './kopia.js';
 
-export const WERSJA = '1.3.2';
+export const WERSJA = '1.4.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -149,6 +150,7 @@ function szkielet() {
       <div class="lista-gora">
         <label class="szukaj szklo">${ik('szukaj')}<input id="szukaj" type="search" placeholder="Szukaj oferty, adresu, dzielnicy…" aria-label="Szukaj" autocomplete="off"><button type="button" data-a="wiecej" aria-label="Więcej filtrów">${ik('suwaki')}</button></label>
         <div class="chipy" id="filtry" data-wstaw></div>
+        <div id="przyp" data-wstaw></div>
       </div>
       <div class="karty" id="karty" data-wstaw></div>
     </aside>
@@ -225,6 +227,9 @@ function odswiezListe() {
     }).join('');
   }
   wstaw($('#karty'), html);
+  // przypomnienie o kopii zapasowej (po 7 dniach bez kopii na komputerze)
+  const dni = K.dniOdKopii();
+  wstaw($('#przyp'), D.stan.konto && K.przeterminowana() && D.oferty().length ? `<a class="przypomnienie szklo" href="#/ustawienia">${ik('uwaga')}<span>${dni === null ? 'Nie ma jeszcze kopii zapasowej na komputerze' : `Ostatnia kopia zapasowa ${dni} dni temu`}</span>${ik('prawo')}</a>` : '');
 }
 function odswiezPusty() {
   const e = $('#edytor'); e.dataset.tryb = 'pusty';
@@ -784,6 +789,7 @@ function odswiezUstawienia() {
     <section class="sek szklo"><h2>Powiadomienia</h2><div class="sek-tresc">
       <p class="tekst-ust" style="padding:0">Powiadomienie, gdy wspólnik doda ofertę albo zmieni jej status. Na iPhonie działa w aplikacji dodanej do ekranu początkowego.</p>
       <div class="rzad" style="margin-top:12px">${pushOk ? (D.stan.push ? '<span style="color:var(--ok)">Włączone na tym urządzeniu</span><button class="btn kontur maly" data-a="push-off">Wyłącz</button>' : '<button class="btn zloty" data-a="push-on">Włącz powiadomienia</button>') : '<span class="wyc">To urządzenie nie obsługuje powiadomień w tej formie.</span>'}</div></div></section>
+    ${sekcjaKopii()}
     <section class="sek szklo"><h2>Synchronizacja</h2><div class="sek-tresc">
       <p class="tekst-ust" style="padding:0">Wszystko zapisuje się najpierw na urządzeniu, potem od razu na serwerze. Bez internetu pracujesz dalej — zmiany wyślą się same.</p>
       <p style="margin:12px 0 4px">Do wysłania: <b style="color:var(--gold-l)">${D.ileWKolejce()}</b> · stan danych ${D.stan.seq}</p>
@@ -794,6 +800,23 @@ function odswiezUstawienia() {
       <button class="btn zly maly" data-a="wyloguj">Wyloguj to urządzenie</button></div></section>
     <p class="male wyc" style="text-align:center">AM Oferty ${WERSJA}</p>
   </div>`);
+}
+
+function sekcjaKopii() {
+  const k = D.stan.kopia, s = K.stan;
+  const kiedyK = k ? `${kiedy(k.kiedy)} · ${esc(k.kto || '')}${k.urzadzenie ? ` (${esc(k.urzadzenie)})` : ''} · ${k.pliki} plików, ${(k.bajty / 1048576).toFixed(0)} MB` : 'jeszcze nie było';
+  let tu;
+  if (!K.obslugiwana) tu = '<p class="tekst-ust" style="padding:0">Kopię robi aplikacja otwarta na laptopie w Chrome albo Edge — tam wybierasz folder. Na telefonie nic nie trzeba robić.</p>';
+  else if (!s.folder) tu = `<p class="tekst-ust" style="padding:0">Wybierz folder na tym komputerze (np. Dokumenty → „AM Oferty kopia”). Aplikacja będzie do niego ściągać nowe zdjęcia, dokumenty i bazę przy każdym otwarciu i co 6 godzin.</p>
+    <div class="rzad" style="margin-top:12px"><button class="btn zloty" data-a="kopia-folder">${ik('pobierz')}Wybierz folder na kopię</button></div>`;
+  else tu = `<p style="margin:6px 0">Folder na tym komputerze: <b style="color:var(--gold-l)">${esc(s.nazwa)}</b></p>
+    ${s.zgoda !== 'granted' && !s.trwa ? '<p class="info-pola" style="margin:4px 0 8px">Przeglądarka prosi o ponowną zgodę na zapis w folderze — kliknij „Zrób kopię teraz”.</p>' : ''}
+    ${s.postep || s.blad ? `<p class="${s.blad ? 'blad' : 'wyc'}" style="text-align:left;margin:4px 0 8px">${esc(s.blad || s.postep)}</p>` : ''}
+    <div class="rzad"><button class="btn ${s.zgoda !== 'granted' ? 'zloty' : 'kontur'} maly" data-a="kopia-teraz" ${s.trwa ? 'disabled' : ''}>${ik('pobierz')}Zrób kopię teraz</button><button class="btn kontur maly" data-a="kopia-folder">Zmień folder</button></div>`;
+  return `<section class="sek szklo"><h2>Kopia zapasowa</h2><div class="sek-tresc">
+    <p class="tekst-ust" style="padding:0">Serwer co godzinę kopiuje bazę, a usunięte zdjęcia i dokumenty trzyma 30 dni w koszu. Żeby awaria serwera niczego nie zabrała, wszystko ląduje też na Waszym komputerze.</p>
+    <p style="margin:12px 0 10px">Ostatnia kopia na komputerze: <b style="color:${K.przeterminowana() ? 'var(--zle)' : 'var(--gold-l)'}">${kiedyK}</b></p>
+    ${tu}</div></section>`;
 }
 
 // ---------- zapis pól ----------
@@ -1238,6 +1261,14 @@ document.addEventListener('click', async (e) => {
       else idzDo(sekc ? `#/o/${o.id}/s/${sekc}` : `#/o/${o.id}`);
       break;
     }
+    case 'kopia-folder':
+      try { const w = await K.wybierzFolder(); toast(w?.nowe ? `Kopia gotowa: ${w.nowe} plików` : 'Kopia gotowa', 3000); }
+      catch (er) { if (er.name !== 'AbortError') toast(er.message || 'Kopia się nie udała', 4000); }
+      break;
+    case 'kopia-teraz':
+      try { const w = await K.zrob(); if (w) toast(w.nowe ? `Kopia gotowa: ${w.nowe} nowych plików` : 'Kopia była aktualna', 3000); }
+      catch (er) { toast(er.message || 'Kopia się nie udała', 4000); }
+      break;
     case 'push-on': try { await D.wlaczPush(); toast('Powiadomienia włączone'); } catch (er) { toast(er.message, 4500); } break;
     case 'push-off': try { await D.wylaczPush(); toast('Powiadomienia wyłączone'); } catch (er) { toast(er.message, 4500); } break;
     case 'wyloguj':
@@ -1257,6 +1288,8 @@ szeroki.addEventListener('change', () => { resetEdytora(); const e = $('#edytor'
 telefon.addEventListener('change', () => { resetEdytora(); const e = $('#edytor'); if (e) e.dataset.tryb = ''; trasa(); });
 D.naZmiane(() => { if (!D.stan.token && zbudowany) { render(); return; } odswiez(); });
 await D.start();
+K.naZmiane(() => { if (S.ekran === 'ustawienia') odswiezUstawienia(); });
+K.start();
 render();
 trasa();
 if ('serviceWorker' in navigator && location.protocol === 'https:') {

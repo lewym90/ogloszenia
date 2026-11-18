@@ -576,3 +576,9 @@ input[type=date]:not(:valid)::-webkit-datetime-edit, input[type=datetime-local]:
   .kopiuj-nagl { width: 46px; padding: 0; }
   .naglowek-ekranu { gap: 8px; }
 }
+
+/* 1.4.0: przypomnienie o kopii */
+.przypomnienie { display: flex; align-items: center; gap: 10px; margin: 4px 0 10px; padding: 10px 14px; border-radius: 14px; border-color: rgba(233, 144, 127, .45); color: var(--bone); text-decoration: none; font-size: 14.5px; }
+.przypomnienie .ik { width: 18px; height: 18px; color: var(--zle); flex: none; }
+.przypomnienie span { flex: 1; min-width: 0; }
+.przypomnienie .ik:last-child { color: var(--ash); }

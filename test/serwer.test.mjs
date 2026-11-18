@@ -127,6 +127,26 @@ await test('dokumenty: PDF i JPG, link z kluczem, odrzucenie innych typów, usun
   assert.equal((await fetch(`${baza}/plik/dok00000001?k=${encodeURIComponent(k)}`)).status, 404);
   globalThis.kluczA = k;
 });
+await test('kopia na komputer: spis, pobieranie, baza, zgłoszenie; kosz zamiast kasowania', async () => {
+  const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]);
+  await fetch(`${baza}/zdjecie/zdjkopia01?oferta=oferta001`, { method: 'PUT', body: jpg, headers: { Authorization: `Bearer ${tA}` } });
+  const sp = (await api('/kopia/spis', {}, tA)).j;
+  assert.ok(sp.pliki.some((f) => f.s === 'zdjecia/zdjkopia01.jpg' && f.r === jpg.length));
+  assert.match(sp.baza.nazwa, /^amoferty-\d{10}\.db$/);
+  let r = await fetch(`${baza}/kopia/plik?s=zdjecia/zdjkopia01.jpg`, { headers: { Authorization: `Bearer ${tB}` } });
+  assert.equal(r.status, 200); assert.deepEqual(Buffer.from(await r.arrayBuffer()), jpg);
+  assert.equal((await fetch(`${baza}/kopia/plik?s=../amoferty.db`, { headers: { Authorization: `Bearer ${tA}` } })).status, 400, 'bez wychodzenia poza katalogi');
+  assert.equal((await fetch(`${baza}/kopia/plik?s=zdjecia/zdjkopia01.jpg`)).status, 401);
+  r = await fetch(`${baza}/kopia/baza`, { headers: { Authorization: `Bearer ${tA}` } });
+  const b = Buffer.from(await r.arrayBuffer()); assert.equal(b.subarray(0, 15).toString(), 'SQLite format 3');
+  await api('/kopia/zrobiona', { method: 'POST', body: JSON.stringify({ pliki: 3, bajty: 100, nowe: 1 }) }, tA);
+  assert.equal((await api('/ja', {}, tB)).j.kopia.pliki, 3, 'wspólnik widzi stan kopii');
+  await api('/zdjecie/zdjkopia01', { method: 'DELETE' }, tA);
+  assert.ok(fs.existsSync(path.join(katalog, 'kosz', 'zdjecia--zdjkopia01.jpg')), 'usunięte zdjęcie w koszu');
+  assert.ok(!(await api('/kopia/spis', {}, tA)).j.pliki.some((f) => f.s.includes('zdjkopia01')));
+  const stary = new Date(Date.now() - 31 * 86400e3); fs.utimesSync(path.join(katalog, 'kosz', 'zdjecia--zdjkopia01.jpg'), stary, stary);
+  S.kopia(); assert.ok(!fs.existsSync(path.join(katalog, 'kosz', 'zdjecia--zdjkopia01.jpg')), 'kosz czyszczony po 30 dniach');
+});
 await test('aktywność pokazuje tylko zmiany wspólnika', async () => {
   const r = await api('/aktywnosc', {}, tA);
   assert.equal(r.kod, 200); assert.ok(r.j.aktywnosc.length > 0);

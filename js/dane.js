@@ -161,7 +161,7 @@ export async function wyloguj() {
 async function odswiezJa() {
   try {
     const j = await api('/ja');
-    stan.konto = j.konto; stan.konta = j.konta; stan.push = j.push; stan.vapid = j.vapid;
+    stan.konto = j.konto; stan.konta = j.konta; stan.push = j.push; stan.vapid = j.vapid; stan.kopia = j.kopia || null;
     await idbPut('meta', j.konto, 'konto'); await idbPut('meta', j.konta, 'konta');
     powiadom();
   } catch { /* offline */ }
@@ -212,6 +212,8 @@ async function wyslijZmiany(wewn) {
 }
 async function pobierz() {
   const j = await api(`/zmiany?od=${stan.seq}`);
+  // serwer odtworzony z kopii ma niższy numer zmian — wtedy pobieramy wszystko od nowa
+  if (j.seq < stan.seq) { stan.seq = 0; await idbPut('meta', 0, 'seq'); return pobierz(); }
   if (j.oferty.length) {
     await tx('baza', 'readwrite', (s) => { for (const o of j.oferty) s.put(o); });
     for (const o of j.oferty) bazy.set(o.id, o);
@@ -397,6 +399,20 @@ export async function usunPlik(id) {
   if (stan.token && navigator.onLine) { try { await api(`/plik/${id}`, { method: 'DELETE' }); } catch { /* zostanie na serwerze, nic złego */ } }
   powiadom();
 }
+
+// ---------- kopia na komputer ----------
+export const meta = { get: (k) => idbGet('meta', k), put: (v, k) => idbPut('meta', v, k) };
+export const spisKopii = () => api('/kopia/spis');
+export async function pobierzDoKopii(sciezka) {
+  const r = await fetch(`${API}${sciezka}`, { headers: { Authorization: `Bearer ${stan.token}` } });
+  if (!r.ok) throw new Error(`Nie mogę pobrać ${sciezka} (${r.status})`);
+  return r;
+}
+export async function zglosKopie(dane) {
+  const j = await api('/kopia/zrobiona', { method: 'POST', body: JSON.stringify(dane) });
+  stan.kopia = j.kopia; powiadom();
+}
+export const odswiezStanKopii = () => odswiezJa();
 
 // ---------- historia ----------
 export const historia = (oid) => api(`/historia?oferta=${encodeURIComponent(oid)}`).then((j) => j.historia);
