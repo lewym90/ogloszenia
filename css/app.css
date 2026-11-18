@@ -596,3 +596,5 @@ input[type=date]:not(:valid)::-webkit-datetime-edit, input[type=datetime-local]:
 .pom-rzut li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 2px; border-bottom: 1px solid var(--linia); font-size: 15.5px; }
 .pom-rzut li b { color: var(--gold-l); font-variant-numeric: lining-nums tabular-nums; white-space: nowrap; }
 .pom-rzut li.suma { border-bottom: 0; font-weight: 600; }
+.pom-rzut li span small { display: block; color: var(--ash); font-size: 12.5px; margin-top: 2px; }
+.dodaj.odzysk { margin: -4px 0 14px; height: 46px; font-size: 14.5px; }

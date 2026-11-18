@@ -48,13 +48,25 @@ export async function amOtworz(): Promise<boolean> {
   const w = await czytaj<{ plan?: string; nazwa?: string } | undefined>(`wejscie:${oid}`).catch(() => undefined);
   let p;
   if (w?.plan) p = readProject(JSON.parse(w.plan));
-  else p = (await localStore.load(id).catch(() => null)) ?? createDefaultProject(w?.nazwa || 'Rzut');
+  else p = (await lokalnyPlan(oid)) ?? createDefaultProject(w?.nazwa || 'Rzut');
   p.id = id;
   if (w?.nazwa) p.name = w.nazwa;
   loadProject(p);
   await autoSave();
   if (w) await usun(`wejscie:${oid}`);
   return true;
+}
+
+/** Plan tej oferty zapisany na tym urządzeniu: ostatnio zapisany do oferty, inaczej najnowszy projekt w edytorze. */
+async function lokalnyPlan(oid: string) {
+  const ids: string[] = [];
+  try { const z = localStorage.getItem(`am-projekt:${oid}`); if (z) ids.push(z); } catch { /* */ }
+  ids.push(`am-${oid}`);
+  for (const id of ids) { const p = await localStore.load(id).catch(() => null); if (p && p.floors?.some((f) => f.walls?.length)) return p; }
+  // np. skan wczytany jako nowy projekt, zanim powstało powiązanie z ofertą — bierzemy najnowszy niepusty
+  const lista = (await localStore.list().catch(() => [])).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  for (const m of lista.slice(0, 5)) { const p = await localStore.load(m.id).catch(() => null); if (p && p.floors?.some((f) => f.walls?.length)) return p; }
+  return null;
 }
 
 export type Pokoj = { nazwa: string; m: number | null; kond: string };
@@ -84,6 +96,7 @@ export async function amZapisz(): Promise<void> {
   g.__amPobranie = (b) => { png = b; };
   try { await exportAsPNG(null, p); } finally { delete g.__amPobranie; }
   if (!png) throw new Error('Plan jest pusty. Narysuj najpierw ściany.');
+  try { localStorage.setItem(`am-projekt:${oid}`, p.id); } catch { /* */ }
   await zapisz(`wynik:${oid}`, { plan: JSON.stringify(p), png, pokoje: pokojeZPlanu(p), t: Date.now() });
   location.href = adresOferty(oid);
 }

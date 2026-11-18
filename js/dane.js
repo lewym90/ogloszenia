@@ -313,7 +313,7 @@ async function wyslijZdjecia() {
         }
       } catch (e) {
         if (!e.kod || e.kod === 401) throw e; // brak sieci — spróbuję później
-        if (w.rodzaj !== 'plik' || ![413, 415].includes(e.kod)) continue; // serwer chwilowo nie przyjmuje — zostaje w kolejce
+        if (w.rodzaj !== 'plik' || ![413, 415].includes(e.kod) || w.nazwa === 'rzut.json') continue; // serwer chwilowo nie przyjmuje (plan rzutu czeka np. na aktualizację serwera) — zostaje w kolejce
         stan.bladPliku = e.message; await idbDel('pliki', w.klucz);
       }
       wysylki = wysylki.filter((x) => x.klucz !== w.klucz); await idbDel('wysylka', w.klucz);

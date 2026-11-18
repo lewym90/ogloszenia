@@ -5,7 +5,7 @@ import { zrobZip } from './zip.js';
 import * as K from './kopia.js';
 import * as R from './rzut.js';
 
-export const WERSJA = '1.5.0';
+export const WERSJA = '1.5.1';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -661,13 +661,17 @@ function panelRzutu(o) {
     ${zdj ? `<div class="rzut-mini">${imgMini(zdj.id, 'Rzut')}</div>` : `<img class="rzut-ik" src="img/ikony/pom.png" alt="">`}
     <div class="rzut-tx"><b>${jest ? 'Rzut narysowany' : 'Rzut z wymiarami'}</b><span>${jest ? `zapisany ${kiedy(o.rzutPlan.t)}${o.rzutPlan.kto ? ` · ${esc(o.rzutPlan.kto)}` : ''}` : 'Narysuj ściany albo wczytaj skan z iPhone\'a — obraz trafi do zdjęć, a metraże do pomieszczeń.'}</span></div>
     <button class="btn ${jest ? 'kontur' : 'zloty'} maly" data-a="rzut-otworz">${ik(jest ? 'olowek' : 'plus')}${jest ? 'Edytuj' : 'Narysuj'}</button>
-  </div>`;
+  </div>${jest && !odzyskSprawdzony(o.id) && (o.pom || []).some((p) => p.nazwa && !(p.a && p.b)) ? `<button class="dodaj odzysk" data-a="pom-odzyskaj">${ik('cofnij')}Przywróć wymiary z dalmierza (z historii zmian)</button>` : ''}`;
 }
+const odzyskSprawdzony = (oid) => { try { return localStorage.getItem(`am-odzysk:${oid}`) === '1'; } catch { return false; } };
 async function otworzRzut(o) {
   let plan = null;
   if (o.rzutPlan?.id) {
     try { plan = await (await D.blobPliku(o.rzutPlan.id)).text(); }
-    catch { toast(navigator.onLine ? 'Nie udało się pobrać planu z serwera.' : 'Połącz się z internetem, żeby otworzyć zapisany rzut.', 3500); return; }
+    catch {
+      // planu nie ma na serwerze (np. zapisany przy starej wersji serwera) — edytor otworzy wersję zapisaną na tym urządzeniu
+      if (!(await potwierdz('Planu nie ma na serwerze', 'Otworzę rzut zapisany na tym telefonie. Po poprawkach stuknij „Zapisz w ofercie”, żeby trafił na serwer i do wspólnika.', 'Otwórz', 'zloty'))) return;
+    }
   }
   await R.wloz(`wejscie:${o.id}`, { plan, nazwa: o.roboczy || M.tytul(o) });
   location.href = `rzut/editor?am=${encodeURIComponent(o.id)}`;
@@ -708,11 +712,12 @@ function zaproponujPomieszczenia(oid, pokoje) {
   const nazwane = pokoje.filter((r) => r.nazwa);
   const sk = R.scalPomieszczenia(o.pom || [], pokoje, M.noweId);
   const suma = nazwane.reduce((a, r) => a + r.m, 0);
-  const w = okno('Pomieszczenia z rzutu', `<p class="sek-opis" style="margin-top:0">Rzut zapisany. Edytor policzył metraż wewnętrzny (podłoga między ścianami). Przenieść go do karty?</p>
-    <ul class="pom-rzut">${nazwane.map((r) => `<li><span>${esc(r.kond ? `${r.nazwa} (${r.kond})` : r.nazwa)}</span><b>${esc(M.m2(r.m))}</b></li>`).join('')}<li class="suma"><span>Razem</span><b>${esc(M.m2(Math.round(suma * 100) / 100))}</b></li></ul>
+  const zm = new Map(sk.porownanie.map((x) => [x.nazwa.toLowerCase(), x]));
+  const w = okno('Pomieszczenia z rzutu', `<p class="sek-opis" style="margin-top:0">Rzut zapisany. Edytor policzył metraż wewnętrzny (podłoga między ścianami). Twoje pomiary dalmierzem zostają bez zmian — rzut uzupełni tylko resztę.</p>
+    <ul class="pom-rzut">${nazwane.map((r) => { const n = r.kond ? `${r.nazwa} (${r.kond})` : r.nazwa; const p = zm.get(n.toLowerCase()); return `<li><span>${esc(n)}${p ? `<small>Twój pomiar ${esc(M.m2(p.pomiar))} — zostaje${Math.abs(p.pomiar - p.rzut) >= 0.3 ? ` · różnica ${esc(M.liczba(Math.round((p.rzut - p.pomiar) * 100) / 100))} m²` : ''}</small>` : ''}</span><b>${esc(M.m2(r.m))}</b></li>`; }).join('')}<li class="suma"><span>Razem wg rzutu</span><b>${esc(M.m2(Math.round(suma * 100) / 100))}</b></li></ul>
     ${sk.bezNazwy ? `<p class="info-pola">${sk.bezNazwy} ${sk.bezNazwy === 1 ? 'pomieszczenie nie ma' : 'pomieszczenia nie mają'} nazwy — nadaj je w edytorze, żeby też trafiły do karty.</p>` : ''}
-    <p class="info-pola">Pomieszczenia o tej samej nazwie dostaną metraż z rzutu, nowe zostaną dopisane. Pamiętaj: metraż z rysunku jest tak dokładny jak wymiary, które wpisałeś.</p>
-    <div class="rzad" style="justify-content:flex-end;margin-top:14px"><button class="btn" data-n>Nie teraz</button><button class="btn zloty" data-t ${nazwane.length ? '' : 'disabled'}>Przenieś do karty</button></div>`);
+    <p class="info-pola">Pomieszczenia bez pomiaru o tej samej nazwie dostaną metraż z rzutu, nowe zostaną dopisane.</p>
+    <div class="rzad" style="justify-content:flex-end;margin-top:14px"><button class="btn" data-n>Nie teraz</button><button class="btn zloty" data-t ${nazwane.length && (sk.zmienione || sk.dodane) ? '' : 'disabled'}>${sk.zmienione || sk.dodane ? 'Uzupełnij kartę' : 'Karta jest aktualna'}</button></div>`);
   w.addEventListener('click', async (e) => {
     if (e.target.closest('[data-n]')) { w.remove(); toast('Rzut zapisany w ofercie', 2500); }
     if (e.target.closest('[data-t]')) {
@@ -1090,9 +1095,9 @@ function pokazAktywnosc() {
   }).join('')}</ul>` : '<p class="wyc">Wspólnik nie wprowadzał jeszcze zmian.</p>');
   D.aktywnoscWidziana();
 }
-function potwierdz(tytul, tresc, przycisk) {
+function potwierdz(tytul, tresc, przycisk, klasa = 'zly') {
   return new Promise((ok) => {
-    const w = okno(tytul, `<p>${tresc}</p><div class="rzad" style="justify-content:flex-end;margin-top:16px"><button class="btn" data-n>Anuluj</button><button class="btn zly" data-t>${esc(przycisk)}</button></div>`);
+    const w = okno(tytul, `<p>${tresc}</p><div class="rzad" style="justify-content:flex-end;margin-top:16px"><button class="btn" data-n>Anuluj</button><button class="btn ${klasa}" data-t>${esc(przycisk)}</button></div>`);
     w.addEventListener('click', (e) => { if (e.target.closest('[data-t]')) { w.remove(); ok(true); } else if (e.target.closest('[data-n]') || !document.body.contains(w)) { w.remove(); ok(false); } });
   });
 }
@@ -1347,6 +1352,17 @@ document.addEventListener('click', async (e) => {
       catch (er) { toast(er.message || 'Kopia się nie udała', 4000); }
       break;
     case 'rzut-otworz': otworzRzut(o); break;
+    case 'pom-odzyskaj': {
+      try {
+        const h = await D.historia(o.id);
+        const w = R.odzyskajWymiary(D.oferta(o.id).pom || [], h);
+        try { localStorage.setItem(`am-odzysk:${o.id}`, '1'); } catch { /* */ }
+        if (!w.odzyskane) { toast('W historii nie ma wcześniejszych wymiarów tych pomieszczeń.', 3500); render(); break; }
+        await D.zmien(o.id, { pom: w.pom });
+        toast(`Przywrócono wymiary: ${w.odzyskane} ${w.odzyskane === 1 ? 'pomieszczenie' : w.odzyskane < 5 ? 'pomieszczenia' : 'pomieszczeń'}`, 3500);
+      } catch { toast('Historia jest na serwerze — połącz się z internetem.', 3500); }
+      break;
+    }
     case 'push-on': try { await D.wlaczPush(); toast('Powiadomienia włączone'); } catch (er) { toast(er.message, 4500); } break;
     case 'push-off': try { await D.wylaczPush(); toast('Powiadomienia wyłączone'); } catch (er) { toast(er.message, 4500); } break;
     case 'wyloguj':
