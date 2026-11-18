@@ -49,8 +49,13 @@ export async function amOtworz(): Promise<boolean> {
   let p;
   if (w?.plan) p = readProject(JSON.parse(w.plan));
   else p = (await lokalnyPlan(oid)) ?? createDefaultProject(w?.nazwa || 'Rzut');
+  // zarejestruj bieżącą wersję projektu oferty w tym oknie — inaczej zapis planu wczytanego z serwera
+  // albo z innego projektu edytor uznaje za konflikt („zmienił się w innej karcie”)
+  await localStore.load(id).catch(() => null);
   p.id = id;
   if (w?.nazwa) p.name = w.nazwa;
+  const PL: Record<string, string> = { 'Ground Floor': 'Parter', Basement: 'Piwnica' };
+  for (const f of p.floors) f.name = PL[f.name] ?? f.name.replace(/^Floor (\d+)$/, 'Piętro $1').replace(/^Basement (\d+)$/, 'Piwnica $1');
   loadProject(p);
   await autoSave();
   if (w) await usun(`wejscie:${oid}`);

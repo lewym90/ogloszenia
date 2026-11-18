@@ -5,7 +5,7 @@ import { zrobZip } from './zip.js';
 import * as K from './kopia.js';
 import * as R from './rzut.js';
 
-export const WERSJA = '1.5.1';
+export const WERSJA = '1.5.2';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
