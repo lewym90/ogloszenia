@@ -3,7 +3,7 @@ import * as M from './model.js';
 import * as D from './dane.js';
 import { zrobZip } from './zip.js';
 
-export const WERSJA = '1.3.1';
+export const WERSJA = '1.3.2';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -256,15 +256,8 @@ function dataWizyty(k, krotko = false) {
   return `${dzien}${m[4] ? `, ${m[4]}:${m[5]}` : ''}`;
 }
 // ikony kafelków bez grafiki z arkusza — złota linia w tym samym stylu
-const IK_ZLOTE = {
-  zdjecia: '<path d="M4 8.5h3.2l1.9-2.6h5.8l1.9 2.6H20V19H4z"/><circle cx="12" cy="13.4" r="3.6"/><path d="M17.3 10.6h.01"/>',
-  ogloszenie: '<path d="M6.5 3.5h8l3.5 3.5v13.5h-11.5z"/><path d="M14.5 3.5V7H18M9 10.5h6M9 13.5h6M9 16.5h4"/>',
-  kontrola: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3.2"/>',
-  wyp: '<path d="M5.5 11V8.6A2.6 2.6 0 0 1 8.1 6h7.8a2.6 2.6 0 0 1 2.6 2.6V11"/><path d="M3.2 12.2a1.6 1.6 0 0 1 3.2 0v2.3h11.2v-2.3a1.6 1.6 0 0 1 3.2 0v5.3H3.2z"/><path d="M5.2 17.5V19.5M18.8 17.5V19.5"/>',
-  klienci: '<circle cx="9" cy="8.3" r="3.1"/><path d="M3.3 19.5c.6-3.4 2.9-5.1 5.7-5.1s5.1 1.7 5.7 5.1"/><circle cx="16.8" cy="9.2" r="2.5"/><path d="M15.6 14.6c.4-.1.8-.1 1.2-.1 2.3 0 4 1.4 4.6 4.3"/>',
-  wizyty: '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/><path d="M8.5 15l2.3 2.2 4.7-4.7"/>',
-  dokumenty: '<path d="M3.5 7.1a1.6 1.6 0 0 1 1.6-1.6h4.2l2.1 2.3h7.5a1.6 1.6 0 0 1 1.6 1.6v9a1.6 1.6 0 0 1-1.6 1.6H5.1a1.6 1.6 0 0 1-1.6-1.6z"/><path d="M3.5 10.8h17"/>',
-};
+// wszystkie kafelki mają ikony z arkuszy właściciela (img/ikony/<klucz>.png); tu tylko awaryjne
+const IK_ZLOTE = {};
 const ikonaEkranu = (k) => (IK_ZLOTE[k]
   ? `<svg class="ik-zlota" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="url(#zloto)" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">${IK_ZLOTE[k]}</g></svg>`
   : `<img class="ik-zlota" src="img/ikony/${k}.png" alt="">`);

@@ -1,8 +1,8 @@
 // AM Oferty — praca offline i powiadomienia.
-const WERSJA = 'amoferty-1.3.1';
+const WERSJA = 'amoferty-1.3.2';
 const PLIKI = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'js/app.js', 'js/dane.js', 'js/model.js', 'js/zip.js',
   'fonts/archivo.woff2', ...['latin', 'latin-ext'].flatMap((z) => [500, 600].map((g) => `fonts/cormorant-${z}-${g}.woff2`)), 'ikony/icon-192.png', 'ikony/icon-512.png', 'ikony/apple-touch-icon.png',
-  'img/tlo.jpg', 'img/monogram.png', ...['podstawy', 'lokalizacja', 'lokal', 'pom', 'koszty', 'atuty', 'minusy', 'okolica', 'weryfikacja', 'energia', 'tekst', 'wlasciciel'].map((n) => `img/ikony/${n}.png`)];
+  'img/tlo.jpg', 'img/monogram.png', ...['podstawy', 'lokalizacja', 'lokal', 'pom', 'koszty', 'atuty', 'minusy', 'okolica', 'weryfikacja', 'energia', 'tekst', 'wlasciciel', 'wyp', 'klienci', 'wizyty', 'dokumenty', 'zdjecia', 'ogloszenie', 'kontrola'].map((n) => `img/ikony/${n}.png`)];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(WERSJA).then((c) => c.addAll(PLIKI.map((p) => new Request(p, { cache: 'reload' })))).then(() => self.skipWaiting()));
