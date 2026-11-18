@@ -60,10 +60,28 @@ Stan: wersja 1.3.1 (pola dat nie wychodzą poza ekran, tytuł i wstęp z ołówk
 - model 13, serwer 15 (`node --experimental-sqlite` na Node 22), przeglądarka `test/ui_test.py`: pełny scenariusz telefon → laptop wspólnika (zmiana na żywo < 1 s), offline → online, ZIP 12 zdjęć, zero błędów konsoli.
 - `test/ui_safari_test.py webkit`: silnik iPhone'a — spis na szerokość, przewinięcie po zmianie, wyposażenie, klient → prezentacja, dokumenty (PDF + zdjęcie). WebKit w trybie prywatnym nie zapisuje Blobów w IndexedDB, dlatego test używa profilu trwałego.
 
-## Następne kroki (propozycje, nic nie przesądzone)
-1. Raport dla właściciela z wizyt (liczba prezentacji, wrażenia klientów) — dane już są.
-2. Wspólna baza klientów dla wszystkich ofert (teraz klient należy do oferty) i dopasowanie do nowych ofert.
-3. Edytor rzutu 2D z wymiarami w aplikacji.
-4. Obróbka zdjęć na serwerze (prostowanie pionów, balans bieli) — bez usuwania usterek.
-5. Strona każdej oferty na amnieruchomosci + kod QR.
-6. Wersja angielska ogłoszenia, spacer 360, wideo pionowe.
+## Plan dalszej pracy (uzgodniony 18.11.2026, kolejność proponowana — każdy punkt wymaga zgody właściciela przed budową)
+Ocena repozytoriów z GitHuba: claude/nieruchomosci-ogloszenia-plan.md → „Ocena repozytoriów”. Bierzemy openPlan3D (rzut) i StaticTour (spacer 360). Nie bierzemy: MiniPaint, Reframe, FFmpeg.wasm (GPL, słaby na iPhonie), Freehold (ELv2).
+
+Po stronie właściciela: zaktualizować serwer (install.sh) do 1.2.0, sprawdzić pola dat na iPhonie, opcjonalnie wygenerować złote ikony dla Wyposażenia/Klientów/Wizyt/Dokumentów.
+
+A. Przed startem firmy
+1. Kopie zdjęć i dokumentów (dziś kopia obejmuje tylko bazę) — codzienna kopia katalogów zdjecia/ i pliki/ (np. rsync na laptop/dysk) + sprawdzenie odtworzenia.
+2. Rzut: własna kopia openPlan3D na serwerze (bez Firebase i analityki), przycisk „Narysuj rzut” w Zdjęciach, eksport PNG/PDF → zdjęcie „Rzut”; potem import JSON skanu (iPhone LiDAR) → Pomieszczenia z metrażami (źródło „Pomiar”).
+3. Raport dla właściciela: strona na link / PDF — wizyty, wrażenia klientów, kontakty, zmiany ceny (obiecany na stronie amnieruchomosci).
+4. Uczciwa korekta zdjęć (sharp na serwerze): kadr pod portale, piony, jasność, balans bieli; zamknięta lista operacji, bez retuszu.
+5. RODO i AML: retencja danych klientów (przypomnienie o usunięciu po czasie), eksport danych osoby; karta klienta AML przy transakcji (biuro pośrednictwa = instytucja obowiązana).
+6. Wizyty: przypomnienie push przed prezentacją, dodanie do kalendarza telefonu.
+
+B. Po starcie
+7. Strona każdej oferty na amnieruchomosci + kod QR na baner.
+8. Wspólna baza klientów dla wszystkich ofert + dopasowanie do nowych ofert.
+9. Tryb „Sesja” zdjęciowa: lista ujęć z pomieszczeń, odhaczanie.
+10. Analiza cenowa z operatszacunkowy (RCN) jako załącznik dla sprzedającego.
+11. Wersja angielska ogłoszenia.
+
+C. Gdy będzie sprzęt / potrzeba
+12. Spacer 360 (StaticTour + Pannellum, na naszym serwerze) — po zakupie kamery 360.
+13. Wideo pionowe: FFmpeg na serwerze lub laptopie, napisy whisper.cpp.
+14. Skan 3D (splatting) dla droższych ofert, dron dla domów/działek.
+15. Otodom API — tylko jeśli zmieni się decyzja (dziś: kopiowanie pól).
