@@ -118,4 +118,27 @@ test('pola zależne od rodzaju i transakcji', () => {
   assert.equal(M.poleWidoczne(pole('dzialkaPow'), { rodzaj: 'mieszkanie' }), false);
   assert.equal(M.poleWidoczne(pole('eu'), { swiad: 'nie' }), false);
 });
+test('wyposażenie w ogłoszeniu i polach portalu', () => {
+  const n = { ...M.nowaOferta('w1'), transakcja: 'najem', wyp: { lodowka: true, pralka: true }, wypInne: [{ t: 'Robot sprzątający' }] };
+  const t = M.opis(n);
+  assert.match(t, /WYPOSAŻENIE\n– Kuchnia: lodówka\n– Łazienka i pranie: pralka\n– Inne: robot sprzątający/);
+  assert.ok(M.polaPortalu(n).some((x) => x.v === 'Lodówka, Pralka, Robot sprzątający'));
+  assert.match(M.opis({ ...n, transakcja: 'sprzedaz' }), /W CENIE ZOSTAJE/);
+  assert.ok(M.kontrolaSlow({ ...n, wypUwagi: 'Idealne meble!' }).length >= 2, 'uwagi do wyposażenia przechodzą kontrolę słów');
+});
+test('klienci, prezentacje i dokumenty nie trafiają do ogłoszenia', () => {
+  const n = { ...o, kl_a1: { imie: 'Jan Tajny', tel: '600999888', t: 2 }, kl_b2: { imie: 'Ewa', status: 'rezygnacja', t: 3 },
+    wz_x1: { kiedy: '2026-11-25T10:00' }, wz_x2: { kiedy: '2026-11-21T17:30' }, wz_x3: { kiedy: '2026-11-01T12:00', status: 'odbyla' },
+    dk_kw: { s: 'jest', pliki: [{ id: 'p1', nazwa: 'kw.pdf' }] }, dk_q1: { nazwa: 'Regulamin wspólnoty', t: 1 } };
+  const t = M.opis(n) + M.krotki(n) + JSON.stringify(M.polaPortalu(n));
+  assert.ok(!/Jan Tajny|600999888|Regulamin|kw\.pdf/.test(t));
+  assert.deepEqual(M.klienci(n).map((x) => x._k), ['kl_a1', 'kl_b2'], 'rezygnacje na końcu');
+  const w = M.wizyty(n);
+  assert.deepEqual(w.nad.map((x) => x._k), ['wz_x2', 'wz_x1']); assert.deepEqual(w.po.map((x) => x._k), ['wz_x3']);
+  const d = M.dokumenty(n);
+  assert.ok(d.find((x) => x._k === 'dk_kw').s === 'jest' && d.some((x) => x.n === 'Regulamin wspólnoty' && !x.std));
+  assert.ok(M.dokumentyWymagane({ transakcja: 'najem', rodzaj: 'mieszkanie', umowaNajmu: 'okazjonalny' }).some((x) => x.k === 'egzekucja'));
+  assert.ok(M.dokumentyWymagane({ transakcja: 'sprzedaz', rodzaj: 'dom' }).some((x) => x.k === 'wypis'));
+  assert.ok(!M.dokumentyWymagane({ transakcja: 'sprzedaz', rodzaj: 'mieszkanie' }).some((x) => x.k === 'wypis'));
+});
 console.log(`\nModel: ${ok} testów OK`);

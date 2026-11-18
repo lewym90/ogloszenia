@@ -99,6 +99,34 @@ await test('push trafia tylko do wspólnika', async () => {
   await api('/zmiany', { method: 'POST', body: JSON.stringify({ zmiany: [{ oid: 'oferta003', cid: 'c8', pola: { status: 'gotowa' } }] }) }, tB);
   assert.equal(S.wyslanePush.length, 0, 'autor zmiany nie dostaje powiadomienia');
 });
+await test('nowa prezentacja powiadamia wspólnika, edycja już nie', async () => {
+  S.wyslanePush.length = 0;
+  await api('/zmiany', { method: 'POST', body: JSON.stringify({ zmiany: [{ oid: 'oferta003', cid: 'c9', pola: { wz_abc12345: { kiedy: '2026-11-21T17:30', status: 'plan' } } }] }) }, tA);
+  assert.equal(S.wyslanePush.length, 1); assert.equal(S.wyslanePush[0].dane.tytul, 'Nowa prezentacja');
+  assert.match(S.wyslanePush[0].dane.tresc, /21\.11, 17:30/); assert.equal(S.wyslanePush[0].dane.ekran, 'wizyty');
+  S.wyslanePush.length = 0;
+  await api('/zmiany', { method: 'POST', body: JSON.stringify({ zmiany: [{ oid: 'oferta003', cid: 'c10', pola: { wz_abc12345: { kiedy: '2026-11-21T18:00', status: 'plan' } } }] }) }, tA);
+  assert.equal(S.wyslanePush.length, 0);
+});
+await test('dokumenty: PDF i JPG, link z kluczem, odrzucenie innych typów, usunięcie', async () => {
+  const pdf = Buffer.from('%PDF-1.4\n%%EOF');
+  let r = await fetch(`${baza}/plik/dok00000001?oferta=oferta001&nazwa=${encodeURIComponent('Odpis KW.pdf')}`, { method: 'PUT', body: pdf, headers: { Authorization: `Bearer ${tA}` } });
+  assert.equal(r.status, 200); assert.equal((await r.json()).typ, 'pdf');
+  r = await fetch(`${baza}/plik/dok00000002?oferta=oferta001`, { method: 'PUT', body: Buffer.from('<html>'), headers: { Authorization: `Bearer ${tA}` } });
+  assert.equal(r.status, 415);
+  assert.equal((await fetch(`${baza}/plik/dok00000001`)).status, 401, 'bez logowania nie ma dostępu');
+  r = await fetch(`${baza}/plik/dok00000001`, { headers: { Authorization: `Bearer ${tB}` } });
+  assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'application/pdf'); assert.match(r.headers.get('content-disposition'), /Odpis%20KW\.pdf/);
+  const k = (await api('/klucz-plikow', {}, tA)).j.k;
+  r = await fetch(`${baza}/plik/dok00000001?k=${encodeURIComponent(k)}`); assert.equal(r.status, 200);
+  assert.equal(Buffer.from(await r.arrayBuffer()).toString(), pdf.toString());
+  assert.equal((await fetch(`${baza}/plik/dok00000001?k=${encodeURIComponent(k.replace(/.$/, (c) => (c === 'a' ? 'b' : 'a')))}`)).status, 403, 'podrobiony klucz');
+  const stary = S.kluczPlikow(1, -1000).k;
+  assert.equal((await fetch(`${baza}/plik/dok00000001?k=${encodeURIComponent(stary)}`)).status, 403, 'wygasły klucz');
+  assert.equal((await api('/plik/dok00000001', { method: 'DELETE' }, tA)).kod, 200);
+  assert.equal((await fetch(`${baza}/plik/dok00000001?k=${encodeURIComponent(k)}`)).status, 404);
+  globalThis.kluczA = k;
+});
 await test('aktywność pokazuje tylko zmiany wspólnika', async () => {
   const r = await api('/aktywnosc', {}, tA);
   assert.equal(r.kod, 200); assert.ok(r.j.aktywnosc.length > 0);
@@ -108,6 +136,7 @@ await test('aktywność pokazuje tylko zmiany wspólnika', async () => {
 await test('zmiana hasła wylogowuje urządzenia konta', async () => {
   S.zapiszKonto('marek', 'Marek Lewandowski', 'nowehaslo1');
   assert.equal((await api('/ja', {}, tA)).kod, 401);
+  assert.equal((await fetch(`${baza}/plik/dok00000001?k=${encodeURIComponent(globalThis.kluczA)}`)).status, 403, 'wylogowanie unieważnia link');
   assert.equal((await api('/ja', {}, tB)).kod, 200);
 });
 await test('kopia bazy', async () => {

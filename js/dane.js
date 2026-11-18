@@ -66,6 +66,7 @@ export async function start() {
   stan.agent = await idbGet('meta', 'agent') || {};
   stan.aktywnosc = await idbGet('meta', 'aktywnosc') || [];
   stan.aktywnoscWidziana = await idbGet('meta', 'aktywnoscWidziana') || 0;
+  klucz = await idbGet('meta', 'kluczPlikow') || null;
   for (const b of await idbAll('baza')) bazy.set(b.id, b);
   kolejka = (await idbAll('kolejka')).sort((a, b) => a.t - b.t);
   wysylki = await idbAll('wysylka');
@@ -148,6 +149,7 @@ export async function zaloguj(login, haslo) {
 async function wylogujLokalnie(komunikat) {
   stan.token = null; stan.blad = komunikat || '';
   await idbDel('meta', 'token');
+  klucz = null; await idbDel('meta', 'kluczPlikow');
   if (es) { es.close(); es = null; }
   stan.polaczony = false;
   powiadom();
@@ -179,7 +181,7 @@ export function synchronizuj() {
   if (!stan.token || !navigator.onLine) return Promise.resolve();
   if (synchronizacja) return synchronizacja;
   synchronizacja = (async () => {
-    try { await wyslijZmiany(true); await pobierz(); wyslijZdjecia(); stan.blad = ''; }
+    try { await wyslijZmiany(true); await pobierz(); wyslijZdjecia(); kluczPlikow().catch(() => {}); stan.blad = ''; }
     catch (e) { if (e.message !== 'wylogowano') stan.blad = navigator.onLine ? 'Brak połączenia z serwerem' : ''; }
     finally { synchronizacja = null; powiadom(); }
   })();
@@ -295,14 +297,23 @@ async function wyslijZdjecia() {
   if (wysylaZdjecia || !stan.token || !navigator.onLine) return;
   wysylaZdjecia = true;
   try {
-    while (wysylki.length) {
-      const w = wysylki[0];
+    // dokumenty, których serwer nie przyjął (np. stara wersja serwera), czekają — nie blokują zdjęć
+    for (const w of [...wysylki]) {
       const blob = await idbGet('pliki', w.klucz);
-      if (blob) {
-        await api(`/zdjecie/${w.id}?oferta=${w.oid}&rodzaj=${w.rodzaj}`, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } });
-        if (w.rodzaj === 'pelne') await idbDel('pliki', w.klucz); // pełne trzyma serwer, na urządzeniu zostaje miniatura
+      try {
+        if (blob && w.rodzaj === 'plik') {
+          await api(`/plik/${w.id}?oferta=${w.oid}&nazwa=${encodeURIComponent(w.nazwa || '')}`, { method: 'PUT', body: blob, headers: { 'Content-Type': blob.type || 'application/octet-stream' } });
+          await idbDel('pliki', w.klucz);
+        } else if (blob) {
+          await api(`/zdjecie/${w.id}?oferta=${w.oid}&rodzaj=${w.rodzaj}`, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } });
+          if (w.rodzaj === 'pelne') await idbDel('pliki', w.klucz); // pełne trzyma serwer, na urządzeniu zostaje miniatura
+        }
+      } catch (e) {
+        if (!e.kod || e.kod === 401) throw e; // brak sieci — spróbuję później
+        if (w.rodzaj !== 'plik' || ![413, 415].includes(e.kod)) continue; // serwer chwilowo nie przyjmuje — zostaje w kolejce
+        stan.bladPliku = e.message; await idbDel('pliki', w.klucz);
       }
-      wysylki.shift(); await idbDel('wysylka', w.klucz);
+      wysylki = wysylki.filter((x) => x.klucz !== w.klucz); await idbDel('wysylka', w.klucz);
       powiadom();
     }
   } catch { /* spróbuję przy następnej synchronizacji */ }
@@ -338,6 +349,53 @@ export async function usunZdjeciePlik(id) {
   await tx('pliki', 'readwrite', (s) => { for (const r of ['mini', 'sr', 'pelne']) s.delete(`${id}:${r}`); });
   for (const r of ['mini', 'sr', 'pelne']) { const u = urlCache.get(`${id}:${r}`); if (u) URL.revokeObjectURL(u); urlCache.delete(`${id}:${r}`); }
   if (stan.token && navigator.onLine) { try { await api(`/zdjecie/${id}`, { method: 'DELETE' }); } catch { /* zostanie, nic złego */ } }
+}
+
+// ---------- dokumenty (PDF, zdjęcia dokumentów) ----------
+const MAX_PLIK = 30 * 1024 * 1024;
+// zwraca wpis pliku do zapisania w dokumencie oferty
+export async function przygotujPlik(oid, plik) {
+  const id = noweId(12);
+  let blob = plik, typ = 'pdf';
+  if (plik.type === 'application/pdf' || /\.pdf$/i.test(plik.name || '')) {
+    if (plik.size > MAX_PLIK) throw new Error('Plik jest za duży (maks. 30 MB).');
+    blob = new Blob([await plik.arrayBuffer()], { type: 'application/pdf' }); // kopia w pamięci — Safari nie zapisze w IndexedDB pliku wskazującego na dysk
+  } else if (/^image\//.test(plik.type) || /\.(jpe?g|png|heic|heif)$/i.test(plik.name || '')) {
+    blob = (await przeskaluj(plik, 2400, 0.86)).blob; typ = 'jpg'; // zdjęcie dokumentu: czytelne, ale lekkie
+  } else throw new Error('Dodaj PDF albo zdjęcie dokumentu.');
+  const nazwa = String(plik.name || `dokument.${typ}`).replace(/\.(heic|heif|png|jpe?g)$/i, '.jpg').slice(0, 120);
+  await idbPut('pliki', blob, `pl:${id}`);
+  const w = { klucz: `pl:${id}`, id, oid, rodzaj: 'plik', nazwa };
+  wysylki.push(w); await idbPut('wysylka', w);
+  powiadom();
+  wyslijZdjecia();
+  return { id, nazwa, typ, rozm: blob.size, t: Date.now() };
+}
+let klucz = null;
+async function kluczPlikow() {
+  if (klucz && klucz.do - Date.now() > 3600e3) return klucz.k;
+  klucz = await api('/klucz-plikow');
+  await idbPut('meta', klucz, 'kluczPlikow');
+  return klucz.k;
+}
+// adres do otwarcia dokumentu poza aplikacją (PDF w przeglądarce telefonu); null gdy plik jeszcze tylko na urządzeniu
+export function adresPliku(id) {
+  if (!klucz || klucz.do - Date.now() < 60e3) return null;
+  return `${API}/plik/${id}?k=${encodeURIComponent(klucz.k)}`;
+}
+export const przygotujKluczPlikow = () => (stan.token && navigator.onLine ? kluczPlikow().catch(() => null) : Promise.resolve(null));
+export async function blobPliku(id) {
+  const lok = await idbGet('pliki', `pl:${id}`);
+  if (lok) return lok;
+  const r = await fetch(`${API}/plik/${id}`, { headers: { Authorization: `Bearer ${stan.token}` } });
+  if (!r.ok) throw new Error('Nie mogę pobrać pliku z serwera.');
+  return r.blob();
+}
+export async function usunPlik(id) {
+  wysylki = wysylki.filter((w) => w.id !== id);
+  await idbDel('wysylka', `pl:${id}`); await idbDel('pliki', `pl:${id}`);
+  if (stan.token && navigator.onLine) { try { await api(`/plik/${id}`, { method: 'DELETE' }); } catch { /* zostanie na serwerze, nic złego */ } }
+  powiadom();
 }
 
 // ---------- historia ----------

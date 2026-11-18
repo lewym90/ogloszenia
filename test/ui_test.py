@@ -134,7 +134,7 @@ with sync_playwright() as p:
         t = json.load(r)['token']
         return t, json.load(urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:18931/zmiany?od=0', headers={'Authorization': f'Bearer {t}'})))
     _, z = serwer()
-    d = z['oferty'][0]['dane']
+    d = next(x for x in z['oferty'] if x['id'] == oid)['dane']
     print('serwer: cena', d.get('cena'), 'pow', d.get('pow'), 'pom', len(d.get('pom', [])), 'zdj', len(d.get('zdj', [])), 'status', d.get('status'), 'zr', d.get('zr'))
     assert d['cena'] == 489000 and d['pow'] == 52.4 and len(d['zdj']) == 12 and d['status'] == 'gotowa'
     pliki = os.listdir('/tmp/amdane/zdjecia'); print('zdjęcia na serwerze:', len(pliki))
@@ -169,8 +169,9 @@ with sync_playwright() as p:
     pg.evaluate("dispatchEvent(new Event('online'))")
     pg.wait_for_function("!document.querySelector('.stan-sync')", timeout=20000)
     _, z = serwer()
-    print('media po powrocie sieci:', z['oferty'][0]['dane'].get('media'))
-    assert z['oferty'][0]['dane'].get('media') == 200
+    dm = next(x for x in z['oferty'] if x['id'] == oid)['dane'].get('media')
+    print('media po powrocie sieci:', dm)
+    assert dm == 200
 
     # tablet
     tab = b.new_context(viewport={'width': 820, 'height': 1180}, device_scale_factor=2, has_touch=True, locale='pl-PL')

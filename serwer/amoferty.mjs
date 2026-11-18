@@ -9,18 +9,20 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
-export const WERSJA = '1.1.0';
+export const WERSJA = '1.2.0';
 const PORT = Number(process.env.PORT || 18930);
 const DANE = process.env.AM_DANE || './dane';
 const ORIGINS = (process.env.AM_ORIGINS || 'https://lewym90.github.io,http://localhost:8766,http://127.0.0.1:8766').split(',');
 const MB = 1024 ** 2, GB = 1024 ** 3;
 const MAX_ZDJECIE = 25 * MB;
+const MAX_PLIK = 30 * MB;
 const MIN_WOLNE = Number(process.env.AM_MIN_WOLNE || 3 * GB);
 const MAX_JSON = 4 * MB;
 
 const P_ZDJ = path.join(DANE, 'zdjecia');
 const P_KOPIE = path.join(DANE, 'kopie');
-for (const d of [DANE, P_ZDJ, P_KOPIE]) fs.mkdirSync(d, { recursive: true });
+const P_PLIKI = path.join(DANE, 'pliki');
+for (const d of [DANE, P_ZDJ, P_KOPIE, P_PLIKI]) fs.mkdirSync(d, { recursive: true });
 
 export const db = new DatabaseSync(path.join(DANE, 'amoferty.db'));
 db.exec(`
@@ -40,6 +42,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS zdjecia (id TEXT PRIMARY KEY, oferta TEXT NOT NULL, rozmiar INTEGER NOT NULL DEFAULT 0, mini INTEGER NOT NULL DEFAULT 0,
     pelne INTEGER NOT NULL DEFAULT 0, kto INTEGER, utworzone INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS przyjete (cid TEXT PRIMARY KEY, kiedy INTEGER NOT NULL);
+  CREATE TABLE IF NOT EXISTS pliki (id TEXT PRIMARY KEY, oferta TEXT NOT NULL, typ TEXT NOT NULL, nazwa TEXT NOT NULL DEFAULT '', rozmiar INTEGER NOT NULL,
+    kto INTEGER, utworzone INTEGER NOT NULL);
 `);
 // 1.1.0: zdjęcie średnie (karty i nagłówek oferty)
 try { db.exec('ALTER TABLE zdjecia ADD COLUMN sr INTEGER NOT NULL DEFAULT 0'); } catch { /* już jest */ }
@@ -50,6 +54,29 @@ const losowe = (n = 24) => crypto.randomBytes(n).toString('base64url');
 const ust = (k) => db.prepare('SELECT wartosc FROM ustawienia WHERE klucz = ?').get(k)?.wartosc ?? null;
 const ustaw = (k, v) => db.prepare('INSERT INTO ustawienia (klucz, wartosc) VALUES (?, ?) ON CONFLICT(klucz) DO UPDATE SET wartosc = excluded.wartosc').run(k, String(v));
 function nastepnySeq() { const s = Number(ust('seq') || 0) + 1; ustaw('seq', s); return s; }
+
+// ---------- linki do dokumentów ----------
+// Dokument otwiera się w przeglądarce telefonu (PDF), więc link nie może wymagać nagłówka Authorization.
+// Klucz jest podpisany, związany z urządzeniem i ważny 24 h; wylogowanie urządzenia go unieważnia.
+if (!ust('sekret_plikow')) ustaw('sekret_plikow', crypto.randomBytes(32).toString('base64'));
+const SEKRET_PLIKOW = Buffer.from(ust('sekret_plikow'), 'base64');
+const podpis = (t) => crypto.createHmac('sha256', SEKRET_PLIKOW).update(t).digest('base64url').slice(0, 32);
+export function kluczPlikow(devId, waznosc = 24 * 3600e3) { const t = `${devId}.${teraz() + waznosc}`; return { k: `${t}.${podpis(t)}`, do: teraz() + waznosc }; }
+function sprawdzKluczPlikow(k) {
+  const [d, e, sig] = String(k || '').split('.');
+  if (!d || !e || !sig) return false;
+  const t = `${d}.${e}`, ok = podpis(t);
+  if (sig.length !== ok.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(ok))) return false;
+  if (Number(e) < teraz()) return false;
+  return !!db.prepare('SELECT 1 FROM urzadzenia WHERE id = ?').get(Number(d));
+}
+const TYPY_PLIKOW = { pdf: 'application/pdf', jpg: 'image/jpeg', png: 'image/png' };
+function typPliku(b) {
+  if (b.length > 4 && b.subarray(0, 4).toString('latin1') === '%PDF') return 'pdf';
+  if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8) return 'jpg';
+  if (b.length > 8 && b.readUInt32BE(0) === 0x89504e47) return 'png';
+  return null;
+}
 
 // ---------- hasła (scrypt) ----------
 export function hashHasla(haslo) {
@@ -217,6 +244,7 @@ export function zastosujZmiany(konto, zmiany) {
           if (nowa === null) delete dane[k]; else dane[k] = v;
           db.prepare('INSERT INTO historia (oferta, pole, stara, nowa, kto, kiedy) VALUES (?, ?, ?, ?, ?, ?)').run(z.oid, k, stara, nowa, konto, t);
           if (k === 'status') statusy.push({ oid: z.oid, status: v, tytul: dane.roboczy || dane.ulica || 'oferta' });
+          if (k.startsWith('wz_') && stara === null && v && typeof v === 'object') statusy.push({ oid: z.oid, wizyta: String(v.kiedy || ''), tytul: dane.roboczy || dane.ulica || 'oferta' });
           zmienione++;
         }
         if (!ist) {
@@ -236,6 +264,12 @@ export function zastosujZmiany(konto, zmiany) {
   rozglos(Number(ust('seq') || 0));
   const nazwa = db.prepare('SELECT nazwa FROM konta WHERE id = ?').get(konto)?.nazwa || 'Wspólnik';
   for (const s of statusy) {
+    if (s.wizyta !== undefined) {
+      const m = s.wizyta.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
+      const kiedy = m ? ` — ${m[3]}.${m[2]}${m[4] ? `, ${m[4]}:${m[5]}` : ''}` : '';
+      powiadomInnych(konto, { tytul: 'Nowa prezentacja', tresc: `${nazwa}: ${s.tytul}${kiedy}`, oid: s.oid, ekran: 'wizyty' });
+      continue;
+    }
     powiadomInnych(konto, s.nowa
       ? { tytul: 'Nowa oferta', tresc: `${nazwa} dodał(a): ${s.tytul}`, oid: s.oid }
       : { tytul: 'Zmiana statusu', tresc: `${nazwa}: ${s.tytul} → ${s.status}`, oid: s.oid });
@@ -266,6 +300,18 @@ export function kopia() {
   db.prepare('DELETE FROM przyjete WHERE kiedy < ?').run(teraz() - 30 * 86400e3);
 }
 
+function wyslijPlik(res, nag, id) {
+  const r = db.prepare('SELECT typ, nazwa FROM pliki WHERE id = ?').get(id);
+  const plik = r && path.join(P_PLIKI, `${id}.${r.typ}`);
+  if (!r || !fs.existsSync(plik)) return json(res, nag, 404, { blad: 'Brak pliku na serwerze.' });
+  const st = fs.statSync(plik);
+  const nazwa = (r.nazwa || `dokument.${r.typ}`).replace(/["\\\r\n]/g, '');
+  res.writeHead(200, { ...nag, 'Content-Type': TYPY_PLIKOW[r.typ], 'Content-Length': st.size, 'Cache-Control': 'private, no-store',
+    'Content-Disposition': `inline; filename="${nazwa.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(nazwa)}`,
+    'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
+  fs.createReadStream(plik).pipe(res);
+}
+
 // ---------- serwer ----------
 export function utworzSerwer() {
   return http.createServer(async (req, res) => {
@@ -288,6 +334,12 @@ export function utworzSerwer() {
         const token = losowe(32);
         db.prepare('INSERT INTO urzadzenia (token, konto, nazwa, utworzone, ostatnio) VALUES (?, ?, ?, ?, ?)').run(sha(token), k.id, czysty(b.urzadzenie, 40) || 'urządzenie', teraz(), teraz());
         return json(res, nag, 200, { token, konto: { id: k.id, login: k.login, nazwa: k.nazwa, telefon: k.telefon } });
+      }
+
+      const mp = p.match(/^\/plik\/([A-Za-z0-9_-]{6,40})$/);
+      if (mp && req.method === 'GET' && u.searchParams.get('k')) {
+        if (!sprawdzKluczPlikow(u.searchParams.get('k'))) return json(res, nag, 403, { blad: 'Link wygasł. Otwórz dokument jeszcze raz z aplikacji.' });
+        return wyslijPlik(res, nag, mp[1]);
       }
 
       // wszystko dalej wymaga zalogowanego urządzenia
@@ -380,9 +432,37 @@ export function utworzSerwer() {
           return json(res, nag, 200, { ok: true });
         }
       }
+      if (p === '/klucz-plikow' && req.method === 'GET') return json(res, nag, 200, kluczPlikow(dev.id));
+      // dokumenty: /plik/<id>?oferta=<oid>&nazwa=<nazwa> — PDF, JPG lub PNG
+      if (mp) {
+        const id = mp[1];
+        if (req.method === 'PUT') {
+          const oid = u.searchParams.get('oferta');
+          if (!okId(oid)) return json(res, nag, 400, { blad: 'Brak oferty.' });
+          if (Number(req.headers['content-length'] || 0) > MAX_PLIK) return json(res, nag, 413, { blad: 'Plik jest za duży (maks. 30 MB).' });
+          if (wolneNaDysku() < MIN_WOLNE) return json(res, nag, 507, { blad: 'Na serwerze kończy się miejsce. Plik zostaje na urządzeniu i wyśle się później.' });
+          const b = await cialo(req, MAX_PLIK);
+          const typ = typPliku(b);
+          if (!typ) return json(res, nag, 415, { blad: 'Obsługiwane są pliki PDF, JPG i PNG.' });
+          const plik = path.join(P_PLIKI, `${id}.${typ}`);
+          const tmp = `${plik}.${losowe(6)}.tmp`;
+          fs.writeFileSync(tmp, b); fs.renameSync(tmp, plik);
+          db.prepare(`INSERT INTO pliki (id, oferta, typ, nazwa, rozmiar, kto, utworzone) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET typ = excluded.typ, nazwa = excluded.nazwa, rozmiar = excluded.rozmiar`).run(id, oid, typ, czysty(u.searchParams.get('nazwa'), 120), b.length, dev.konto, teraz());
+          return json(res, nag, 200, { ok: true, id, typ, rozmiar: b.length });
+        }
+        if (req.method === 'GET') return wyslijPlik(res, nag, id);
+        if (req.method === 'DELETE') {
+          const r = db.prepare('SELECT typ FROM pliki WHERE id = ?').get(id);
+          if (r) fs.rmSync(path.join(P_PLIKI, `${id}.${r.typ}`), { force: true });
+          db.prepare('DELETE FROM pliki WHERE id = ?').run(id);
+          return json(res, nag, 200, { ok: true });
+        }
+      }
       if (p === '/miejsce' && req.method === 'GET') {
         const u2 = db.prepare('SELECT COALESCE(SUM(rozmiar),0) AS s, COUNT(*) AS n FROM zdjecia').get();
-        return json(res, nag, 200, { zdjecia: u2.n, bajty: u2.s, wolne: wolneNaDysku() });
+        const u3 = db.prepare('SELECT COALESCE(SUM(rozmiar),0) AS s, COUNT(*) AS n FROM pliki').get();
+        return json(res, nag, 200, { zdjecia: u2.n, bajty: u2.s, dokumenty: u3.n, bajtyDokumentow: u3.s, wolne: wolneNaDysku() });
       }
       return json(res, nag, 404, { blad: 'Nie ma takiego adresu.' });
     } catch (e) {

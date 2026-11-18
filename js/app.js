@@ -3,7 +3,7 @@ import * as M from './model.js';
 import * as D from './dane.js';
 import { zrobZip } from './zip.js';
 
-export const WERSJA = '1.2.0';
+export const WERSJA = '1.3.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -25,6 +25,12 @@ const IK = {
   osoba: '<circle cx="12" cy="8" r="3.6"/><path d="M5 20c.8-3.8 3.6-5.6 7-5.6s6.2 1.8 7 5.6"/>',
   kropki: '<circle cx="5.5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18.5" cy="12" r="1.3"/>',
   okKolo: '<circle cx="12" cy="12" r="9"/><path d="M7.8 12.3l2.8 2.8 5.6-5.6"/>',
+  tel: '<path d="M6.6 3.8l2.6-.3 1.5 4-1.9 1.4a11 11 0 0 0 6.3 6.3l1.4-1.9 4 1.5-.3 2.6a2 2 0 0 1-2.1 1.8C10.5 18.8 5.2 13.5 4.8 5.9a2 2 0 0 1 1.8-2.1z"/>',
+  sms: '<path d="M4 5.5h16v10.5h-9.5L6 19.5V16H4z"/><path d="M8 10.8h.01M12 10.8h.01M16 10.8h.01"/>',
+  kal: '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>',
+  pdf: '<path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20z"/><path d="M14 3.5V8h4"/><path d="M9.5 13.5h5M9.5 16.5h3.5"/>',
+  obraz: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 3.5 3 2.5-2 4.5 3.5"/>',
+  spinacz: '<path d="M16.5 11.5l-5.6 5.6a3.6 3.6 0 0 1-5.1-5.1l6.3-6.3a2.4 2.4 0 0 1 3.4 3.4L9.4 15.2a1.2 1.2 0 0 1-1.7-1.7l5.6-5.6"/>',
 };
 const ik = (n, kl = '') => `<svg class="ik ${kl}" viewBox="0 0 24 24" aria-hidden="true">${IK[n]}</svg>`;
 
@@ -61,8 +67,14 @@ function wstaw(el, html) {
   if (!el || el.__html === html) return;
   const a = document.activeElement;
   if (a && a !== document.body && el.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !['checkbox', 'radio'].includes(a.type)) { el.__czeka = true; return; }
+  // Safari zeruje przewinięcie kontenera przy podmianie treści — zapamiętujemy i przywracamy
+  const sc = el.closest('.kol-edytor, .kol-podglad, .kol-lista, .okno-tresc');
+  const y = sc ? sc.scrollTop : 0;
   el.innerHTML = html; el.__html = html; el.__czeka = false;
+  if (sc && sc.scrollTop !== y) sc.scrollTop = y;
   wypelnijObrazy(el);
+  // pole wyboru pliku: słuchacz bezpośrednio na elemencie, żeby odświeżenie w trakcie wyboru nie zgubiło plików
+  for (const i of $$('input[type=file][data-dok]', el)) i.onchange = () => dodajPlikiDok(i);
 }
 function wypelnijObrazy(el) {
   for (const img of $$('img[data-mini]', el)) {
@@ -220,17 +232,35 @@ function odswiezPusty() {
 // ---------- oferta ----------
 // Karta = spis kafelków; każda sekcja, zdjęcia, ogłoszenie i kontrola to osobny ekran.
 const SEK_KARTY = [
-  ['podstawy', 'Podstawy'], ['lokalizacja', 'Lokalizacja'], ['lokal', 'Nieruchomość'], ['pom', 'Pomieszczenia'], ['koszty', 'Koszty'],
+  ['podstawy', 'Podstawy'], ['lokalizacja', 'Lokalizacja'], ['lokal', 'Nieruchomość'], ['pom', 'Pomieszczenia'], ['koszty', 'Koszty'], ['wyp', 'Wyposażenie'],
   ['atuty', 'Atuty'], ['minusy', 'Co warto wiedzieć'], ['okolica', 'Okolica'], ['weryfikacja', 'Sprawdziliśmy'], ['energia', 'Świadectwo'],
   ['wlasciciel', 'Właściciel i umowa'],
 ];
-const EKRANY = [...SEK_KARTY.map(([k, n]) => ({ k, n, sek: true })), { k: 'zdjecia', n: 'Zdjęcia' }, { k: 'ogloszenie', n: 'Ogłoszenie' }, { k: 'kontrola', n: 'Kontrola' }];
-const hashEkranu = (oid, k) => (['zdjecia', 'ogloszenie', 'kontrola'].includes(k) ? `#/o/${oid}/${k}` : `#/o/${oid}/s/${k}`);
+const ZAKLADKI = ['zdjecia', 'ogloszenie', 'kontrola', 'klienci', 'wizyty', 'dokumenty'];
+const EKRANY = [...SEK_KARTY.map(([k, n]) => ({ k, n, sek: true })), { k: 'zdjecia', n: 'Zdjęcia' }, { k: 'ogloszenie', n: 'Ogłoszenie' }, { k: 'kontrola', n: 'Kontrola' },
+  { k: 'klienci', n: 'Klienci' }, { k: 'wizyty', n: 'Wizyty' }, { k: 'dokumenty', n: 'Dokumenty' }];
+const PRYWATNE = new Set(['wlasciciel', 'klienci', 'wizyty', 'dokumenty']);
+const hashEkranu = (oid, k) => (ZAKLADKI.includes(k) ? `#/o/${oid}/${k}` : `#/o/${oid}/s/${k}`);
+const odm = (n, a, b, c) => `${n} ${n === 1 ? a : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? b : c}`;
+const DNI = ['nd', 'pn', 'wt', 'śr', 'cz', 'pt', 'sb'];
+function dataWizyty(k, krotko = false) {
+  const m = String(k || '').match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
+  if (!m) return '';
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  const dz = new Date(); dz.setHours(0, 0, 0, 0);
+  const roz = Math.round((d - dz) / 86400e3);
+  const dzien = roz === 0 ? 'dziś' : roz === 1 ? 'jutro' : roz === -1 ? 'wczoraj' : `${DNI[d.getDay()]} ${m[3]}.${m[2]}${krotko || d.getFullYear() === dz.getFullYear() ? '' : `.${m[1]}`}`;
+  return `${dzien}${m[4] ? `, ${m[4]}:${m[5]}` : ''}`;
+}
 // ikony kafelków bez grafiki z arkusza — złota linia w tym samym stylu
 const IK_ZLOTE = {
   zdjecia: '<path d="M4 8.5h3.2l1.9-2.6h5.8l1.9 2.6H20V19H4z"/><circle cx="12" cy="13.4" r="3.6"/><path d="M17.3 10.6h.01"/>',
   ogloszenie: '<path d="M6.5 3.5h8l3.5 3.5v13.5h-11.5z"/><path d="M14.5 3.5V7H18M9 10.5h6M9 13.5h6M9 16.5h4"/>',
   kontrola: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3.2"/>',
+  wyp: '<path d="M5.5 11V8.6A2.6 2.6 0 0 1 8.1 6h7.8a2.6 2.6 0 0 1 2.6 2.6V11"/><path d="M3.2 12.2a1.6 1.6 0 0 1 3.2 0v2.3h11.2v-2.3a1.6 1.6 0 0 1 3.2 0v5.3H3.2z"/><path d="M5.2 17.5V19.5M18.8 17.5V19.5"/>',
+  klienci: '<circle cx="9" cy="8.3" r="3.1"/><path d="M3.3 19.5c.6-3.4 2.9-5.1 5.7-5.1s5.1 1.7 5.7 5.1"/><circle cx="16.8" cy="9.2" r="2.5"/><path d="M15.6 14.6c.4-.1.8-.1 1.2-.1 2.3 0 4 1.4 4.6 4.3"/>',
+  wizyty: '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/><path d="M8.5 15l2.3 2.2 4.7-4.7"/>',
+  dokumenty: '<path d="M3.5 7.1a1.6 1.6 0 0 1 1.6-1.6h4.2l2.1 2.3h7.5a1.6 1.6 0 0 1 1.6 1.6v9a1.6 1.6 0 0 1-1.6 1.6H5.1a1.6 1.6 0 0 1-1.6-1.6z"/><path d="M3.5 10.8h17"/>',
 };
 const ikonaEkranu = (k) => (IK_ZLOTE[k]
   ? `<svg class="ik-zlota" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="url(#zloto)" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">${IK_ZLOTE[k]}</g></svg>`
@@ -266,6 +296,10 @@ function licznikSekcji(k, o) {
   if (k === 'minusy') return { z: Math.min(1, (o.minusy || []).filter((a) => a.t).length), w: 1 };
   if (k === 'okolica') return { z: Math.min(3, (o.okolica || []).filter((a) => a.nazwa && a.min).length), w: 3 };
   if (k === 'weryfikacja') { const l = M.WERYFIKACJA.filter((x) => !x.dla || x.dla === o.transakcja); return { z: l.filter((x) => o.weryf?.[x.k]?.ok).length, w: l.length }; }
+  if (k === 'wyp') return { z: M.wyposazenie(o).length || o.wypBrak ? 1 : 0, w: 1 };
+  if (k === 'klienci') return { z: M.klienci(o).length ? 1 : 0, w: 1 };
+  if (k === 'wizyty') { const w = M.wizyty(o); return { z: w.nad.length + w.po.length ? 1 : 0, w: 1 }; }
+  if (k === 'dokumenty') { const d = M.dokumenty(o); return { z: d.filter((x) => ['jest', 'nd'].includes(x.s)).length, w: d.length }; }
   const L = M.checklista(o);
   if (k === 'zdjecia') { const z = L.filter((x) => x.zakladka === 'zdjecia'); return { z: z.filter((x) => x.ok).length, w: z.length }; }
   if (k === 'ogloszenie') { const n = M.kontrolaSlow(o).length; return { z: n ? 0 : 1, w: 1 }; }
@@ -287,6 +321,10 @@ function podsumowanie(k, o) {
     case 'weryfikacja': { const l = licznikSekcji(k, o); return `${l.z} z ${l.w} sprawdzone`; }
     case 'energia': return o.swiad === 'tak' ? j(['sporządzone', !puste(o.ep) && `EP ${M.liczba(o.ep)}`]) : o.swiad === 'nie' ? 'w przygotowaniu' : 'brak odpowiedzi';
     case 'wlasciciel': return j([o.wlImie, o.umowaNr && `umowa ${o.umowaNr}`, o.wylacznosc && 'wyłączność']) || 'brak';
+    case 'wyp': { const n = M.wyposazenie(o).reduce((a, g) => a + g.el.length, 0); return n ? `${najem ? '' : 'w cenie: '}${odm(n, 'element', 'elementy', 'elementów')}` : o.wypBrak ? (najem ? 'bez wyposażenia' : 'nic nie zostaje') : 'brak'; }
+    case 'klienci': { const L = M.klienci(o).filter((x) => x.status !== 'rezygnacja'); const um = L.filter((x) => x.status === 'umowiony').length; return L.length ? j([odm(L.length, 'zainteresowany', 'zainteresowanych', 'zainteresowanych'), um && odm(um, 'umówiony', 'umówionych', 'umówionych')]) : 'brak'; }
+    case 'wizyty': { const w = M.wizyty(o); const od = w.po.filter((x) => x.status === 'odbyla').length; return w.nad.length ? j([`najbliższa: ${dataWizyty(w.nad[0].kiedy, true) || 'termin do ustalenia'}`, od && `${od} odbyte`]) : od ? odm(od, 'odbyta', 'odbyte', 'odbytych') : 'brak'; }
+    case 'dokumenty': { const d = M.dokumenty(o); const n = d.reduce((a, x) => a + (x.pliki || []).length, 0); return j([n && odm(n, 'plik', 'pliki', 'plików'), `${d.filter((x) => x.s === 'jest').length} z ${d.filter((x) => x.s !== 'nd').length} jest`]); }
     case 'zdjecia': { const z = o.zdj || []; return z.length ? j([`${z.length} zdjęć`, z.some((x) => x.pom === 'rzut') && 'rzut', z.some((x) => x.wiz) && 'wizualizacje']) : 'brak'; }
     case 'ogloszenie': { const n = M.kontrolaSlow(o).length; return j([`${M.opis(o, { agent: agent() }).length} znaków`, n ? `${n} do poprawy` : 'bez uwag']); }
     case 'kontrola': { const g = M.gotowosc(o); return j([M.STATUSY[o.status], g.braki.length ? `${g.braki.length} do uzupełnienia` : 'komplet']); }
@@ -323,6 +361,9 @@ function odswiezOferte() {
     if (k === 'zdjecia') tabZdjecia(t, o);
     else if (k === 'ogloszenie') wstaw(t, htmlTekstOgloszenia(o) + htmlOgloszenie(o, false));
     else if (k === 'kontrola') wstaw(t, htmlKontrola(o));
+    else if (k === 'klienci') wstaw(t, htmlKlienci(o));
+    else if (k === 'wizyty') wstaw(t, htmlWizyty(o));
+    else if (k === 'dokumenty') { wstaw(t, htmlDokumenty(o)); D.przygotujKluczPlikow(); }
     else wstaw(t, ekranSekcji(k, o));
     const i = EKRANY.findIndex((x) => x.k === k);
     const pop = EKRANY[i - 1], nast = EKRANY[i + 1];
@@ -347,7 +388,7 @@ function naglowekSpisu(o) {
 function spisHTML(o) {
   return `<div class="spis">${EKRANY.map((x, i) => {
     const l = licznikSekcji(x.k, o);
-    return `<a class="kafel szklo ${x.k === 'wlasciciel' ? 'prywatna' : ''}" href="${hashEkranu(o.id, x.k)}">
+    return `<a class="kafel szklo ${PRYWATNE.has(x.k) ? 'prywatna' : ''}" href="${hashEkranu(o.id, x.k)}">
       <span class="kafel-ik">${ikonaEkranu(x.k)}</span><i class="kafel-kreska"></i>
       <span class="sek-nr">${String(i + 1).padStart(2, '0')}</span>
       <span class="kafel-tx"><span class="sek-tyt">${esc(x.n)}</span><span class="kafel-pod">${esc(podsumowanie(x.k, o))}</span></span>
@@ -376,6 +417,7 @@ function ekranSekcji(k, o) {
     return `<div id="sek-${k}">${h}</div>`;
   }
   if (k === 'pom') h = sekcjaPom(o);
+  else if (k === 'wyp') h = sekcjaWyp(o);
   else if (k === 'atuty') h = grupa('Atuty', sekcjaListy(o, 'atuty', 'Tylko fakty, które da się sprawdzić: co, kiedy, ile. Bez ocen.', 'np. okna wymienione w 2019 r.'));
   else if (k === 'minusy') h = grupa('Uczciwe minusy', sekcjaListy(o, 'minusy', 'Zanim ktoś je odkryje na prezentacji. To buduje zaufanie i oszczędza czas obu stronom.', 'np. brak windy, 4. piętro'));
   else if (k === 'okolica') h = grupa('Miejsca w pobliżu', sekcjaOkolicy(o));
@@ -468,6 +510,146 @@ function htmlTekstOgloszenia(o) {
       <div class="pole pelna"><label class="et" for="f-tytul">Własny tytuł</label><div class="wejscie"><input id="f-tytul" data-k="tytul" data-t="t" placeholder="${esc(M.tytul({ ...o, tytul: '' }))}" value="${esc(o.tytul || '')}"></div></div>
       <div class="pole pelna"><label class="et" for="f-lead">Wstęp</label><div class="wejscie"><textarea id="f-lead" data-k="lead" data-t="t" rows="3" placeholder="np. Mieszkanie po jednym właścicielu, regularnie remontowane.">${esc(o.lead || '')}</textarea></div></div>
     </div>`);
+}
+
+// ----- wyposażenie -----
+function sekcjaWyp(o) {
+  const najem = o.transakcja === 'najem', w = o.wyp || {};
+  const opis = najem ? 'Zaznacz, co najemca zastanie w lokalu. Trafi do ogłoszenia jako „Wyposażenie” i do pól portalu.'
+    : 'Zaznacz tylko to, co zostaje w cenie. Resztę właściciel zabiera. W ogłoszeniu: „W cenie zostaje”.';
+  let h = `<p class="sek-opis">${opis}</p>`;
+  for (const g of M.WYPOSAZENIE) {
+    h += grupa(g.g, `<div class="wyp-siatka">${Object.entries(g.el).map(([k, n]) => `<button type="button" class="wyp-el ${w[k] ? 'akt' : ''}" data-a="wyp-el" data-k="${k}" aria-pressed="${!!w[k]}"><span class="pt">${w[k] ? ik('ok') : ''}</span>${esc(n)}</button>`).join('')}</div>`);
+  }
+  h += grupa('Inne', sekcjaListy(o, 'wypInne', 'Czego nie ma na liście. Konkretnie, z marką lub rokiem, jeśli ją znasz.', 'np. robot sprzątający, 2023'));
+  h += grupa('Uwagi', `<div class="siatka"><div class="pole pelna"><label class="et" for="f-wypUwagi">Uwagi do wyposażenia</label><div class="wejscie"><textarea id="f-wypUwagi" data-k="wypUwagi" data-t="t" rows="2" placeholder="${najem ? 'np. meble w sypialni można zabrać na życzenie najemcy' : 'np. szafa w przedpokoju do uzgodnienia'}">${esc(o.wypUwagi || '')}</textarea></div></div>
+    <div class="pole pelna"><label class="przel"><span class="tekst">${najem ? 'Lokal bez wyposażenia' : 'Nic nie zostaje w cenie'}</span><input type="checkbox" data-k="wypBrak" data-t="b" ${o.wypBrak ? 'checked' : ''}><span class="suwak"></span></label></div></div>`);
+  return h;
+}
+
+// ----- klienci, wizyty, dokumenty (tylko dla Was) -----
+const grupaZ = (nazwa, prawy, tresc, kl = '') => `<section class="grupa szklo ${kl}"><div class="grupa-glowa"><h2 class="grupa-tyt">${esc(nazwa)}</h2>${prawy}</div>${tresc}</section>`;
+const pole = (et, we, kl = 'pelna') => `<div class="pole ${kl}"><span class="et">${esc(et)}</span><div class="wejscie">${we}</div></div>`;
+const inp = (k, p, v, typ = 'text', pl = '', dod = '') => `<input data-e="${k}" data-p="${p}" data-t="t" type="${typ}" value="${esc(v ?? '')}" placeholder="${esc(pl)}" autocomplete="off" aria-label="${esc(pl || p)}" ${dod}>`;
+const sel = (k, p, v, opcje, pusta = '— wybierz —') => `<select data-e="${k}" data-p="${p}" data-t="w"><option value="">${pusta}</option>${Object.entries(opcje).map(([x, n]) => `<option value="${x}" ${v === x ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`;
+const telLink = (t) => String(t || '').replace(/[^\d+]/g, '');
+function kiedyDodany(x) { return x.t ? `${new Date(x.t).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' })}${x.kto ? ` · ${x.kto}` : ''}` : ''; }
+
+function htmlKlienci(o) {
+  const najem = o.transakcja === 'najem';
+  const L = M.klienci(o);
+  let h = `<p class="sek-opis">Osoby zainteresowane tą ofertą. Widzicie je tylko Wy dwaj, nie trafiają do ogłoszenia. Przy pierwszym kontakcie przekaż informację o przetwarzaniu danych (RODO).</p>
+    <button class="dodaj" data-a="kl-dodaj">${ik('plus')}Dodaj klienta</button>`;
+  if (!L.length) return `${h}<div class="pusto maly">Nikt się jeszcze nie zgłosił.</div>`;
+  for (const x of L) {
+    const k = x._k, tel = telLink(x.tel);
+    const st = x.status || 'nowy';
+    h += grupaZ(x.imie || 'Nowy klient', `<button type="button" class="zr-tag ${['umowiony', 'oferta', 'transakcja'].includes(st) ? 'akt' : st === 'rezygnacja' ? 'wyg' : ''}" data-a="kl-status" data-e="${k}">${esc(M.KLIENT_STATUSY[st])}${ik('dol')}</button>`, `<div class="siatka">
+      ${pole('Imię i nazwisko', inp(k, 'imie', x.imie, 'text', 'jak się przedstawił'))}
+      ${pole('Telefon', inp(k, 'tel', x.tel, 'tel', '600 000 000', 'inputmode="tel"'), 'pol')}
+      ${pole('E-mail', inp(k, 'email', x.email, 'email', 'opcjonalnie', 'inputmode="email" autocapitalize="none"'), 'pol')}
+      ${pole('Skąd', sel(k, 'zrodlo', x.zrodlo, M.KLIENT_ZRODLA), 'pol')}
+      ${najem ? pole('Wprowadzka od', `<input data-e="${k}" data-p="od" data-t="d" type="date" value="${esc(x.od || '')}" aria-label="Wprowadzka od">`, 'pol') : pole('Finansowanie', sel(k, 'fin', x.fin, M.FINANSOWANIE), 'pol')}
+      <div class="pole pelna"><span class="et">Czego szuka, pytania, ustalenia</span><div class="wejscie"><textarea data-e="${k}" data-p="notatka" data-t="t" rows="3" placeholder="${najem ? 'np. para, bez zwierząt, praca na Felinie' : 'np. budżet do 520 tys., sprzedaje swoje na Czubach'}">${esc(x.notatka || '')}</textarea></div></div>
+      <div class="pole pelna"><label class="przel"><span class="tekst">Przekazana informacja o danych osobowych (RODO)</span><input type="checkbox" data-e="${k}" data-p="rodo" data-t="b" ${x.rodo ? 'checked' : ''}><span class="suwak"></span></label></div>
+      <div class="pole pelna akcje-wpisu">
+        ${tel ? `<a class="btn kontur maly" href="tel:${tel}">${ik('tel')}Zadzwoń</a><a class="btn kontur maly" href="sms:${tel}">${ik('sms')}SMS</a>` : ''}
+        <button class="btn kontur maly" data-a="wz-dodaj" data-kl="${k}">${ik('kal')}Umów prezentację</button>
+        <span class="rozp"></span><span class="dodany">${esc(kiedyDodany(x))}</span>
+        <button class="usun-w" data-a="wpis-usun" data-e="${k}" data-co="klienta" aria-label="Usuń klienta">${ik('kosz')}</button>
+      </div></div>`, st === 'rezygnacja' ? 'wygaszona' : '');
+  }
+  return h;
+}
+
+function htmlWizyty(o) {
+  const { nad, po } = M.wizyty(o);
+  const kl = M.klienci(o);
+  const opcjeKl = Object.fromEntries(kl.map((x) => [x._k, x.imie || 'Klient bez imienia']));
+  const konta = Object.fromEntries((D.stan.konta || []).map((x) => [x.nazwa, x.nazwa]));
+  const karta = (x) => {
+    const k = x._k, st = x.status || 'plan', klient = o[x.klient];
+    const tel = telLink(klient?.tel);
+    return grupaZ(dataWizyty(x.kiedy) || 'Termin do ustalenia', `<span class="zr-tag ${st === 'plan' ? 'akt' : st === 'odwolana' ? 'wyg' : ''}">${esc(M.WIZYTA_STATUSY[st])}</span>`, `<div class="siatka">
+      ${pole('Data i godzina', `<input data-e="${k}" data-p="kiedy" data-t="t" type="datetime-local" step="60" value="${esc(x.kiedy || '')}" aria-label="Data i godzina">`)}
+      ${pole('Klient', sel(k, 'klient', x.klient, opcjeKl, kl.length ? '— bez przypisania —' : 'najpierw dodaj klienta'), 'pol')}
+      ${pole('Prowadzi', sel(k, 'kto', x.kto, konta, '— kto? —'), 'pol')}
+      <div class="pole pelna"><span class="et">Status</span><div class="pigulki">${Object.entries(M.WIZYTA_STATUSY).map(([v, n]) => `<button type="button" data-a="wz-status" data-e="${k}" data-v="${v}" class="${st === v ? 'akt' : ''}" aria-pressed="${st === v}">${esc(n)}</button>`).join('')}</div></div>
+      ${st === 'odbyla' ? `<div class="pole pelna"><span class="et">Wrażenia klienta</span><div class="wejscie"><textarea data-e="${k}" data-p="opinia" data-t="t" rows="3" placeholder="Co mówił: co mu się podobało, zastrzeżenia, pytania. Przyda się w raporcie dla właściciela.">${esc(x.opinia || '')}</textarea></div></div>` : ''}
+      ${pole('Notatka', inp(k, 'notatka', x.notatka, 'text', st === 'plan' ? 'np. klucze od sąsiadki spod 4' : 'krótko'))}
+      <div class="pole pelna akcje-wpisu">
+        ${tel ? `<a class="btn kontur maly" href="tel:${tel}">${ik('tel')}${esc((klient.imie || 'Klient').split(' ')[0])}</a>` : ''}
+        <span class="rozp"></span><span class="dodany">${esc(kiedyDodany(x))}</span>
+        <button class="usun-w" data-a="wpis-usun" data-e="${k}" data-co="prezentację" aria-label="Usuń prezentację">${ik('kosz')}</button>
+      </div></div>`, st === 'odwolana' ? 'wygaszona' : '');
+  };
+  let h = `<p class="sek-opis">Prezentacje tej nieruchomości. Wspólnik dostaje powiadomienie o każdej nowej. Po wizycie zapisz wrażenia klienta — z nich zrobicie raport dla właściciela.</p>
+    <button class="dodaj" data-a="wz-dodaj">${ik('plus')}Zaplanuj prezentację</button>`;
+  if (!nad.length && !po.length) return `${h}<div class="pusto maly">Nie ma jeszcze żadnej prezentacji.</div>`;
+  if (nad.length) h += `<h3 class="podtytul">Nadchodzące</h3>${nad.map(karta).join('')}`;
+  if (po.length) h += `<h3 class="podtytul">Odbyte i odwołane</h3>${po.map(karta).join('')}`;
+  return h;
+}
+
+const IK_DOK = { brak: 'x', zamowiony: 'zegar', jest: 'ok', nd: 'kropki' };
+function htmlDokumenty(o) {
+  const d = M.dokumenty(o);
+  const wiersz = (x) => {
+    const s = x.s || 'brak';
+    const pliki = x.pliki || [];
+    return `<div class="dok ${s}">
+      <div class="dok-gora"><span class="dok-n">${esc(x.n)}</span>
+        <button type="button" class="zr-tag ${s === 'jest' ? 'akt' : s === 'nd' ? 'wyg' : ''}" data-a="dk-status" data-e="${x._k}" data-n="${esc(x.n)}">${ik(IK_DOK[s])}${esc(M.DOK_STATUSY[s])}${ik('dol')}</button></div>
+      <div class="dok-pliki">${pliki.map((f) => `<span class="plik"><button type="button" data-a="dk-otworz" data-e="${x._k}" data-id="${f.id}">${ik(f.typ === 'pdf' ? 'pdf' : 'obraz')}<span>${esc(f.nazwa || 'dokument')}</span>${D.czekaNaWyslanie(f.id) ? ik('wysyla', 'czeka') : ''}</button><button type="button" class="x" data-a="dk-usun-plik" data-e="${x._k}" data-id="${f.id}" aria-label="Usuń plik">${ik('x')}</button></span>`).join('')}
+        <label class="dodaj-plik">${ik('spinacz')}${pliki.length ? 'Dodaj' : 'Dodaj plik'}<input type="file" accept="image/*,application/pdf,.pdf" multiple data-dok="${x._k}"></label>
+        ${x.std ? '' : `<button type="button" class="usun-w" data-a="wpis-usun" data-e="${x._k}" data-co="dokument" aria-label="Usuń dokument">${ik('kosz')}</button>`}
+      </div></div>`;
+  };
+  const std = d.filter((x) => x.std), wl = d.filter((x) => !x.std);
+  return `<p class="sek-opis">Skany i PDF-y trzyma serwer — otworzysz je na każdym urządzeniu. Zdjęcie dokumentu możesz zrobić aparatem prosto z listy. Lista dopasowuje się do rodzaju oferty.</p>
+    ${grupa(o.transakcja === 'najem' ? 'Dokumenty do najmu' : 'Dokumenty do sprzedaży', `<div class="doki">${std.map(wiersz).join('')}</div>`)}
+    ${grupa('Inne dokumenty', `${wl.length ? `<div class="doki">${wl.map(wiersz).join('')}</div>` : '<p class="sek-opis">Np. regulamin wspólnoty, protokół z przeglądu, faktury za remont.</p>'}
+      <div class="dodaj-dok"><div class="wejscie"><input id="dk-nowy" placeholder="nazwa dokumentu" autocomplete="off" aria-label="Nazwa nowego dokumentu"></div><button class="btn kontur" data-a="dk-dodaj">${ik('plus')}Dodaj</button></div>`)}`;
+}
+let kolejkaDok = Promise.resolve();
+function dodajPlikiDok(input) {
+  const pliki = [...input.files], k = input.dataset.dok, oid = S.id;
+  input.value = '';
+  if (!pliki.length || !oid) return;
+  kolejkaDok = kolejkaDok.then(async () => {
+    for (const plik of pliki) {
+      try {
+        toast(`Dodaję ${plik.name || 'plik'}…`, 4000);
+        const wpis = await D.przygotujPlik(oid, plik);
+        const o = D.oferta(oid); if (!o) return;
+        const x = { ...(o[k] || {}) };
+        if (!x.nazwa && !M.dokumentyWymagane(o).some((d) => `dk_${d.k}` === k)) return;
+        x.pliki = [...(x.pliki || []), wpis];
+        if (!x.s || x.s === 'brak' || x.s === 'zamowiony') x.s = 'jest';
+        await D.zmien(oid, { [k]: x });
+        toast('Dodano');
+      } catch (e) { toast(e?.message || 'Nie udało się dodać pliku', 3500); }
+    }
+  });
+}
+async function otworzPlikDok(f) {
+  if (f.typ !== 'pdf') {
+    const tlo = document.createElement('div');
+    tlo.className = 'podglad-zdj';
+    tlo.innerHTML = `<img alt="${esc(f.nazwa || 'Dokument')}"><button class="okragly" aria-label="Zamknij">${ik('x')}</button>`;
+    tlo.addEventListener('click', () => tlo.remove());
+    document.body.appendChild(tlo);
+    try { $('img', tlo).src = URL.createObjectURL(await D.blobPliku(f.id)); } catch (e) { tlo.remove(); toast(navigator.onLine ? e.message : 'Połącz się z internetem, żeby otworzyć dokument.', 3500); }
+    return;
+  }
+  // PDF: link z kluczem otwiera się w przeglądarce telefonu (na iPhonie okno z przyciskiem Gotowe)
+  const u = !D.czekaNaWyslanie(f.id) && D.adresPliku(f.id);
+  if (u) { window.open(u, '_blank', 'noopener'); return; }
+  try {
+    const b = await D.blobPliku(f.id);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.target = '_blank'; a.rel = 'noopener'; a.download = f.nazwa || 'dokument.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch (e) { toast(navigator.onLine ? e.message : 'Połącz się z internetem, żeby otworzyć dokument.', 3500); }
 }
 
 // ----- zdjęcia -----
@@ -629,6 +811,14 @@ function zapisz(el) {
     if (v === null) delete arr[i][p]; else arr[i][p] = v;
     if (l === 'pom' && (p === 'a' || p === 'b')) { const m = M.metrazZWymiarow(arr[i].a, arr[i].b); if (m !== null) arr[i].m = m; }
     D.zmien(S.id, { [l]: arr });
+  } else if (el.dataset.e) {
+    // wpis: klient / prezentacja / dokument — osobne pole oferty
+    const k = el.dataset.e, p = el.dataset.p;
+    const x = { ...(o[k] || {}) };
+    const v = wartosc(el);
+    if (v === null || v === false) delete x[p]; else x[p] = v;
+    if (JSON.stringify(o[k] || {}) === JSON.stringify(x)) return;
+    D.zmien(S.id, { [k]: x });
   } else if (el.dataset.w) {
     const w = { ...(o.weryf || {}) };
     const x = { ...(w[el.dataset.w] || {}) };
@@ -655,8 +845,8 @@ function zmienStatus(o, v, el) {
   if (v === 'opublikowana' && !o.dataPublikacji) pola.dataPublikacji = new Date().toISOString().slice(0, 10);
   D.zmien(o.id, pola);
 }
-const natychmiast = (el) => el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'date';
-const doZapisu = (el) => el.dataset.k || el.dataset.l || el.dataset.w || el.dataset.z || el.dataset.u;
+const natychmiast = (el) => el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'date' || el.type === 'datetime-local';
+const doZapisu = (el) => el.dataset.k || el.dataset.l || el.dataset.w || el.dataset.z || el.dataset.u || el.dataset.e;
 document.addEventListener('input', (e) => {
   const el = e.target;
   if (!doZapisu(el) || natychmiast(el)) return;
@@ -667,6 +857,7 @@ document.addEventListener('change', (e) => {
   const el = e.target;
   if (el.id === 'pom-dodaj') { S.pomDodawania = el.value; return; }
   if (el.id === 'dodaj-zdj') return dodajZdjecia(el);
+  if (el.dataset.dok) return; // obsługuje słuchacz na elemencie (wstaw)
   if (!doZapisu(el)) return;
   clearTimeout(timery.get(el));
   zapisz(el);
@@ -744,7 +935,12 @@ function okno(tytul, html) {
 }
 const NAZWY_POL = { pom: 'Pomieszczenia', atuty: 'Atuty', minusy: 'Co warto wiedzieć', okolica: 'Okolica', zdj: 'Zdjęcia', weryf: 'Sprawdziliśmy', zr: 'Źródła danych',
   lead: 'Wstęp', tytul: 'Własny tytuł', status: 'Status', _usunieta: 'Usunięcie oferty', dataPublikacji: 'Data publikacji', utworzyl: 'Utworzenie', id: 'Utworzenie', ulubiona: 'Wyróżnienie' };
-function etykieta(k) { for (const s of M.SEKCJE) for (const p of s.pola) if (p.k === k) return p.e; return NAZWY_POL[k] || k; }
+Object.assign(NAZWY_POL, { wyp: 'Wyposażenie', wypInne: 'Wyposażenie (inne)', wypUwagi: 'Uwagi do wyposażenia', wypBrak: 'Bez wyposażenia' });
+function etykieta(k) {
+  for (const s of M.SEKCJE) for (const p of s.pola) if (p.k === k) return p.e;
+  if (k.startsWith('kl_')) return 'Klient'; if (k.startsWith('wz_')) return 'Prezentacja'; if (k.startsWith('dk_')) return 'Dokumenty';
+  return NAZWY_POL[k] || k;
+}
 function pokazWartosc(k, j) {
   if (j === null || j === undefined) return '—';
   let v; try { v = JSON.parse(j); } catch { return esc(j); }
@@ -774,7 +970,8 @@ function pokazAktywnosc() {
   const widziana = D.stan.aktywnoscWidziana;
   okno('Zmiany wspólnika', grupy.length ? `<ul class="hist">${grupy.slice(0, 40).map((g) => {
     const nowa = g.pola.includes('id') || g.pola.includes('transakcja') && g.pola.includes('rodzaj') && g.pola.length > 4;
-    const opis = g.pola.includes('_usunieta') ? 'usunął(-ęła) ofertę' : nowa ? 'dodał(a) ofertę' : g.status ? `status → ${pokazWartosc('status', g.status)}` : `zmienił(a): ${[...new Set(g.pola.map(etykieta))].slice(0, 4).join(', ')}${g.pola.length > 4 ? '…' : ''}`;
+    const nowe = (pref) => A.some((a) => a.oferta === g.oferta && a.kto === g.kto && a.pole.startsWith(pref) && a.stara === null && a.kiedy >= g.od && a.kiedy <= g.kiedy);
+    const opis = g.pola.includes('_usunieta') ? 'usunął(-ęła) ofertę' : nowa ? 'dodał(a) ofertę' : nowe('wz_') ? 'zaplanował(a) prezentację' : nowe('kl_') ? 'dodał(a) klienta' : g.status ? `status → ${pokazWartosc('status', g.status)}` : `zmienił(a): ${[...new Set(g.pola.map(etykieta))].slice(0, 4).join(', ')}${g.pola.length > 4 ? '…' : ''}`;
     return `<li data-a="otworz" data-oid="${g.oferta}" style="cursor:pointer"><div class="of">${esc(g.nazwa || 'Oferta')}${g.kiedy > widziana ? ' <span class="licznik" style="background:var(--gold);color:#1A1408">nowe</span>' : ''}</div><div>${esc(g.kto || '')} ${opis}</div><div class="kiedy">${kiedy(g.kiedy)}</div></li>`;
   }).join('')}</ul>` : '<p class="wyc">Wspólnik nie wprowadzał jeszcze zmian.</p>');
   D.aktywnoscWidziana();
@@ -797,7 +994,7 @@ async function kopiuj(tekst) {
 // ---------- kliknięcia ----------
 const SEK_DLA = { podstawy: 'podstawy', cena: 'podstawy', prowizja: 'podstawy', pow: 'lokal', pokoje: 'lokal', pietro: 'lokal', wlasnosc: 'lokal', rok: 'lokal', ogrzewanie: 'lokal',
   lokalizacja: 'lokalizacja', czynsz: 'koszty', kaucja: 'koszty', dostepne: 'koszty', swiad: 'energia', swiadPola: 'energia', pomieszczenia: 'pom', minusy: 'minusy',
-  okolica: 'okolica', atuty: 'atuty', kw: 'weryfikacja', kwN: 'weryfikacja' };
+  okolica: 'okolica', atuty: 'atuty', kw: 'weryfikacja', kwN: 'weryfikacja', wyp: 'wyp' };
 document.addEventListener('click', async (e) => {
   const zdjImg = e.target.closest('.zdj .obraz img');
   if (zdjImg) return podgladZdjecia(zdjImg.dataset.mini);
@@ -830,6 +1027,92 @@ document.addEventListener('click', async (e) => {
         const zr = { ...(D.oferta(o.id).zr || {}) }; zr[k] = z.dataset.zr || undefined;
         D.zmien(o.id, { zr: JSON.parse(JSON.stringify(zr)) }); w.remove();
       });
+      break;
+    }
+    case 'wyp-el': {
+      const w = { ...(o.wyp || {}) }; const k = b.dataset.k;
+      if (w[k]) delete w[k]; else w[k] = true;
+      D.zmien(o.id, Object.keys(w).length ? { wyp: w, wypBrak: null } : { wyp: null });
+      break;
+    }
+    case 'kl-dodaj': {
+      const k = `kl_${M.noweId(8)}`;
+      await D.zmien(o.id, { [k]: { t: Date.now(), kto: D.stan.konto?.nazwa || '', status: 'nowy' } });
+      setTimeout(() => $(`[data-e="${k}"][data-p="imie"]`)?.focus(), 80);
+      break;
+    }
+    case 'kl-status': {
+      const k = b.dataset.e, akt = o[k]?.status || 'nowy';
+      const w = okno('Status klienta', `<div class="menu-lista">${Object.entries(M.KLIENT_STATUSY).map(([v, n]) => `<button data-st="${v}" class="${akt === v ? 'akt' : ''}">${esc(n)}${akt === v ? ik('ok', 'ok') : ''}</button>`).join('')}</div>`);
+      w.addEventListener('click', (ev) => {
+        const x = ev.target.closest('[data-st]'); if (!x) return;
+        const of = D.oferta(o.id); w.remove();
+        if (of?.[k]) D.zmien(o.id, { [k]: { ...of[k], status: x.dataset.st } });
+      });
+      break;
+    }
+    case 'wz-dodaj': {
+      const k = `wz_${M.noweId(8)}`, kl = b.dataset.kl;
+      const pola = { [k]: JSON.parse(JSON.stringify({ t: Date.now(), kto: D.stan.konto?.nazwa || '', status: 'plan', klient: kl || undefined })) };
+      if (kl && o[kl] && ['nowy', undefined].includes(o[kl].status)) pola[kl] = { ...o[kl], status: 'umowiony' };
+      await D.zmien(o.id, pola);
+      if (S.tab !== 'wizyty') idzDo(`#/o/${o.id}/wizyty`);
+      setTimeout(() => { const i = $(`[data-e="${k}"][data-p="kiedy"]`); i?.scrollIntoView({ block: 'center' }); i?.focus(); }, 160);
+      break;
+    }
+    case 'wz-status': {
+      const k = b.dataset.e, v = b.dataset.v, x = o[k]; if (!x) return;
+      const pola = { [k]: { ...x, status: v } };
+      const kl = x.klient && o[x.klient];
+      if (v === 'odbyla' && kl && ['nowy', 'umowiony'].includes(kl.status || 'nowy')) pola[x.klient] = { ...kl, status: 'po' };
+      D.zmien(o.id, pola);
+      break;
+    }
+    case 'wpis-usun': {
+      const k = b.dataset.e;
+      const x = o[k] || {};
+      if ((x.pliki || []).length && !(await potwierdz('Usunąć dokument?', 'Razem z dołączonymi plikami, na obu kontach.', 'Usuń'))) return;
+      if (!(x.pliki || []).length && (x.imie || x.kiedy || x.nazwa) && !(await potwierdz(`Usunąć ${b.dataset.co}?`, 'Zniknie na obu kontach. Zostanie ślad w historii zmian.', 'Usuń'))) return;
+      // prezentacje usuwanego klienta zostają, tylko bez przypisania
+      const pola = { [k]: null };
+      if (k.startsWith('kl_')) for (const w of M.wpisy(o, 'wz_')) if (w.klient === k) { const { _k, ...r } = w; pola[_k] = { ...r, klient: undefined, notatka: [r.notatka, x.imie && `klient: ${x.imie}`].filter(Boolean).join(' · ') }; }
+      await D.zmien(o.id, JSON.parse(JSON.stringify(pola)));
+      for (const f of x.pliki || []) D.usunPlik(f.id);
+      break;
+    }
+    case 'dk-status': {
+      const k = b.dataset.e, akt = o[k]?.s || 'brak';
+      const w = okno(b.dataset.n || 'Dokument', `<div class="menu-lista">${Object.entries(M.DOK_STATUSY).map(([v, n]) => `<button data-st="${v}" class="${akt === v ? 'akt' : ''}">${ik(IK_DOK[v])}${esc(n)}${akt === v ? ik('ok', 'ok') : ''}</button>`).join('')}</div>`);
+      w.addEventListener('click', (ev) => {
+        const x = ev.target.closest('[data-st]'); if (!x) return;
+        const of = D.oferta(o.id); w.remove();
+        const nw = { ...(of?.[k] || {}), s: x.dataset.st };
+        if (nw.s === 'brak') delete nw.s;
+        D.zmien(o.id, { [k]: Object.keys(nw).length ? nw : null });
+      });
+      break;
+    }
+    case 'dk-otworz': {
+      const f = (o[b.dataset.e]?.pliki || []).find((x) => x.id === b.dataset.id);
+      if (f) otworzPlikDok(f);
+      break;
+    }
+    case 'dk-usun-plik': {
+      const k = b.dataset.e, x = o[k] || {};
+      const f = (x.pliki || []).find((y) => y.id === b.dataset.id); if (!f) return;
+      if (!(await potwierdz('Usunąć plik?', `„${esc(f.nazwa || 'dokument')}” zniknie z serwera i z obu kont.`, 'Usuń'))) return;
+      const of = D.oferta(o.id), y = { ...(of[k] || {}) };
+      y.pliki = (y.pliki || []).filter((z) => z.id !== f.id);
+      if (!y.pliki.length) delete y.pliki;
+      await D.zmien(o.id, { [k]: Object.keys(y).length ? y : null });
+      D.usunPlik(f.id);
+      break;
+    }
+    case 'dk-dodaj': {
+      const i = $('#dk-nowy'); const n = i?.value.trim();
+      if (!n) { i?.focus(); toast('Wpisz nazwę dokumentu'); return; }
+      i.value = '';
+      await D.zmien(o.id, { [`dk_${M.noweId(8)}`]: { nazwa: n.slice(0, 120), t: Date.now() } });
       break;
     }
     case 'nie-wiem': {
@@ -951,5 +1234,5 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
     if (/^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || '')) document.addEventListener('focusout', odswiezTeraz, { once: true });
     else odswiezTeraz();
   });
-  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data?.oid) idzDo(`#/o/${e.data.oid}/karta`); });
+  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data?.oid) idzDo(`#/o/${e.data.oid}/${ZAKLADKI.includes(e.data.ekran) ? e.data.ekran : 'karta'}`); });
 }

@@ -1,5 +1,5 @@
 // AM Oferty — praca offline i powiadomienia.
-const WERSJA = 'amoferty-1.2.0';
+const WERSJA = 'amoferty-1.3.0';
 const PLIKI = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'js/app.js', 'js/dane.js', 'js/model.js', 'js/zip.js',
   'fonts/archivo.woff2', ...['latin', 'latin-ext'].flatMap((z) => [500, 600].map((g) => `fonts/cormorant-${z}-${g}.woff2`)), 'ikony/icon-192.png', 'ikony/icon-512.png', 'ikony/apple-touch-icon.png',
   'img/tlo.jpg', 'img/monogram.png', ...['podstawy', 'lokalizacja', 'lokal', 'pom', 'koszty', 'atuty', 'minusy', 'okolica', 'weryfikacja', 'energia', 'tekst', 'wlasciciel'].map((n) => `img/ikony/${n}.png`)];
@@ -25,14 +25,14 @@ self.addEventListener('fetch', (e) => {
 });
 self.addEventListener('push', (e) => {
   let d = {}; try { d = e.data.json(); } catch { d = { tytul: 'AM Oferty', tresc: e.data?.text() || '' }; }
-  e.waitUntil(self.registration.showNotification(d.tytul || 'AM Oferty', { body: d.tresc || '', icon: 'ikony/icon-192.png', badge: 'ikony/icon-192.png', data: { oid: d.oid }, tag: d.oid || 'am' }));
+  e.waitUntil(self.registration.showNotification(d.tytul || 'AM Oferty', { body: d.tresc || '', icon: 'ikony/icon-192.png', badge: 'ikony/icon-192.png', data: { oid: d.oid, ekran: d.ekran }, tag: `${d.oid || 'am'}${d.ekran ? `-${d.ekran}` : ''}` }));
 });
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
-  const oid = e.notification.data?.oid;
+  const oid = e.notification.data?.oid, ekran = e.notification.data?.ekran;
   e.waitUntil((async () => {
     const okna = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const w of okna) { await w.focus(); if (oid) w.postMessage({ oid }); return; }
-    await self.clients.openWindow(oid ? `./#/o/${oid}/karta` : './');
+    for (const w of okna) { await w.focus(); if (oid) w.postMessage({ oid, ekran }); return; }
+    await self.clients.openWindow(oid ? `./#/o/${oid}/${ekran || 'karta'}` : './');
   })());
 });

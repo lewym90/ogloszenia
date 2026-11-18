@@ -26,6 +26,73 @@ export const WERYFIKACJA = [
   { k: 'swiad', t: 'Świadectwo charakterystyki energetycznej sprawdzone', og: 'Świadectwo charakterystyki energetycznej' },
 ];
 
+// ---------- wyposażenie (w najmie: co jest w lokalu; w sprzedaży: co zostaje w cenie) ----------
+export const WYPOSAZENIE = [
+  { g: 'Kuchnia', el: { lodowka: 'Lodówka', zmywarka: 'Zmywarka', piekarnik: 'Piekarnik', plyta: 'Płyta grzewcza', okap: 'Okap', mikrofala: 'Mikrofalówka', zabudowaKuch: 'Zabudowa kuchenna' } },
+  { g: 'Łazienka i pranie', el: { pralka: 'Pralka', suszarka: 'Suszarka', wanna: 'Wanna', prysznic: 'Prysznic' } },
+  { g: 'Meble', el: { szafy: 'Szafy wnękowe', lozko: 'Łóżko', sofa: 'Sofa / narożnik', stol: 'Stół z krzesłami', biurko: 'Biurko' } },
+  { g: 'Technika i bezpieczeństwo', el: { tv: 'Telewizor', klima: 'Klimatyzacja', internet: 'Światłowód', domofon: 'Domofon / wideodomofon', drzwiAntyw: 'Drzwi antywłamaniowe', alarm: 'Alarm / monitoring', rolety: 'Rolety zewnętrzne', moskitiery: 'Moskitiery' } },
+];
+export const WYP_NAZWY = Object.fromEntries(WYPOSAZENIE.flatMap((g) => Object.entries(g.el)));
+// lista zaznaczonego wyposażenia w kolejności grup (+ dopisane ręcznie)
+export function wyposazenie(o) {
+  const w = o.wyp || {};
+  const L = WYPOSAZENIE.map((g) => ({ g: g.g, el: Object.entries(g.el).filter(([k]) => w[k]).map(([, n]) => n) })).filter((g) => g.el.length);
+  const inne = (o.wypInne || []).map((x) => String(x.t || '').trim()).filter(Boolean);
+  if (inne.length) L.push({ g: 'Inne', el: inne });
+  return L;
+}
+
+// ---------- obsługa: klienci, prezentacje, dokumenty ----------
+// Każdy klient / prezentacja / dokument to osobne pole oferty (kl_…, wz_…, dk_…),
+// więc dwaj wspólnicy dodający wpisy w tym samym czasie nie nadpisują się nawzajem.
+export const KLIENT_STATUSY = { nowy: 'Nowy kontakt', umowiony: 'Umówiony na prezentację', po: 'Po prezentacji', oferta: 'Złożył ofertę', transakcja: 'Transakcja', rezygnacja: 'Rezygnacja' };
+export const KLIENT_ZRODLA = { otodom: 'Otodom', olx: 'OLX', facebook: 'Facebook / Instagram', strona: 'Nasza strona', telefon: 'Telefon z baneru', polecenie: 'Polecenie', baza: 'Z naszej bazy', inne: 'Inne' };
+export const FINANSOWANIE = { gotowka: 'Gotówka', kredyt: 'Kredyt', decyzja: 'Kredyt z decyzją banku', nieznane: 'Brak informacji' };
+export const WIZYTA_STATUSY = { plan: 'Zaplanowana', odbyla: 'Odbyła się', odwolana: 'Odwołana' };
+export const DOK_STATUSY = { brak: 'Brak', zamowiony: 'Zamówiony', jest: 'Jest', nd: 'Nie dotyczy' };
+export const wpisy = (o, prefiks) => Object.keys(o).filter((k) => k.startsWith(prefiks) && o[k] && typeof o[k] === 'object').map((k) => ({ ...o[k], _k: k }));
+export const klienci = (o) => wpisy(o, 'kl_').sort((a, b) => (a.status === 'rezygnacja') - (b.status === 'rezygnacja') || (b.t || 0) - (a.t || 0));
+export function wizyty(o) {
+  const L = wpisy(o, 'wz_');
+  const nad = L.filter((w) => (w.status || 'plan') === 'plan').sort((a, b) => String(a.kiedy || '9').localeCompare(String(b.kiedy || '9')));
+  const po = L.filter((w) => (w.status || 'plan') !== 'plan').sort((a, b) => String(b.kiedy || '').localeCompare(String(a.kiedy || '')));
+  return { nad, po };
+}
+// lista dokumentów zależna od transakcji, rodzaju i formy własności
+export function dokumentyWymagane(o) {
+  const r = o.rodzaj, najem = o.transakcja === 'najem';
+  const D = [{ k: 'umowaPosr', n: 'Umowa pośrednictwa (podpisana)' }, { k: 'tytul', n: 'Dokument własności (akt notarialny, postanowienie)' }];
+  if (r !== 'pokoj') D.push({ k: 'kw', n: 'Odpis z księgi wieczystej' });
+  if (BUD.includes(r)) D.push({ k: 'swiad', n: 'Świadectwo charakterystyki energetycznej' });
+  if (['mieszkanie', 'dom', 'lokal'].includes(r)) D.push({ k: 'rzut', n: 'Rzut lokalu / projekt' });
+  if (!najem) {
+    if (['mieszkanie', 'lokal', 'garaz'].includes(r)) D.push({ k: 'zaswOplaty', n: 'Zaświadczenie o braku zaległości (spółdzielnia / wspólnota)' });
+    if (o.wlasnosc === 'spoldzielcze') D.push({ k: 'zaswSpoldz', n: 'Zaświadczenie ze spółdzielni o przysługującym prawie' });
+    if (['mieszkanie', 'dom'].includes(r)) D.push({ k: 'meldunek', n: 'Zaświadczenie o braku osób zameldowanych' });
+    if (['dom', 'dzialka'].includes(r)) {
+      D.push({ k: 'podatek', n: 'Zaświadczenie o niezaleganiu w podatku od nieruchomości' });
+      D.push({ k: 'wypis', n: 'Wypis z rejestru gruntów i mapa ewidencyjna' });
+      D.push({ k: 'mpzp', n: 'Wypis z planu miejscowego / warunki zabudowy' });
+    }
+    if (r === 'dom') D.push({ k: 'uzytkowanie', n: 'Pozwolenie na użytkowanie / zawiadomienie o zakończeniu budowy' });
+  } else {
+    D.push({ k: 'projektUmowy', n: 'Projekt umowy najmu' });
+    D.push({ k: 'protokol', n: 'Protokół zdawczo-odbiorczy (ze stanami liczników)' });
+    if (o.umowaNajmu === 'okazjonalny') {
+      D.push({ k: 'egzekucja', n: 'Oświadczenie najemcy o poddaniu się egzekucji (notariusz)' });
+      D.push({ k: 'zgloszenieUS', n: 'Zgłoszenie najmu okazjonalnego do urzędu skarbowego' });
+    }
+  }
+  return D;
+}
+// standardowe + dopisane ręcznie, ze stanem z oferty
+export function dokumenty(o) {
+  const std = dokumentyWymagane(o).map((d) => ({ ...d, _k: `dk_${d.k}`, ...(o[`dk_${d.k}`] || {}), std: true }));
+  const wlasne = wpisy(o, 'dk_').filter((d) => d.nazwa && !std.some((s) => s._k === d._k)).sort((a, b) => (a.t || 0) - (b.t || 0)).map((d) => ({ ...d, n: d.nazwa }));
+  return [...std, ...wlasne];
+}
+
 // ---------- pola karty ----------
 // t: tekst, n: liczba, w: wybór, b: tak/nie, d: data
 const WSZ = ['mieszkanie', 'dom', 'lokal', 'dzialka', 'pokoj', 'garaz'];
@@ -245,6 +312,14 @@ export function opis(o, ctx = {}) {
     A.push(`POMIESZCZENIA\n${pom.map((p) => `– ${p.nazwa || p.typ}${p.m ? `: ${m2(p.m)}` : ''}${p.a && p.b ? ` (${liczba(p.a)} × ${liczba(p.b)} m)` : ''}${p.opis ? ` — ${punkt(p.opis).replace(/^./, (c) => c.toLowerCase())}` : ''}`).join('\n')}`);
   }
 
+  // wyposażenie
+  const wy = wyposazenie(o);
+  if (wy.length || o.wypUwagi) {
+    const l = wy.map((g) => `– ${g.g}: ${g.el.join(', ').toLowerCase()}`);
+    if (o.wypUwagi) l.push(`– ${punkt(o.wypUwagi)}`);
+    A.push(`${najem ? 'WYPOSAŻENIE' : 'W CENIE ZOSTAJE'}\n${l.join('\n')}`);
+  }
+
   // atuty
   const atuty = (o.atuty || []).map((a) => punkt(a.t)).filter(Boolean);
   if (atuty.length) A.push(`${najem ? 'CO ZYSKUJESZ' : 'ATUTY'}\n${atuty.map((x) => `– ${x}`).join('\n')}`);
@@ -354,6 +429,7 @@ export function polaPortalu(o) {
   dodaj('Czynsz (zł/mies.)', o.czynsz);
   if (najem) { dodaj('Kaucja (zł)', o.kaucja); dodaj('Umeblowanie', wybor('umeblowanie', o.umeblowanie)); }
   if (!najem) dodaj('Forma własności', wybor('wlasnosc', o.wlasnosc));
+  dodaj(najem ? 'Wyposażenie (do zaznaczenia)' : 'W cenie zostaje (do zaznaczenia)', wyposazenie(o).flatMap((g) => g.el).join(', '));
   dodaj('Dostępne od', data(o.dostepneOd));
   dodaj('Powierzchnia działki (m²)', o.dzialkaPow);
   if (o.swiad === 'tak') {
@@ -389,6 +465,8 @@ export function tekstyOgloszenia(o) {
   (o.minusy || []).forEach((a, i) => a.t && t.push({ gdzie: `Co warto wiedzieć ${i + 1}`, tekst: a.t }));
   (o.pom || []).forEach((p) => p.opis && t.push({ gdzie: `Pomieszczenie: ${p.nazwa || p.typ}`, tekst: p.opis }));
   (o.okolica || []).forEach((p) => p.nazwa && t.push({ gdzie: 'Okolica', tekst: p.nazwa }));
+  (o.wypInne || []).forEach((x) => x.t && t.push({ gdzie: 'Wyposażenie', tekst: x.t }));
+  if (o.wypUwagi) t.push({ gdzie: 'Wyposażenie — uwagi', tekst: o.wypUwagi });
   if (o.czynszObejmuje) t.push({ gdzie: 'Czynsz obejmuje', tekst: o.czynszObejmuje });
   if (o.ekspozycja) t.push({ gdzie: 'Strony świata', tekst: o.ekspozycja });
   return t;
@@ -458,6 +536,7 @@ export function checklista(o) {
   add('minusy', '„Co warto wiedzieć” — co najmniej jedna uczciwa uwaga', (o.minusy || []).some((m) => m.t), false, 'karta');
   add('okolica', 'Okolica — co najmniej 3 punkty z czasem dojścia', (o.okolica || []).filter((x) => x.nazwa && x.min).length >= 3, false, 'karta');
   add('atuty', 'Atuty — co najmniej 2 konkretne fakty', (o.atuty || []).filter((a) => a.t).length >= 2, false, 'karta');
+  if (najem && BUD.includes(r)) add('wyp', 'Wyposażenie zaznaczone', wyposazenie(o).length > 0 || !!o.wypBrak, false, 'karta');
   if (najem) add('kwN', 'Właściciel potwierdzony w księdze wieczystej', o.weryf?.kwN?.ok, false, 'weryfikacja');
   add('zdjOpisy', 'Zdjęcia przypisane do pomieszczeń / miejsc', zdj.length > 0 && zdj.every((z) => z.pom), false, 'zdjecia');
   return L;
