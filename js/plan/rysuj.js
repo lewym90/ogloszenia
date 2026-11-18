@@ -288,12 +288,13 @@ function lozko(ctx, w, d, lw, n) {
   rr(ctx, -w / 2 + 3, d / 2 - d * 0.2, w - 6, d * 0.17, 3); ctx.fillStyle = K.szary; ctx.fill(); // narzuta w nogach
 }
 
+let bezCieniaMebli = false;
 function rysujMebel(ctx, f, s, dpr, obrazy, cien) {
   const r = rodzajMebla(f), { w, d } = wymiaryMebla(f);
   ctx.save();
   ctx.translate(f.position.x, f.position.y); ctx.rotate(((f.rotation || 0) * Math.PI) / 180);
   if (f.scale?.x < 0) ctx.scale(-1, 1);
-  if (cien) { ctx.shadowColor = 'rgba(55,40,25,0.30)'; ctx.shadowBlur = Math.max(2, 7 * s * dpr); ctx.shadowOffsetY = 2.5 * s * dpr; ctx.shadowOffsetX = 1 * s * dpr; }
+  if (cien && !bezCieniaMebli) { ctx.shadowColor = 'rgba(55,40,25,0.30)'; ctx.shadowBlur = Math.max(2, 7 * s * dpr); ctx.shadowOffsetY = 2.5 * s * dpr; ctx.shadowOffsetX = 1 * s * dpr; }
   const img = obrazy?.get?.(`mebel:${r}`), sk = MEBLE[r].skala;
   if (img) {
     if (sk === 'p') { const k = Math.min(w / img.width, d / img.height); ctx.drawImage(img, (-img.width * k) / 2, (-img.height * k) / 2, img.width * k, img.height * k); }
@@ -311,6 +312,12 @@ function rysujMebel(ctx, f, s, dpr, obrazy, cien) {
   ctx.restore();
 }
 
+// warstwa podłóg z cieniami — rysowana raz na początku przeciągania mebla, potem tylko kopiowana
+export function warstwaPodlog(sc, widok, op, W, H) {
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  rysuj(c.getContext('2d'), sc, widok, { ...op, tylkoPodlogi: true, podlogi: null });
+  return c;
+}
 export const naPodlodze = (f) => ['dywan', 'dywan_okragly'].includes(MEBLE[rodzajMebla(f)].wektor);
 // ---------- rysowanie całości ----------
 // widok: { s: px/cm, ox, oy: położenie punktu (0,0) świata w px ekranu, dpr }
@@ -327,7 +334,9 @@ export function rysuj(ctx, sc, widok, op = {}) {
   swiat();
   const { fl, pokoje, sciany } = sc;
   const meble = op.meble === false ? [] : (fl.furniture || []);
+  bezCieniaMebli = !!op.bezCienia;
 
+  if (op.podlogi) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(op.podlogi, 0, 0); swiat(); } else {
   // 1) cień całego budynku pod spodem
   ctx.save();
   if (op.bezCienia) ctx.shadowColor = 'transparent';
@@ -355,6 +364,8 @@ export function rysuj(ctx, sc, widok, op = {}) {
     }
   }
 
+  }
+  if (op.tylkoPodlogi) { ctx.restore(); return; }
   // 3) meble (pod ścianami, żeby ściana zawsze była na wierzchu)
   for (const f of meble) {
     if (naPodlodze(f)) rysujMebel(ctx, f, s, dpr, op.obrazy, false);
@@ -457,7 +468,7 @@ export function rysuj(ctx, sc, widok, op = {}) {
     let y = cy - h / 2 + lh / 2;
     ctx.lineJoin = 'round';
     for (const l of linie) { napis(ctx, l, cx, y, `600 ${f1}px Archivo, system-ui, sans-serif`, TEKST, f1); y += lh; }
-    if (m != null) napis(ctx, `${String(Math.round(m * 10) / 10).replace('.', ',')} m²`, cx, y + f2 * 0.15, `400 ${f2}px Archivo, system-ui, sans-serif`, '#4a463f', f2);
+    if (m != null) napis(ctx, `${(Math.round(m * 10) / 10).toFixed(1).replace('.', ',')} m²`, cx, y + f2 * 0.15, `400 ${f2}px Archivo, system-ui, sans-serif`, '#4a463f', f2);
     zajete.push({ x0: cx - maxW / 2 - 4, x1: cx + maxW / 2 + 4, y0: cy - h / 2 - 2, y1: cy + h / 2 + 2 });
   }
   for (const t of op.bezNapisow ? [] : fl.textAnnotations || []) {
@@ -465,6 +476,14 @@ export function rysuj(ctx, sc, widok, op = {}) {
     napis(ctx, t.text, sx(t.x), sy(t.y), `500 ${f}px Archivo, system-ui, sans-serif`, '#2f2c27', f);
   }
   if (op.wymiary !== false) {
+    // wymiary nie wchodzą na meble — liczymy ich obrys na ekranie
+    for (const f of meble) {
+      if (naPodlodze(f)) continue;
+      const { w, d } = wymiaryMebla(f), a = ((f.rotation || 0) * Math.PI) / 180, c = Math.cos(a), si = Math.sin(a);
+      const xs = [], ys = [];
+      for (const [lx, ly] of [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]]) { xs.push(sx(f.position.x + lx * c - ly * si)); ys.push(sy(f.position.y + lx * si + ly * c)); }
+      zajete.push({ x0: Math.min(...xs) + 2, x1: Math.max(...xs) - 2, y0: Math.min(...ys) + 2, y1: Math.max(...ys) - 2 });
+    }
     const f3 = 11.5 * F;
     ctx.font = `500 ${f3}px Archivo, system-ui, sans-serif`;
     const lista = sciany.filter((g) => !g.granica && !g.luk).map((g) => ({ g, L: dlugoscCzysta(g, sciany) })).filter((q) => q.L >= 35).sort((a, b) => b.L - a.L);
@@ -535,17 +554,20 @@ export function trafienie(sc, x, y, tol, op = {}) {
 const pole = (pts) => pts.reduce((a, p, i) => { const q = pts[(i + 1) % pts.length]; return a + p.x * q.y - q.x * p.y; }, 0) / 2;
 
 // ---------- obraz do ogłoszenia ----------
+export function skalaEksportu(sc) { const b = sc.granice; return (2400 * (1 - 2 * 0.09)) / Math.max(b.x1 - b.x0, b.y1 - b.y0); }
 export async function eksportPNG(sc, op = {}) {
   const b = sc.granice, dlugi = 2400, margines = 0.09;
   const szer = b.x1 - b.x0, wys = b.y1 - b.y0;
-  const s = (dlugi * (1 - 2 * margines)) / Math.max(szer, wys);
-  const W = Math.round(szer >= wys ? dlugi : szer * s + 2 * dlugi * margines);
-  const stopka = 120;
-  const Hplan = Math.round(szer >= wys ? wys * s + 2 * dlugi * margines : dlugi);
+  const s = op.skala || (dlugi * (1 - 2 * margines)) / Math.max(szer, wys); // przy kilku piętrach wspólna skala
+  const W = Math.round(szer * s + 2 * dlugi * margines);
+  const stopka = op.bezStopki ? 0 : 120;
+  const Hplan = Math.round(wys * s + 2 * dlugi * margines);
   const c = document.createElement('canvas'); c.width = W; c.height = Hplan + stopka;
   const ctx = c.getContext('2d');
   const ox = (W - szer * s) / 2 - b.x0 * s, oy = (Hplan - wys * s) / 2 - b.y0 * s;
   rysuj(ctx, sc, { s, ox, oy, dpr: 1 }, { ...op, eksport: true, czcionka: dlugi / 900, zaznaczone: null });
+  if (op.tytul) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.font = '600 54px Archivo, system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillStyle = '#24221f'; ctx.fillText(op.tytul, Math.round(W * 0.05), 60); }
+  if (op.bezStopki) return await new Promise((ok) => c.toBlob(ok, 'image/png'));
   // stopka: znak AM i uczciwy opis
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = '#ffffff'; ctx.fillRect(0, Hplan, W, stopka);

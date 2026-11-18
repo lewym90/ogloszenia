@@ -29,6 +29,8 @@ with sync_playwright() as p:
     stan = lambda: J("JSON.stringify(window.__plan.projekt)")
     ekr = lambda x, y: J(f"(()=>{{const S=window.__plan, r=document.querySelector('#plotno').getBoundingClientRect(); return [{x}*S.widok.s+S.widok.ox+r.left, {y}*S.widok.s+S.widok.oy+r.top]}})()")
     def fl(): return J("(()=>{const S=window.__plan; return S.projekt.floors.find(f=>f.id===S.projekt.activeFloorId)||S.projekt.floors[0]})()")
+    def akcja(a):  # przycisk akcji: na telefonie w pasku nad rzutem, na tablecie i laptopie w panelu po prawej
+        pg.locator(f'#pasek-akcji [data-a={a}]:visible, #arkusz [data-a={a}]:visible').first.click(); pg.wait_for_timeout(150)
     def mysz_przeciagnij(a, b, kroki=8):
         pg.mouse.move(*a); pg.mouse.down(); pg.mouse.move(*b, steps=kroki); pg.mouse.up(); pg.wait_for_timeout(250)
     ok(len(fl()['walls']) == 20, 'skan wczytany (20 ścian)')
@@ -42,7 +44,7 @@ with sync_playwright() as p:
     # 2) stuknięcie zaznacza
     a = ekr(f0['position']['x'], f0['position']['y']); pg.mouse.click(*a); pg.wait_for_timeout(200)
     ok(J("window.__plan.zazn?.rodzaj") == 'mebel', 'stuknięcie zaznacza mebel')
-    ok(pg.is_visible('#pasek-akcji') and 'Obróć 90°' in pg.inner_text('#pasek-akcji'), 'pasek akcji mebla widoczny')
+    ok('Obróć 90°' in (pg.inner_text('#pasek-akcji') if W < 900 else pg.inner_text('#arkusz')), 'akcje mebla widoczne (pasek / panel)')
     shot('02-zaznaczony')
     # 3) przesunięcie zaznaczonego
     przed = stan(); mysz_przeciagnij(a, (a[0] - 50, a[1] + 30))
@@ -65,10 +67,10 @@ with sync_playwright() as p:
     w1 = [f for f in fl()['furniture'] if f['id'] == J("window.__plan.zazn.id")][0]['width']
     ok(abs(w1 - w0) > 5, f'krawędź zmienia szerokość ({w0:.0f} → {w1:.0f} cm)')
     # 6) do ściany, obrót 90°, odbij, duplikuj, usuń
-    pg.click('#pasek-akcji [data-a=wyrownaj]'); pg.wait_for_timeout(150)
-    pg.click('#pasek-akcji [data-a=obroc]'); pg.wait_for_timeout(150)
-    n0 = len(fl()['furniture']); pg.click('#pasek-akcji [data-a=duplikuj]'); pg.wait_for_timeout(150); ok(len(fl()['furniture']) == n0 + 1, 'Duplikuj dodaje kopię')
-    pg.click('#pasek-akcji [data-a=usun]'); pg.wait_for_timeout(150); ok(len(fl()['furniture']) == n0, 'Usuń usuwa zaznaczony')
+    akcja('wyrownaj')
+    akcja('obroc')
+    n0 = len(fl()['furniture']); akcja('duplikuj'); ok(len(fl()['furniture']) == n0 + 1, 'Duplikuj dodaje kopię')
+    akcja('usun'); ok(len(fl()['furniture']) == n0, 'Usuń usuwa zaznaczony')
     ok(J("window.__plan.zazn") is None, 'po usunięciu nic nie jest zaznaczone')
     # 7) dodaj z katalogu
     pg.click('.plan-dol [data-a=dodaj]'); pg.wait_for_selector('.katalog button'); pg.wait_for_timeout(300)
@@ -84,8 +86,8 @@ with sync_playwright() as p:
     a = ekr(laz['x'] + 5, laz['y'] - 40); pg.mouse.click(*a); pg.wait_for_timeout(200)
     z = J("window.__plan.zazn"); ok(z and z['rodzaj'] in ('pokoj', 'mebel'), f'stuknięcie w łazienkę zaznacza ({z and z["rodzaj"]})')
     J(f"window.__plan.zazn={{rodzaj:'pokoj',id:'{laz['id']}'}}; window.__plan.arkusz=null; window.__planUI.interfejs()"); pg.wait_for_timeout(150)
-    ok('Nazwa' in pg.inner_text('#pasek-akcji') or W >= 900, 'pasek akcji pomieszczenia: Nazwa, Podłoga')
-    pg.evaluate("document.querySelector('#pasek-akcji [data-a=ustawienia]')?.click()"); pg.wait_for_timeout(200)
+    if W < 900:
+        ok('Nazwa' in pg.inner_text('#pasek-akcji'), 'pasek akcji pomieszczenia: Nazwa, Podłoga'); akcja('ustawienia')
     pg.click('#arkusz [data-a=nazwa-pok][data-v="WC"]'); pg.wait_for_timeout(200)
     ok(any(q['nazwa'] == 'WC' for q in J("window.__plan.sc.pokoje.map(p=>({nazwa:p.nazwa}))")), 'nazwa pomieszczenia z podpowiedzi')
     pg.click('#arkusz [data-a=podloga-arkusz]'); pg.wait_for_timeout(250); shot('05-podlogi')
@@ -113,7 +115,7 @@ with sync_playwright() as p:
     pg.click('.plan-dol [data-n=drzwi]'); pg.wait_for_timeout(100)
     nD = len(fl()['doors']); pg.mouse.click(*ekr(b['x0'] + 150, y)); pg.wait_for_timeout(250)
     ok(len(fl()['doors']) == nD + 1 and J("window.__plan.zazn?.rodzaj") == 'drzwi', 'drzwi wstawione stuknięciem w ścianę')
-    pg.click('#pasek-akcji [data-a=kierunek]'); pg.click('#pasek-akcji [data-a=strona]'); pg.wait_for_timeout(100)
+    akcja('kierunek'); akcja('strona')
     pg.click('.plan-dol [data-n=okno]'); pg.wait_for_timeout(100)
     nO = len(fl()['windows']); pg.mouse.click(*ekr(b['x0'] + 260, y)); pg.wait_for_timeout(250)
     ok(len(fl()['windows']) == nO + 1, 'okno wstawione')
@@ -128,6 +130,7 @@ with sync_playwright() as p:
     # 12) wyprostuj
     pg.click('.plan-dol [data-a=wiecej]'); pg.wait_for_timeout(150); pg.click('#arkusz [data-a=wyprostuj]'); pg.wait_for_timeout(400)
     krzywe = J("(()=>{const S=window.__plan, f=S.projekt.floors.find(x=>x.id===S.projekt.activeFloorId)||S.projekt.floors[0]; return f.walls.filter(w=>{const a=Math.atan2(w.end.y-w.start.y,w.end.x-w.start.x)*180/Math.PI; const r=((a%90)+90)%90; return Math.min(r,90-r)>0.6}).length})()")
+    if krzywe: print('   krzywe:', J("(()=>{const S=window.__plan, f=S.projekt.floors.find(x=>x.id===S.projekt.activeFloorId)||S.projekt.floors[0]; return JSON.stringify(f.walls.filter(w=>{const a=Math.atan2(w.end.y-w.start.y,w.end.x-w.start.x)*180/Math.PI; const r=((a%90)+90)%90; return Math.min(r,90-r)>0.6}).map(w=>[w.start,w.end,w.granica]))})()"))
     ok(krzywe == 0, f'wyprostowane: krzywych ścian {krzywe}')
     shot('08-wyprostowany')
     # 13) zapis do oferty
