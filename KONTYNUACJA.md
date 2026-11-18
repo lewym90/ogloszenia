@@ -1,7 +1,7 @@
 # AM Oferty — notatki do kontynuacji
 
 Repo: lewym90/ogloszenia (aplikacja: https://lewym90.github.io/ogloszenia/).
-Stan: wersja 1.3.0 (Wyposażenie, Klienci, Wizyty, Dokumenty; przewinięcie zostaje po zmianie; spis mieści się na szerokość) (18.11.2026). Firma rusza ok. luty/marzec 2027 — do tego czasu aplikacja testowa.
+Stan: wersja 1.3.1 (pola dat nie wychodzą poza ekran, tytuł i wstęp z ołówkiem; wcześniej 1.3.0: Wyposażenie, Klienci, Wizyty, Dokumenty) (18.11.2026). Firma rusza ok. luty/marzec 2027 — do tego czasu aplikacja testowa.
 
 ## Zasady (od właściciela)
 - Zero ściemy: ogłoszenie tylko z faktów, wizualizacje oznaczone + oryginał, bez pustych słów i presji.
@@ -21,6 +21,9 @@ Stan: wersja 1.3.0 (Wyposażenie, Klienci, Wizyty, Dokumenty; przewinięcie zost
 ## Interfejs — ważne
 - `wstaw(el, html)` nie podmienia fragmentu, w którym ktoś pisze; po wyjściu z pola odświeża. Od 1.3.0 zapamiętuje i przywraca przewinięcie kolumny — Safari (iPhone) zeruje je przy podmianie treści, przez co każde stuknięcie (źródło, pigułka) wyrzucało na górę ekranu. Chrome tego nie robi, więc testować w WebKit (`test/ui_safari_test.py`).
 - Pola wyboru plików dokumentów (`input[data-dok]`) mają słuchacza na samym elemencie (ustawiany w `wstaw`), żeby odświeżenie w trakcie wyboru nie zgubiło plików.
+- Pola daty/godziny (1.3.1): iOS nakłada na nie własny styl (szerokość 100% + padding liczone jako content-box, własna minimalna szerokość) — pole wystawało poza panel. Globalnie `appearance: none; min-width: 0; box-sizing: border-box` dla date/datetime-local/time. Testowy WebKit na Linuksie tego nie odtwarza — sprawdzać na iPhonie.
+- Napisy: nagłówki bloków i pigułki skalują się z szerokością kolumny (`cqi`); poniżej 360 px pigułki przechodzą do drugiego rzędu zamiast ucinać słowo. Długie jednostki (kWh/(m²·rok)) w polach połówkowych idą do etykiety.
+- `test/audyt_szerokosci.py`: każdy ekran na 320/390/430 px — nic nie wystaje poza panel, napisy nieucięte. Uruchamiać po każdej zmianie wyglądu.
 - Pliki w IndexedDB na Safari: zapisywać kopię w pamięci (`new Blob([await plik.arrayBuffer()])`), nie obiekt File.
 - Pole wyboru plików (`#zdj-dodaj`) nie może zależeć od stanu (inaczej podmiana w trakcie wyboru gubi zdjęcia) — wartość selecta ustawiana po renderze.
 - Status „Gotowa do publikacji” / „Opublikowana” blokowany, dopóki checklista ma braki.
@@ -44,7 +47,7 @@ Stan: wersja 1.3.0 (Wyposażenie, Klienci, Wizyty, Dokumenty; przewinięcie zost
 - Źródło danych = znacznik w polu („Pomiar ▾”, czerwony „Źródło?” gdy brak), wybór w arkuszu.
 - „Brak informacji”: opcja `nieznane` w Budynek/Technologia/Ogrzewanie/Okna, rok budowy przycisk „Brak informacji” (`rokNieznany`). Nigdy nie trafia do ogłoszenia (`wybor()` zwraca pusto, `znane()`).
 - Pomieszczenia: długość × szerokość (pola `a`, `b`) → metraż `m` liczony sam (`metrazZWymiarow`), wymiary trafiają do ogłoszenia „17,81 m² (4,2 × 4,24 m)”. Bez wymiarów metraż wpisuje się ręcznie.
-- Własny tytuł i wstęp przeniesione na ekran Ogłoszenie. Status oferty zmienia się w Kontroli.
+- Ekran Ogłoszenie zaczyna się od tytułu i wstępu złożonych z danych, przy każdym ołówek → pole z gotowym tekstem do poprawienia, „Gotowe”, „Przywróć z danych”. Własny wstęp (`lead`) ZASTĘPUJE automatyczny (`wstepAuto`), własny tytuł (`tytul`) zastępuje `tytulAuto`. Tekst identyczny z automatycznym nie zapisuje się jako własny. Własny tekst nie aktualizuje się z danymi — pokazana adnotacja. Status oferty zmienia się w Kontroli.
 
 ## Obsługa oferty (od 1.3.0)
 - Wyposażenie (sekcja `wyp`): kafelki do zaznaczania (`wyp` = obiekt {klucz: true}, słownik `WYPOSAZENIE` w model.js), `wypInne` (lista), `wypUwagi`, `wypBrak`. W ogłoszeniu blok „WYPOSAŻENIE” (najem) / „W CENIE ZOSTAJE” (sprzedaż) i pole portalu. W najmie zalecane w checkliście.
@@ -54,7 +57,7 @@ Stan: wersja 1.3.0 (Wyposażenie, Klienci, Wizyty, Dokumenty; przewinięcie zost
 - Dokumenty: lista zależna od transakcji/rodzaju/formy własności/rodzaju umowy najmu (`dokumentyWymagane`) + własne. Status w arkuszu (Brak/Zamówiony/Jest/Nie dotyczy), pliki PDF lub zdjęcia (zdjęcie skalowane do 2400 px). Dodanie pliku ustawia „Jest”. Zdjęcie dokumentu otwiera się w aplikacji, PDF w przeglądarce telefonu.
 
 ## Testy (wszystkie przechodzą 18.11.2026, wersja 1.3.0)
-- model 12, serwer 15 (`node --experimental-sqlite` na Node 22), przeglądarka `test/ui_test.py`: pełny scenariusz telefon → laptop wspólnika (zmiana na żywo < 1 s), offline → online, ZIP 12 zdjęć, zero błędów konsoli.
+- model 13, serwer 15 (`node --experimental-sqlite` na Node 22), przeglądarka `test/ui_test.py`: pełny scenariusz telefon → laptop wspólnika (zmiana na żywo < 1 s), offline → online, ZIP 12 zdjęć, zero błędów konsoli.
 - `test/ui_safari_test.py webkit`: silnik iPhone'a — spis na szerokość, przewinięcie po zmianie, wyposażenie, klient → prezentacja, dokumenty (PDF + zdjęcie). WebKit w trybie prywatnym nie zapisuje Blobów w IndexedDB, dlatego test używa profilu trwałego.
 
 ## Następne kroki (propozycje, nic nie przesądzone)

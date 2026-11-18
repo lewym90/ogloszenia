@@ -262,11 +262,9 @@ export function tytul(o) {
   return t;
 }
 
-// ---------- opis pełny (Otodom, OLX, strona) ----------
-export function opis(o, ctx = {}) {
+// ---------- wstęp złożony z faktów ----------
+export function wstepAuto(o) {
   const najem = o.transakcja === 'najem';
-  const A = [];
-  // lead: same fakty
   const r = rodzajFraza(o);
   let l1 = `${najem ? 'Do wynajęcia' : 'Na sprzedaż'} ${r}`;
   if (o.pow) l1 += ` o powierzchni ${m2(o.pow)}`;
@@ -276,8 +274,17 @@ export function opis(o, ctx = {}) {
   if (pt) l2.push(pt + (o.winda === 'tak' ? ', winda' : o.winda === 'nie' ? ', bez windy' : ''));
   if (o.rok) l2.push(`budynek z${nbsp}${o.rok}${nbsp}r.${wg(o, 'rok')}`);
   if (znane(o.stan)) l2.push(wybor('stan', o.stan).toLowerCase());
-  A.push([l1, l2.length ? zdanie(l2.join(', ')) : ''].filter(Boolean).join(' '));
-  if (o.lead && o.lead.trim()) A.push(zdanie(o.lead));
+  return [l1, l2.length ? zdanie(l2.join(', ')) : ''].filter(Boolean).join(' ');
+}
+export const tytulAuto = (o) => tytul({ ...o, tytul: '' });
+
+// ---------- opis pełny (Otodom, OLX, strona) ----------
+export function opis(o, ctx = {}) {
+  const najem = o.transakcja === 'najem';
+  const A = [];
+  // wstęp: z faktów albo własny (własny zastępuje automatyczny)
+  A.push(o.lead && o.lead.trim() ? zdanie(o.lead) : wstepAuto(o));
+  const pt = pietroTekst(o);
 
   // w skrócie
   const s = [];

@@ -3,7 +3,7 @@ import * as M from './model.js';
 import * as D from './dane.js';
 import { zrobZip } from './zip.js';
 
-export const WERSJA = '1.3.0';
+export const WERSJA = '1.3.1';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -25,6 +25,8 @@ const IK = {
   osoba: '<circle cx="12" cy="8" r="3.6"/><path d="M5 20c.8-3.8 3.6-5.6 7-5.6s6.2 1.8 7 5.6"/>',
   kropki: '<circle cx="5.5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18.5" cy="12" r="1.3"/>',
   okKolo: '<circle cx="12" cy="12" r="9"/><path d="M7.8 12.3l2.8 2.8 5.6-5.6"/>',
+  olowek: '<path d="M15.2 4.8l4 4L8.6 19.4 4 20l.6-4.6z"/><path d="M13.3 6.7l4 4"/>',
+  cofnij: '<path d="M9 7.5L4.5 12 9 16.5"/><path d="M5 12h9.5a5 5 0 0 1 0 10H12"/>',
   tel: '<path d="M6.6 3.8l2.6-.3 1.5 4-1.9 1.4a11 11 0 0 0 6.3 6.3l1.4-1.9 4 1.5-.3 2.6a2 2 0 0 1-2.1 1.8C10.5 18.8 5.2 13.5 4.8 5.9a2 2 0 0 1 1.8-2.1z"/>',
   sms: '<path d="M4 5.5h16v10.5h-9.5L6 19.5V16H4z"/><path d="M8 10.8h.01M12 10.8h.01M16 10.8h.01"/>',
   kal: '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>',
@@ -35,7 +37,7 @@ const IK = {
 const ik = (n, kl = '') => `<svg class="ik ${kl}" viewBox="0 0 24 24" aria-hidden="true">${IK[n]}</svg>`;
 
 // ---------- stan interfejsu ----------
-const S = { ekran: 'lista', id: null, tab: 'karta', sek: null, podglad: 'ogloszenie', q: '', filtr: 'aktywne', wiecej: false, pomDodawania: '', postep: '' };
+const S = { ekran: 'lista', id: null, tab: 'karta', sek: null, podglad: 'ogloszenie', edycja: null, q: '', filtr: 'aktywne', wiecej: false, pomDodawania: '', postep: '' };
 const szeroki = matchMedia('(min-width: 1180px)');
 const telefon = matchMedia('(max-width: 759px)');
 const obrazy = new Map(); // `${id}:${rodzaj}` -> url
@@ -57,6 +59,7 @@ function trasa() {
 }
 const idzDo = (h) => { if (location.hash !== h) location.hash = h; else trasa(); };
 function resetEdytora() {
+  S.edycja = null;
   $$('[data-wstaw]').forEach((el) => { el.__html = null; });
   const t = $('#ed-tresc'); if (t) { t.__klucz = null; }
   const k = $('.kol-edytor'); if (k) k.scrollTop = 0;
@@ -279,7 +282,7 @@ const GRUPY = {
 // krótkie etykiety dla pól stojących po dwa obok siebie
 const KROTKIE = { pietro: 'Piętro', pieter: 'Pięter', material: 'Rodzaj', balkonPow: 'Powierzchnia', parkingCena: 'Dopłata', dostepneOd: 'Dostępne od', minOkres: 'Min. okres',
   umowaData: 'Data umowy', umowaDo: 'Ważna do', swiadNr: 'Numer', swiadDo: 'Ważne do', eu: 'EU', ek: 'EK', ep: 'EP', oze: 'Udział OZE', co2: 'Emisja CO₂', umowaNr: 'Numer umowy', dzielnica: 'Dzielnica', parking: 'Parking', ogrzewanie: 'Ogrzewanie', technologia: 'Technologia' };
-const PODPOWIEDZI = { pietro: '0 = parter', eu: 'kWh/(m²·rok)', ek: 'kWh/(m²·rok)', ep: 'kWh/(m²·rok)' };
+const PODPOWIEDZI = { pietro: '0 = parter' };
 const POL = new Set(['pietro', 'pieter', 'rok', 'material', 'technologia', 'stan', 'ogrzewanie', 'okna', 'balkonPow', 'parkingCena', 'dostepneOd', 'minOkres',
   'kaucja', 'eu', 'ek', 'ep', 'oze', 'co2', 'swiadNr', 'swiadDo', 'umowaNr', 'umowaData', 'umowaDo', 'miasto', 'dzielnica', 'piwnica', 'parking', 'umeblowanie']);
 const POLE = Object.fromEntries(M.SEKCJE.flatMap((s) => s.pola.map((p) => [p.k, p])));
@@ -342,7 +345,7 @@ function odswiezOferte() {
   }
   const klucz = `${o.id}:${S.tab}:${S.sek || ''}`;
   if (e.dataset.tryb !== 'oferta' || e.__klucz !== klucz) {
-    e.dataset.tryb = 'oferta'; e.__klucz = klucz; e.scrollTop = 0;
+    e.dataset.tryb = 'oferta'; e.__klucz = klucz; e.scrollTop = 0; S.edycja = null;
     e.innerHTML = '<div id="of-gora" data-wstaw></div><div class="tresc" id="ed-tresc"></div><div id="of-dol" data-wstaw></div>';
   }
   const t = $('#ed-tresc');
@@ -355,11 +358,11 @@ function odswiezOferte() {
     const ekr = EKRANY.find((x) => x.k === k);
     if (!ekr) { idzDo(`#/o/${o.id}`); return; }
     const prawy = k === 'ogloszenie'
-      ? `<button class="btn kontur maly" data-a="kopiuj" data-co="opis">${ik('kopiuj')}Kopiuj</button>`
+      ? `<button class="btn kontur maly kopiuj-nagl" data-a="kopiuj" data-co="opis" aria-label="Kopiuj całe ogłoszenie">${ik('kopiuj')}<span>Kopiuj</span></button>`
       : k === 'kontrola' ? pierscien(M.gotowosc(o).procent) : `<span class="licz-ekranu">${(() => { const l = licznikSekcji(k, o); return l ? `${wsk(l)}` : ''; })()}</span>`;
-    wstaw($('#of-gora'), `<div class="naglowek-ekranu"><a class="okragly" href="#/o/${o.id}" aria-label="Wróć do karty">${ik('wstecz')}</a>${ikonaEkranu(k)}<h1 class="zloty-tekst">${esc(ekr.n)}</h1>${prawy}</div>`);
+    wstaw($('#of-gora'), `<div class="naglowek-ekranu"><a class="okragly" href="#/o/${o.id}" aria-label="Wróć do karty">${ik('wstecz')}</a>${ikonaEkranu(k)}<h1 class="zloty-tekst ${ekr.n.length > 13 ? 'dlugi' : ''}">${esc(ekr.n)}</h1>${prawy}</div>`);
     if (k === 'zdjecia') tabZdjecia(t, o);
-    else if (k === 'ogloszenie') wstaw(t, htmlTekstOgloszenia(o) + htmlOgloszenie(o, false));
+    else if (k === 'ogloszenie') wstaw(t, htmlOgloszenie(o, false));
     else if (k === 'kontrola') wstaw(t, htmlKontrola(o));
     else if (k === 'klienci') wstaw(t, htmlKlienci(o));
     else if (k === 'wizyty') wstaw(t, htmlWizyty(o));
@@ -459,7 +462,9 @@ function poleHTML(p, o, calaSzerokosc = false) {
   }
   const nieWiem = p.nieWiem ? `<button type="button" class="nie-wiem ${o[p.nieWiem] ? 'akt' : ''}" data-a="nie-wiem" data-k="${p.k}" data-f="${p.nieWiem}">${o[p.nieWiem] ? ik('ok') : ''}Brak informacji</button>` : '';
   const et = (pol && KROTKIE[p.k]) || p.e;
-  return `<div class="pole ${p.dlugi || p.zr ? 'pelna' : pol}"><label class="et" for="${id}" title="${esc(p.e)}">${esc(et)}</label><div class="wejscie">${we}${jedn ? `<span class="jedn">${esc(jedn)}</span>` : ''}${zr}</div>${nieWiem}</div>`;
+  // długa jednostka w polu połówkowym zjadałaby miejsce na liczbę — idzie do etykiety
+  const jednWEtykiecie = pol && jedn && jedn.length > 5;
+  return `<div class="pole ${p.dlugi || p.zr ? 'pelna' : pol}"><label class="et" for="${id}" title="${esc(p.e)}">${esc(et)}${jednWEtykiecie ? ` <span class="et-j">${esc(jedn)}</span>` : ''}</label><div class="wejscie">${we}${jedn && !jednWEtykiecie ? `<span class="jedn">${esc(jedn)}</span>` : ''}${zr}</div>${nieWiem}</div>`;
 }
 function sekcjaPom(o) {
   const pom = o.pom || [];
@@ -504,12 +509,6 @@ function sekcjaWeryfikacji(o) {
   return `<p class="sek-opis">Zaznaczone punkty trafią do ogłoszenia jako „Sprawdziliśmy” z datą. Tak „Sprawdzone do końca” staje się konkretem.</p>
     <div class="weryf">${lista.map((x) => `<div class="w ${w[x.k]?.ok ? 'zazn' : ''}"><label><span class="ptaszek"><input type="checkbox" data-w="${x.k}" data-p="ok" ${w[x.k]?.ok ? 'checked' : ''}><i></i></span><span>${esc(x.t)}</span></label>
     ${w[x.k]?.ok ? `<input type="date" data-w="${x.k}" data-p="d" value="${esc(w[x.k]?.d || '')}" aria-label="Data: ${esc(x.t)}">` : ''}</div>`).join('')}</div>`;
-}
-function htmlTekstOgloszenia(o) {
-  return grupa('Własny tytuł i wstęp', `<p class="sek-opis">Opcjonalnie. Puste = tytuł i wstęp złożą się same z faktów. Wstęp to 1–2 zdania od Was, bez ocen.</p><div class="siatka">
-      <div class="pole pelna"><label class="et" for="f-tytul">Własny tytuł</label><div class="wejscie"><input id="f-tytul" data-k="tytul" data-t="t" placeholder="${esc(M.tytul({ ...o, tytul: '' }))}" value="${esc(o.tytul || '')}"></div></div>
-      <div class="pole pelna"><label class="et" for="f-lead">Wstęp</label><div class="wejscie"><textarea id="f-lead" data-k="lead" data-t="t" rows="3" placeholder="np. Mieszkanie po jednym właścicielu, regularnie remontowane.">${esc(o.lead || '')}</textarea></div></div>
-    </div>`);
 }
 
 // ----- wyposażenie -----
@@ -572,9 +571,9 @@ function htmlWizyty(o) {
     const tel = telLink(klient?.tel);
     return grupaZ(dataWizyty(x.kiedy) || 'Termin do ustalenia', `<span class="zr-tag ${st === 'plan' ? 'akt' : st === 'odwolana' ? 'wyg' : ''}">${esc(M.WIZYTA_STATUSY[st])}</span>`, `<div class="siatka">
       ${pole('Data i godzina', `<input data-e="${k}" data-p="kiedy" data-t="t" type="datetime-local" step="60" value="${esc(x.kiedy || '')}" aria-label="Data i godzina">`)}
-      ${pole('Klient', sel(k, 'klient', x.klient, opcjeKl, kl.length ? '— bez przypisania —' : 'najpierw dodaj klienta'), 'pol')}
+      ${pole('Klient', sel(k, 'klient', x.klient, opcjeKl, kl.length ? '— brak —' : 'brak klientów'), 'pol')}
       ${pole('Prowadzi', sel(k, 'kto', x.kto, konta, '— kto? —'), 'pol')}
-      <div class="pole pelna"><span class="et">Status</span><div class="pigulki">${Object.entries(M.WIZYTA_STATUSY).map(([v, n]) => `<button type="button" data-a="wz-status" data-e="${k}" data-v="${v}" class="${st === v ? 'akt' : ''}" aria-pressed="${st === v}">${esc(n)}</button>`).join('')}</div></div>
+      <div class="pole pelna"><span class="et">Status</span><div class="pigulki male">${Object.entries(M.WIZYTA_STATUSY).map(([v, n]) => `<button type="button" data-a="wz-status" data-e="${k}" data-v="${v}" class="${st === v ? 'akt' : ''}" aria-pressed="${st === v}">${esc(n)}</button>`).join('')}</div></div>
       ${st === 'odbyla' ? `<div class="pole pelna"><span class="et">Wrażenia klienta</span><div class="wejscie"><textarea data-e="${k}" data-p="opinia" data-t="t" rows="3" placeholder="Co mówił: co mu się podobało, zastrzeżenia, pytania. Przyda się w raporcie dla właściciela.">${esc(x.opinia || '')}</textarea></div></div>` : ''}
       ${pole('Notatka', inp(k, 'notatka', x.notatka, 'text', st === 'plan' ? 'np. klucze od sąsiadki spod 4' : 'krótko'))}
       <div class="pole pelna akcje-wpisu">
@@ -734,13 +733,35 @@ function htmlOgloszenie(o, zGora = true) {
   const gora = !zGora ? '' : `<div class="rzad" style="margin:0 0 12px"><span class="znaki">Opis: ${op.length} znaków</span><span class="rozp"></span><button class="btn kontur maly" data-a="kopiuj" data-co="opis">${ik('kopiuj')}Kopiuj całość</button></div>`;
   return `${uw.length ? `<div class="uwagi szklo"><h3>${ik('uwaga')}Do poprawy (${uw.length})</h3><ul>${uw.map((u) => `<li><b>${esc(u.gdzie)}:</b> „${esc(u.fraza)}” — ${esc(u.porada)}</li>`).join('')}</ul></div>` : ''}
     ${gora}
-    <div class="karta-og szklo">${bloki.map((b, i) => `<div class="blok-og ${b.tyt === 'SPRAWDZILIŚMY' ? 'spr' : ''}">
+    ${htmlTytulWstep(o, tyt, bloki)}
+    <div class="karta-og szklo">${bloki.map((b, i) => b.tyt === 'WSTĘP' ? '' : `<div class="blok-og ${b.tyt === 'SPRAWDZILIŚMY' ? 'spr' : ''}">
       <div class="blok-glowa"><h3>${esc(b.tyt.toLowerCase().replace(/^./, (c) => c.toUpperCase()))}</h3><button class="btn kontur" data-a="kopiuj-blok" data-v="${i}">${ik('kopiuj')}Kopiuj</button></div>
       ${b.linie.some((l) => l.startsWith('– ')) ? `<ul>${b.linie.map((l) => liniaHTML(l, b.tyt)).join('')}</ul>` : b.linie.map((l) => liniaHTML(l, b.tyt)).join('')}
     </div>`).join('')}</div>
-    <div class="karta-og szklo"><div class="blok-og"><div class="blok-glowa"><h3>Tytuł</h3><span class="znaki">${tyt.length} zn.</span><button class="btn kontur" data-a="kopiuj" data-co="tytul">${ik('kopiuj')}Kopiuj</button></div><div class="tytul-og">${esc(tyt)}</div></div></div>
     <div class="karta-og szklo"><div class="blok-og"><div class="blok-glowa"><h3>Facebook, Instagram</h3><button class="btn kontur" data-a="kopiuj" data-co="krotki">${ik('kopiuj')}Kopiuj</button></div><pre class="tekst-og">${esc(kr)}</pre></div></div>
     <div class="karta-og szklo"><div class="blok-og"><div class="blok-glowa"><h3>Pola portalu</h3></div><div>${pola.map((p, i) => `<div class="pp"><span><small>${esc(p.e)}</small>${esc(p.v)}</span><button class="okragly" data-a="kopiuj" data-co="pole" data-v="${i}" aria-label="Kopiuj: ${esc(p.e)}">${ik('kopiuj')}</button></div>`).join('')}</div></div></div>`;
+}
+// tytuł i wstęp: złożone z danych, ołówek otwiera edycję; własny tekst zastępuje automatyczny
+function htmlTytulWstep(o, tyt, bloki) {
+  const iw = bloki.findIndex((b) => b.tyt === 'WSTĘP');
+  const wstep = iw >= 0 ? bloki[iw].tekst : '';
+  const blok = (k, nazwa, tekst, auto, kopiuj) => {
+    const wlasny = !!(o[k] && String(o[k]).trim());
+    const edycja = S.edycja === k;
+    const info = wlasny ? `<div class="wlasny">${ik('olowek')}<span>Własny tekst — nie zmienia się razem z danymi.</span><button data-a="przywroc" data-k="${k}">${ik('cofnij')}Przywróć z danych</button></div>` : '';
+    return `<div class="blok-og">
+      <div class="blok-glowa"><h3>${nazwa}</h3>${k === 'tytul' ? `<span class="znaki">${tyt.length} zn.</span>` : ''}
+        <button class="okragly olowek ${edycja ? 'akt' : ''}" data-a="edytuj" data-k="${k}" aria-label="${edycja ? 'Zakończ edycję' : `Edytuj: ${nazwa.toLowerCase()}`}">${ik(edycja ? 'ok' : 'olowek')}</button>${kopiuj}</div>
+      ${edycja
+    ? `<div class="wejscie"><textarea id="f-${k}" data-k="${k}" data-t="t" data-auto="${k}" rows="${k === 'tytul' ? 2 : 5}" aria-label="${nazwa}">${esc(o[k] || auto)}</textarea></div>
+         <div class="rzad edycja-akcje">${wlasny ? `<button class="btn kontur maly" data-a="przywroc" data-k="${k}">${ik('cofnij')}Przywróć z danych</button>` : `<span class="wyc">Bez ocen i pustych słów — kontrola je wyłapie.</span>`}<span class="rozp"></span><button class="btn zloty maly" data-a="edytuj" data-k="${k}">Gotowe</button></div>`
+    : `${k === 'tytul' ? `<div class="tytul-og">${esc(tekst)}</div>` : `<p class="wstep-og">${esc(tekst)}</p>`}${info}`}
+    </div>`;
+  };
+  return `<div class="karta-og szklo">
+    ${blok('tytul', 'Tytuł', tyt, M.tytulAuto(o), `<button class="btn kontur" data-a="kopiuj" data-co="tytul">${ik('kopiuj')}Kopiuj</button>`)}
+    ${blok('lead', 'Wstęp', wstep, M.wstepAuto(o), iw >= 0 ? `<button class="btn kontur" data-a="kopiuj-blok" data-v="${iw}">${ik('kopiuj')}Kopiuj</button>` : '')}
+  </div>`;
 }
 // ----- kontrola -----
 function htmlKontrola(o) {
@@ -800,7 +821,8 @@ function zapisz(el) {
   if (el.dataset.k) {
     const k = el.dataset.k;
     if (k === 'status') return zmienStatus(o, el.value, el);
-    const v = wartosc(el);
+    let v = wartosc(el);
+    if (el.dataset.auto && v !== null && v.trim() === (k === 'tytul' ? M.tytulAuto(o) : M.wstepAuto(o)).trim()) v = null;
     if (JSON.stringify(o[k] ?? null) === JSON.stringify(v)) return;
     D.zmien(S.id, { [k]: v });
   } else if (el.dataset.l) {
@@ -1113,6 +1135,25 @@ document.addEventListener('click', async (e) => {
       if (!n) { i?.focus(); toast('Wpisz nazwę dokumentu'); return; }
       i.value = '';
       await D.zmien(o.id, { [`dk_${M.noweId(8)}`]: { nazwa: n.slice(0, 120), t: Date.now() } });
+      break;
+    }
+    case 'edytuj': {
+      const k = b.dataset.k;
+      if (S.edycja === k) {
+        const ta = $(`textarea[data-auto="${k}"]`);
+        if (ta) { clearTimeout(timery.get(ta)); timery.delete(ta); zapisz(ta); ta.blur(); }
+        S.edycja = null;
+      } else S.edycja = k;
+      odswiez();
+      if (S.edycja) setTimeout(() => { const ta = $(`textarea[data-auto="${k}"]`); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }, 60);
+      break;
+    }
+    case 'przywroc': {
+      const k = b.dataset.k;
+      const ta = $(`textarea[data-auto="${k}"]`); if (ta) { clearTimeout(timery.get(ta)); timery.delete(ta); ta.blur(); }
+      S.edycja = null;
+      await D.zmien(o.id, { [k]: null });
+      odswiez();
       break;
     }
     case 'nie-wiem': {

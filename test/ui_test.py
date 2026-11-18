@@ -81,8 +81,8 @@ with sync_playwright() as p:
     sekcja('energia'); pg.click('[data-a=wybor][data-k=swiad][data-v=tak]')
     for k, v in (('eu', '98,4'), ('ek', '120,1'), ('ep', '145,7'), ('oze', '0'), ('co2', '0,0412')):
         pg.wait_for_selector(f'#f-{k}'); wpisz(pg, f'#f-{k}', v)
-    pg.evaluate(f"location.hash = '#/o/{oid}/ogloszenie'"); pg.wait_for_selector('#f-lead')
-    wpisz(pg, '#f-lead', 'Prawdziwa perełka! Okazja')
+    pg.evaluate(f"location.hash = '#/o/{oid}/ogloszenie'"); pg.wait_for_selector('[data-a=edytuj][data-k=lead]'); pg.click('[data-a=edytuj][data-k=lead]'); pg.wait_for_selector('#f-lead')
+    wpisz(pg, '#f-lead', 'Prawdziwa perełka! Okazja'); pg.click('[data-a=edytuj][data-k=lead]')
     pg.wait_for_timeout(1200)
     zrzut_kontenera(pg, '.kol-edytor', '02-telefon-karta', 8)
 
@@ -115,9 +115,10 @@ with sync_playwright() as p:
     assert 'kontrola' in pg.evaluate('location.hash'), 'status powinien przenieść do kontroli'
     pg.screenshot(path=f'{OUT}/05-telefon-kontrola-blokada.png')
     # poprawka wstępu -> gotowa
-    pg.evaluate(f"location.hash = '#/o/{oid}/ogloszenie'"); pg.wait_for_selector('#f-lead')
-    wpisz(pg, '#f-lead', 'Mieszkanie po jednym właścicielu, regularnie remontowane.')
+    pg.evaluate(f"location.hash = '#/o/{oid}/ogloszenie'"); pg.wait_for_selector('[data-a=edytuj][data-k=lead]'); pg.click('[data-a=edytuj][data-k=lead]'); pg.wait_for_selector('#f-lead')
+    wpisz(pg, '#f-lead', 'Mieszkanie po jednym właścicielu, regularnie remontowane.'); pg.click('[data-a=edytuj][data-k=lead]')
     pg.wait_for_timeout(800)
+    assert 'Mieszkanie po jednym właścicielu' in pg.inner_text('.wstep-og'), 'własny wstęp zastępuje automatyczny'
     pg.evaluate(f"location.hash = '#/o/{oid}/kontrola'"); pg.wait_for_selector('.check')
     pg.screenshot(path=f'{OUT}/06-telefon-kontrola.png')
     braki = pg.evaluate("[...document.querySelectorAll('.check .nie')].map(e => e.closest('li').innerText)")

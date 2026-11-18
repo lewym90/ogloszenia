@@ -523,3 +523,56 @@ a { color: var(--gold-l); }
 .dok-pliki .usun-w .ik { width: 16px; height: 16px; }
 .dodaj-dok { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 12px; }
 .dodaj-dok .btn { height: 54px; padding: 0 16px; }
+
+/* ================= 1.3.1: pola dat nie wychodzą poza ekran, tytuł i wstęp z ołówkiem ================= */
+/* iOS daje polom daty własną minimalną szerokość i wyśrodkowany tekst — zdejmujemy to wszędzie */
+input[type=date], input[type=datetime-local], input[type=time], input[type=month] {
+  -webkit-appearance: none; appearance: none; display: block; min-width: 0; max-width: 100%; width: 100%; box-sizing: border-box; text-align: left; font-family: inherit;
+}
+input[type=date]::-webkit-date-and-time-value, input[type=datetime-local]::-webkit-date-and-time-value, input[type=time]::-webkit-date-and-time-value { text-align: left; margin: 0; min-width: 0; }
+.wejscie input[type=date], .wejscie input[type=datetime-local] { width: auto; flex: 1 1 0; }
+.weryf .w > input[type=date] { justify-self: stretch; width: 100%; }
+input[type=date]:not(:valid)::-webkit-datetime-edit, input[type=datetime-local]:not(:valid)::-webkit-datetime-edit { color: var(--ash-2); }
+
+.blok-glowa .olowek { width: 36px; height: 36px; flex: none; color: var(--gold-l); }
+.blok-glowa .olowek .ik { width: 18px; height: 18px; }
+.blok-glowa .olowek.akt { background: var(--zloto-grad); color: #1A1408; border-color: transparent; }
+.wstep-og { white-space: pre-wrap; }
+.blok-og + .blok-og { margin-top: 18px; }
+.blok-og .wejscie textarea { font-size: 17px; line-height: 1.5; }
+.edycja-akcje { margin-top: 10px; gap: 10px; flex-wrap: wrap; }
+.edycja-akcje .wyc { font-size: 13px; }
+.wlasny { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 4px; font-size: 13px; color: var(--ash); }
+.wlasny > .ik { width: 14px; height: 14px; color: var(--gold-l); }
+.wlasny button { border: 0; background: none; color: var(--gold-l); display: inline-flex; align-items: center; gap: 5px; padding: 4px 0; font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+.wlasny button .ik { width: 14px; height: 14px; }
+.et .et-j { text-transform: none; letter-spacing: .02em; color: var(--ash-2); font-size: 11.5px; white-space: nowrap; }
+.et .et-j::before { content: "("; } .et .et-j::after { content: ")"; }
+
+/* napisy mieszczą się na każdej szerokości (audyt 320–430 px) */
+.blok-glowa h3 { font-size: clamp(15px, 4.6cqi, 21px); letter-spacing: clamp(.1em, .55cqi, .22em); line-height: 1.25; white-space: normal; overflow-wrap: break-word; }
+.pigulki button { font-size: clamp(13.5px, 3.9cqi, 16px); padding: 6px 4px; white-space: normal; overflow-wrap: break-word; }
+.wyp-el { font-size: clamp(13.5px, 3.8cqi, 15px); padding: 8px 10px; gap: 8px; overflow-wrap: break-word; }
+@container (max-width: 359px) { .wyp-siatka { grid-template-columns: minmax(0, 1fr); } }
+.naglowek-ekranu h1.dlugi { font-size: clamp(22px, 6.2vw, 36px); }
+.marka h1 { font-size: clamp(30px, 10vw, 40px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.marka img { flex: none; }
+.marka i { flex: none; }
+.pigulki button { overflow-wrap: normal; }
+.pigulki.male button { font-size: clamp(12.5px, 3.45cqi, 15px); letter-spacing: -.005em; }
+@container (max-width: 359px) {
+  .pigulki { flex-wrap: wrap; }
+  .pigulki button { flex: 1 1 auto; min-width: max-content; padding: 6px 10px; }
+}
+.blok-glowa h3 { overflow-wrap: normal; min-width: min-content; }
+.naglowek-ekranu h1 { font-size: clamp(21px, 7.1vw, 40px); }
+@container (max-width: 359px) {
+  .blok-glowa .znaki { display: none; }
+  .blok-glowa { gap: 8px; }
+  .blok-glowa .btn { padding: 0 10px; }
+}
+@media (max-width: 359px) {
+  .kopiuj-nagl span { display: none; }
+  .kopiuj-nagl { width: 46px; padding: 0; }
+  .naglowek-ekranu { gap: 8px; }
+}

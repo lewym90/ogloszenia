@@ -141,4 +141,11 @@ test('klienci, prezentacje i dokumenty nie trafiają do ogłoszenia', () => {
   assert.ok(M.dokumentyWymagane({ transakcja: 'sprzedaz', rodzaj: 'dom' }).some((x) => x.k === 'wypis'));
   assert.ok(!M.dokumentyWymagane({ transakcja: 'sprzedaz', rodzaj: 'mieszkanie' }).some((x) => x.k === 'wypis'));
 });
+test('wstęp z faktów, własny wstęp go zastępuje', () => {
+  const auto = M.wstepAuto(o);
+  assert.ok(M.opis(o).startsWith(auto));
+  const w = M.opis({ ...o, lead: 'Mieszkanie po jednym właścicielu' });
+  assert.ok(w.startsWith('Mieszkanie po jednym właścicielu.') && !w.includes(auto));
+  assert.equal(M.tytulAuto({ ...o, tytul: 'Mój tytuł' }), M.tytul(o));
+});
 console.log(`\nModel: ${ok} testów OK`);
