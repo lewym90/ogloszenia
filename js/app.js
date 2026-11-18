@@ -1,29 +1,38 @@
-// AM Oferty — interfejs.
+// AM Oferty — interfejs (wygląd 1:1 z renderem właściciela).
 import * as M from './model.js';
 import * as D from './dane.js';
 import { zrobZip } from './zip.js';
 
-export const WERSJA = '1.0.3';
+export const WERSJA = '1.1.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const IK = {
-  plus: '<path d="M12 5v14M5 12h14"/>', wstecz: '<path d="M15 18l-6-6 6-6"/>', kopiuj: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
-  gwiazda: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>', kosz: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
-  lewo: '<path d="M15 18l-6-6 6-6"/>', prawo: '<path d="M9 6l6 6-6 6"/>', aparat: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
-  ok: '<path d="M5 12.5l4.5 4.5L19 7"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>', uwaga: '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17.5v.5"/>',
-  zegar: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', pobierz: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
-  szukaj: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>', dom: '<path d="M3 11l9-7 9 7v9H3z"/><path d="M9 20v-6h6v6"/>',
-  ust: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
-  wiz: '<path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8z"/><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>',
-  wysyla: '<path d="M12 19V7M7 12l5-5 5 5"/>', lista: '<path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>',
+  plus: '<path d="M12 4.5v15M4.5 12h15"/>', wstecz: '<path d="M14.5 5.5L8 12l6.5 6.5"/>', prawo: '<path d="M9.5 5.5L16 12l-6.5 6.5"/>', lewo: '<path d="M14.5 5.5L8 12l6.5 6.5"/>',
+  dol: '<path d="M6 9.5l6 6 6-6"/>', kopiuj: '<rect x="8.5" y="8.5" width="11" height="12" rx="2"/><path d="M15.5 8.5V5.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/>',
+  gwiazda: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>', kosz: '<path d="M4 7h16M9 7V4.5h6V7M6 7l1 13h10l1-13"/>',
+  aparat: '<path d="M4 8.5h3l1.8-2.5h6.4L17 8.5h3V19H4z"/><circle cx="12" cy="13.3" r="3.4"/>', ok: '<path d="M5 12.5l4.5 4.5L19 7"/>', x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+  uwaga: '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17.3v.4"/>', zegar: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', pobierz: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+  szukaj: '<circle cx="10.8" cy="10.8" r="6.8"/><path d="M20 20l-4.4-4.4"/>', dom: '<path d="M4 10.5L12 4l8 6.5V20h-5.5v-6h-5v6H4z"/>',
+  ust: '<circle cx="12" cy="12" r="3.1"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  wiz: '<path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8z"/><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>', wysyla: '<path d="M12 19V7M7 12l5-5 5 5"/>',
+  serce: '<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/>',
+  dzwonek: '<path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+  suwaki: '<path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/>',
+  dok: '<path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20z"/><path d="M14 3.5V8h4M9.5 12h5M9.5 15h5M9.5 18h3"/>',
+  linijka: '<rect x="2.8" y="8.5" width="18.4" height="7" rx="1" transform="rotate(-35 12 12)"/><path d="M8.4 9.3l1.2 1.7M10.9 7.5l1.2 1.7M13.3 5.8l1.2 1.7M6 11l1.2 1.7"/>',
+  oko: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  osoba: '<circle cx="12" cy="8" r="3.6"/><path d="M5 20c.8-3.8 3.6-5.6 7-5.6s6.2 1.8 7 5.6"/>',
+  kropki: '<circle cx="5.5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18.5" cy="12" r="1.3"/>',
+  okKolo: '<circle cx="12" cy="12" r="9"/><path d="M7.8 12.3l2.8 2.8 5.6-5.6"/>',
 };
 const ik = (n, kl = '') => `<svg class="ik ${kl}" viewBox="0 0 24 24" aria-hidden="true">${IK[n]}</svg>`;
 
 // ---------- stan interfejsu ----------
-const S = { ekran: 'lista', id: null, tab: 'karta', podglad: 'ogloszenie', q: '', filtr: 'aktywne', pomDodawania: '', postep: '' };
+const S = { ekran: 'lista', id: null, tab: 'karta', podglad: 'ogloszenie', q: '', filtr: 'aktywne', wiecej: false, pomDodawania: '', postep: '', otwarte: new Set(['podstawy']) };
 const szeroki = matchMedia('(min-width: 1180px)');
-const miniUrl = new Map();
+const telefon = matchMedia('(max-width: 759px)');
+const obrazy = new Map(); // `${id}:${rodzaj}` -> url
 let zbudowany = false;
 
 function toast(t, ms = 2200) {
@@ -39,13 +48,16 @@ function trasa() {
   odswiez();
 }
 const idzDo = (h) => { if (location.hash !== h) location.hash = h; else trasa(); };
-function resetEdytora() { $$('[data-wstaw]').forEach((el) => { el.__html = null; }); const t = $('#ed-tresc'); if (t) { t.__klucz = null; t.scrollTop = 0; } const k = $('.kol-edytor'); if (k) k.scrollTop = 0; }
+function resetEdytora() {
+  $$('[data-wstaw]').forEach((el) => { el.__html = null; });
+  const t = $('#ed-tresc'); if (t) { t.__klucz = null; }
+  const k = $('.kol-edytor'); if (k) k.scrollTop = 0;
+}
 
-// wstawia HTML tylko gdy się zmienił i nikt nie pisze w tym fragmencie
+// wstawia HTML tylko gdy się zmienił i nikt w tym fragmencie nie pisze
 function wstaw(el, html) {
   if (!el || el.__html === html) return;
   const a = document.activeElement;
-  // nie podmieniamy fragmentu, w którym ktoś pisze (pola wyboru tak/nie się nie liczą — po kliknięciu od razu odświeżamy)
   if (a && a !== document.body && el.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !['checkbox', 'radio'].includes(a.type)) { el.__czeka = true; return; }
   el.innerHTML = html; el.__html = html; el.__czeka = false;
   wypelnijObrazy(el);
@@ -54,29 +66,54 @@ function wypelnijObrazy(el) {
   for (const img of $$('img[data-mini]', el)) {
     if (img.getAttribute('src')) continue;
     const id = img.dataset.mini;
-    D.urlZdjecia(id, 'mini').then((u) => { if (u) { miniUrl.set(id, u); img.src = u; } });
+    D.urlZdjecia(id, 'mini').then((u) => { if (u) { obrazy.set(`${id}:mini`, u); img.src = u; } });
   }
-  for (const d of $$('[data-tlo]', el)) {
+  for (const d of $$('[data-foto]', el)) {
     if (d.style.backgroundImage) continue;
-    const id = d.dataset.tlo;
-    D.urlZdjecia(id, 'mini').then((u) => { if (u) { miniUrl.set(id, u); d.style.backgroundImage = `url("${u}")`; d.innerHTML = ''; } });
+    const id = d.dataset.foto, r = d.dataset.r || 'sr';
+    D.urlZdjecia(id, r).then((u) => { if (u) { obrazy.set(`${id}:${r}`, u); d.style.backgroundImage = `url("${u}")`; d.classList.remove('puste'); } });
   }
 }
-const imgMini = (id, alt = '') => `<img data-mini="${esc(id)}" alt="${esc(alt)}" ${miniUrl.has(id) ? `src="${miniUrl.get(id)}"` : ''} loading="lazy">`;
+const imgMini = (id, alt = '') => `<img data-mini="${esc(id)}" alt="${esc(alt)}" ${obrazy.has(`${id}:mini`) ? `src="${obrazy.get(`${id}:mini`)}"` : ''} loading="lazy">`;
+function glowneZdjecie(o) { const z = o.zdj || []; return z.find((x) => x.glowne) || z.find((x) => !x.wiz) || null; }
+function fotoHTML(o, kl = '') {
+  const gl = glowneZdjecie(o);
+  if (!gl) return `<div class="foto puste ${kl}"></div>`;
+  const u = obrazy.get(`${gl.id}:sr`);
+  return `<div class="foto ${u ? '' : 'puste'} ${kl}" data-foto="${gl.id}" data-r="sr" ${u ? `style="background-image:url('${u}')"` : ''}></div>`;
+}
 const agent = () => ({ firma: D.stan.agent.firma || 'AM Nieruchomości', haslo: D.stan.agent.haslo ?? 'Sprawdzone do końca.', nazwa: D.stan.agent.nazwa || D.stan.konto?.nazwa || '', telefon: D.stan.agent.telefon || D.stan.konto?.telefon || '' });
+function pierscien(p, kl = '') {
+  const c = 2 * Math.PI * 25;
+  if (kl.includes('maly') && p >= 100) return ik('okKolo', 'sek-ok');
+  return `<span class="pierscien ${kl}"><svg viewBox="0 0 58 58"><circle class="tor" cx="29" cy="29" r="25" fill="none" stroke-width="3"/><circle class="pas" cx="29" cy="29" r="25" fill="none" stroke-width="3.4" stroke-linecap="round" stroke-dasharray="${(c * Math.max(0, Math.min(100, p))) / 100} ${c}"/></svg>${kl.includes('maly') ? '' : `<span>${p}%</span>`}</span>`;
+}
+const IK_STATUS = { przygotowanie: 'zegar', gotowa: 'okKolo', opublikowana: 'okKolo', rezerwacja: 'zegar', zakonczona: 'ok' };
+const statusHTML = (s, dod = '') => `<span class="status st-${s}">${ik(IK_STATUS[s] || 'zegar')}${esc(M.STATUSY[s] || s)}${dod}</span>`;
+function cenaHTML(o, kl) {
+  if (!o.cena) return `<div class="${kl} brak">Bez ceny</div>`;
+  return `<div class="${kl} zloty-tekst">${esc(M.zl(o.cena))}${o.transakcja === 'najem' ? '<small>/ mies.</small>' : ''}</div>`;
+}
+function parametry(o) {
+  const p = [];
+  if (o.pokoje) p.push(`${o.pokoje} ${M.pokojeSlowo(o.pokoje)}`);
+  else if (o.rodzaj) p.push(M.RODZAJE[o.rodzaj]);
+  if (o.pow) p.push(M.m2(o.pow));
+  if (o.dzielnica) p.push(o.dzielnica); else if (o.miasto) p.push(o.miasto);
+  return p.join('  •  ');
+}
 
 // ---------- logowanie ----------
 function ekranLogowania() {
   zbudowany = false;
-  $('#app').innerHTML = `<div class="logowanie"><form id="f-log" autocomplete="on">
-    <img class="znak" src="ikony/icon-192.png" alt="">
-    <h1>AM Oferty</h1>
+  $('#app').innerHTML = `<div class="logowanie"><form id="f-log" class="szklo" autocomplete="on">
+    <img class="znak" src="img/monogram.png" alt="AM">
+    <h1 class="zloty-tekst">AM Oferty</h1>
     <p>Karta nieruchomości i ogłoszenia</p>
     <div class="pole"><label class="et" for="l-login">Login</label><div class="wejscie"><input id="l-login" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" required></div></div>
     <div class="pole"><label class="et" for="l-haslo">Hasło</label><div class="wejscie"><input id="l-haslo" name="password" type="password" autocomplete="current-password" required></div></div>
     <button class="btn zloty" type="submit">Zaloguj</button>
     <div class="blad" id="l-blad">${esc(D.stan.blad)}</div>
-    <p class="male wyc">Serwer: ${esc(D.API.replace(/^https?:\/\//, ''))}</p>
   </form></div>`;
   $('#f-log').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -90,18 +127,10 @@ function ekranLogowania() {
 // ---------- szkielet ----------
 function szkielet() {
   $('#app').innerHTML = `<div class="uklad" id="uklad">
-    <header class="pasek">
-      <a class="logo" href="#/"><img src="ikony/icon-192.png" alt=""><span><b>AM Oferty</b></span></a>
-      <span class="rozp"></span>
-      <button class="sync" id="sync" data-a="sync" type="button"></button>
-      <a class="ikbtn nie-telefon" href="#/ustawienia" title="Ustawienia" aria-label="Ustawienia">${ik('ust')}</a>
-    </header>
+    <header class="pasek" id="pasek" data-wstaw></header>
     <aside class="kol-lista">
       <div class="lista-gora">
-        <div class="rzad" style="flex-wrap:nowrap">
-          <label class="szukaj" style="flex:1">${ik('szukaj', 'wyc')}<input id="szukaj" type="search" placeholder="Szukaj: ulica, dzielnica, właściciel" aria-label="Szukaj"></label>
-          <button class="ikbtn nie-telefon" data-a="nowa" title="Nowa oferta" aria-label="Nowa oferta">${ik('plus')}</button>
-        </div>
+        <label class="szukaj szklo">${ik('szukaj')}<input id="szukaj" type="search" placeholder="Szukaj oferty, adresu, dzielnicy…" aria-label="Szukaj" autocomplete="off"><button type="button" data-a="wiecej" aria-label="Więcej filtrów">${ik('suwaki')}</button></label>
         <div class="chipy" id="filtry" data-wstaw></div>
       </div>
       <div class="karty" id="karty" data-wstaw></div>
@@ -113,7 +142,6 @@ function szkielet() {
   $('#szukaj').addEventListener('input', (e) => { S.q = e.target.value; odswiezListe(); });
   zbudowany = true;
 }
-
 function render() {
   if (!D.stan.token) return ekranLogowania();
   if (!zbudowany) szkielet();
@@ -123,93 +151,107 @@ function odswiez() {
   if (!D.stan.token) { if (zbudowany || !$('#f-log')) ekranLogowania(); return; }
   if (!zbudowany) szkielet();
   $('#uklad').dataset.ekran = S.ekran;
-  odswiezSync(); odswiezListe(); odswiezDol();
+  odswiezPasek(); odswiezListe(); odswiezDol();
   if (S.ekran === 'oferta') odswiezOferte();
   else if (S.ekran === 'ustawienia') odswiezUstawienia();
   else odswiezPusty();
 }
-function odswiezSync() {
-  const el = $('#sync'); const n = D.ileWKolejce();
-  let kl = 'ok', t = 'Na żywo';
-  if (!D.stan.online) { kl = 'czeka'; t = n ? `Offline · ${n} czeka` : 'Offline'; }
-  else if (D.stan.blad) { kl = 'zle'; t = D.stan.blad; }
-  else if (n) { kl = 'czeka'; t = `Wysyłam ${n}`; }
-  else if (!D.stan.polaczony) { kl = 'czeka'; t = 'Łączę…'; }
-  el.className = `sync ${kl}`; el.innerHTML = `<i></i>${esc(t)}`; el.title = 'Kliknij, aby zsynchronizować teraz';
+function syncHTML() {
+  const n = D.ileWKolejce();
+  if (!D.stan.online) return `<span class="stan-sync"><i></i>Offline${n ? ` · ${n} czeka` : ''}</span>`;
+  if (D.stan.blad) return `<button class="stan-sync zle" data-a="sync"><i></i>${esc(D.stan.blad)}</button>`;
+  if (n) return `<span class="stan-sync"><i></i>Wysyłam ${n}</span>`;
+  return '';
+}
+function odswiezPasek() {
+  const tyt = S.ekran === 'ustawienia' && telefon.matches ? 'Ustawienia' : 'Oferty';
+  wstaw($('#pasek'), `<a class="marka" href="#/"><img src="img/monogram.png" alt="AM"><i></i><h1 class="zloty-tekst">${tyt}</h1></a>
+    <span class="rozp"></span>${syncHTML()}
+    <button class="dzwonek" data-a="aktywnosc" aria-label="Zmiany wspólnika">${ik('dzwonek')}${D.nowaAktywnosc() ? '<b></b>' : ''}</button>
+    <button class="okragly nie-telefon" data-a="nowa" title="Nowa oferta" aria-label="Nowa oferta">${ik('plus')}</button>
+    <a class="okragly nie-telefon" href="#/ustawienia" title="Ustawienia" aria-label="Ustawienia">${ik('ust')}</a>`);
 }
 function odswiezDol() {
-  wstaw($('#dol'), `<a href="#/" class="${S.ekran === 'lista' ? 'akt' : ''}">${ik('lista')}Oferty</a>
-    <a href="#" data-a="nowa" class="nowa">${ik('plus')}Nowa</a>
+  wstaw($('#dol'), `<a href="#/" class="${S.ekran === 'lista' ? 'akt' : ''}">${ik('dom')}Oferty</a>
+    <a href="#" data-a="nowa" class="nowa" aria-label="Nowa oferta"><span>${ik('plus')}</span></a>
     <a href="#/ustawienia" class="${S.ekran === 'ustawienia' ? 'akt' : ''}">${ik('ust')}Ustawienia</a>`);
 }
 
 // ---------- lista ----------
-const FILTRY = { aktywne: 'Aktywne', ...M.STATUSY, wszystkie: 'Wszystkie' };
+const FILTRY_GL = { aktywne: 'Aktywne', przygotowanie: 'W przygotowaniu', opublikowana: 'Opublikowane' };
+const FILTRY_DOD = { gotowa: 'Gotowe do publikacji', rezerwacja: 'Rezerwacja', zakonczona: 'Zakończone', wszystkie: 'Wszystkie' };
 function odswiezListe() {
-  wstaw($('#filtry'), Object.entries(FILTRY).map(([k, v]) => `<button class="chip ${S.filtr === k ? 'akt' : ''}" data-a="filtr" data-v="${k}">${esc(v)}</button>`).join(''));
+  const f = { ...FILTRY_GL, ...(S.wiecej || FILTRY_DOD[S.filtr] ? FILTRY_DOD : {}) };
+  wstaw($('#filtry'), Object.entries(f).map(([k, v]) => `<button class="chip ${S.filtr === k ? 'akt' : ''}" data-a="filtr" data-v="${k}">${esc(v)}</button>`).join(''));
   const q = S.q.trim().toLowerCase();
   const lista = D.oferty()
     .filter((o) => S.filtr === 'wszystkie' || (S.filtr === 'aktywne' ? o.status !== 'zakonczona' : o.status === S.filtr))
     .filter((o) => !q || [o.roboczy, o.ulica, o.dzielnica, o.miasto, o.wlImie, M.tytul(o)].join(' ').toLowerCase().includes(q))
-    .sort((a, b) => (b._zmieniona || Date.now()) - (a._zmieniona || Date.now()));
+    .sort((a, b) => (b.ulubiona ? 1 : 0) - (a.ulubiona ? 1 : 0) || (b._zmieniona || Date.now()) - (a._zmieniona || Date.now()));
   let html;
   if (!lista.length) {
     html = D.oferty().length
       ? '<div class="pusto">Brak ofert dla tego filtra.</div>'
-      : `<div class="pusto"><h2>Pierwsza oferta</h2><p>Dodaj nieruchomość, uzupełnij kartę i zdjęcia. Ogłoszenie złoży się samo z faktów.</p><button class="btn zloty" data-a="nowa">${ik('plus')}Nowa oferta</button></div>`;
+      : `<div class="pusto szklo"><h2>Pierwsza oferta</h2><p>Dodaj nieruchomość, uzupełnij kartę i zdjęcia. Ogłoszenie złoży się samo z faktów.</p><button class="btn zloty" data-a="nowa">${ik('plus')}Nowa oferta</button></div>`;
   } else {
     html = lista.map((o) => {
-      const gl = (o.zdj || []).find((z) => z.glowne) || (o.zdj || [])[0];
       const g = M.gotowosc(o);
-      const najem = o.transakcja === 'najem';
-      return `<a class="karta ${o.id === S.id ? 'akt' : ''}" href="#/o/${o.id}/${S.tab || 'karta'}">
-        <div class="min" ${gl ? `data-tlo="${gl.id}" ${miniUrl.has(gl.id) ? `style="background-image:url('${miniUrl.get(gl.id)}')"` : ''}` : ''}>${gl && miniUrl.has(gl.id) ? '' : ik('dom')}</div>
-        <div style="min-width:0">
-          <h3>${esc(o.roboczy || M.tytul(o))}</h3>
-          <div class="cena">${o.cena ? `${M.zl(o.cena)}${najem ? ' / mies.' : ''}` : '<span class="wyc">bez ceny</span>'} <span class="wyc">· ${esc(M.TRANSAKCJE[o.transakcja] || '')}</span></div>
-          <div class="info"><span class="st st-${o.status}">${esc(M.STATUSY[o.status] || o.status)}</span><span class="pasek-got" title="Kompletność ${g.procent}%"><i style="width:${g.procent}%"></i></span>${g.procent}%${o._lokalne ? ` · ${ik('wysyla')}` : ''}</div>
+      return `<a class="karta ${o.id === S.id ? 'akt' : ''}" href="#/o/${o.id}/karta">
+        ${fotoHTML(o)}
+        <button class="serce ${o.ulubiona ? 'akt' : ''}" data-a="ulub" data-oid="${o.id}" aria-label="${o.ulubiona ? 'Usuń z wyróżnionych' : 'Wyróżnij'}">${ik('serce')}</button>
+        <div class="karta-tresc">
+          ${o.roboczy ? `<div class="karta-nazwa">${esc(o.roboczy)}</div>` : ''}
+          ${cenaHTML(o, 'cena-duza')}
+          <div class="parametry">${esc(parametry(o))}</div>
+          <div class="karta-stopka">${statusHTML(o.status)}<span class="rozp"></span>${pierscien(g.procent)}<span class="strz">${ik('prawo')}</span></div>
         </div></a>`;
     }).join('');
   }
   wstaw($('#karty'), html);
 }
-
 function odswiezPusty() {
   const e = $('#edytor'); e.dataset.tryb = 'pusty';
-  wstaw(e, '<div class="pusto tylko-szeroki-ed"><h2>Wybierz ofertę</h2><p>albo dodaj nową przyciskiem +</p></div>');
+  wstaw(e, '<div class="pusto" style="padding-top:18vh"><h2>Wybierz ofertę</h2><p>albo dodaj nową przyciskiem +</p></div>');
   $('#podglad').innerHTML = ''; $('#podglad').__html = null;
 }
 
-// ---------- edytor oferty ----------
+// ---------- oferta ----------
 const ZAKLADKI = { karta: 'Karta', zdjecia: 'Zdjęcia', ogloszenie: 'Ogłoszenie', kontrola: 'Kontrola' };
 function odswiezOferte() {
   const o = D.oferta(S.id);
   const e = $('#edytor');
   if (!o) {
-    e.dataset.tryb = 'brak';
-    wstaw(e, `<div class="pusto"><h2>Nie ma tej oferty</h2><p>Mogła zostać usunięta.</p><a class="btn" href="#/">Wróć do listy</a></div>`);
+    e.dataset.tryb = 'brak'; e.__html = null;
+    e.innerHTML = `<div class="naglowek-ekranu"><a class="okragly" href="#/">${ik('wstecz')}</a></div><div class="pusto"><h2>Nie ma tej oferty</h2><p>Mogła zostać usunięta.</p><a class="btn" href="#/">Wróć do listy</a></div>`;
     return;
   }
   if (e.dataset.tryb !== 'oferta') {
-    e.dataset.tryb = 'oferta'; e.__html = null;
-    e.innerHTML = '<div class="of-gora" id="of-gora" data-wstaw></div><div class="tresc" id="ed-tresc"></div>';
+    e.dataset.tryb = 'oferta';
+    e.innerHTML = '<div id="of-hero" data-wstaw></div><div class="segment-pas" id="of-seg" data-wstaw></div><div class="tresc" id="ed-tresc"></div>';
   }
   const g = M.gotowosc(o);
   const slowa = M.kontrolaSlow(o).length;
-  const zak = szeroki.matches ? ['karta', 'zdjecia'] : Object.keys(ZAKLADKI);
-  const nZdj = (o.zdj || []).length;
-  wstaw($('#of-gora'), `
-    <div class="of-naglowek">
-      <a class="ikbtn wstecz" href="#/" aria-label="Wróć do listy">${ik('wstecz')}</a>
-      <h1>${esc(o.roboczy || M.tytul(o))}</h1>
-      <button class="ikbtn" data-a="historia" title="Historia zmian" aria-label="Historia zmian">${ik('zegar')}</button>
-      <button class="ikbtn" data-a="usun-oferte" title="Usuń ofertę" aria-label="Usuń ofertę">${ik('kosz')}</button>
-    </div>
-    <div class="of-status">
-      <select data-k="status" aria-label="Status oferty">${Object.entries(M.STATUSY).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
-      <span class="gotowosc"><span class="pasek-got"><i style="width:${g.procent}%"></i></span>${g.procent}%${g.braki.length ? ` · <span style="color:var(--zle)">${g.braki.length} do uzupełnienia</span>` : ' · <span style="color:var(--ok)">gotowa</span>'}</span>
-    </div>
-    <nav class="zakladki">${zak.map((k) => `<a href="#/o/${o.id}/${k}" class="${S.tab === k ? 'akt' : ''}">${ZAKLADKI[k]}${k === 'zdjecia' ? ` <span class="wyc male">${nZdj}</span>` : ''}${k === 'kontrola' && g.braki.length ? ` <span class="licznik">${g.braki.length}</span>` : ''}${k === 'ogloszenie' && slowa ? ` <span class="licznik">${slowa}</span>` : ''}</a>`).join('')}</nav>`);
+  const osobnyEkran = telefon.matches && ['ogloszenie', 'kontrola'].includes(S.tab);
+  // nagłówek: duże zdjęcie (karta, zdjęcia) albo nagłówek ekranu (ogłoszenie, kontrola na telefonie)
+  if (osobnyEkran) {
+    const prawy = S.tab === 'ogloszenie'
+      ? `<button class="btn kontur maly" data-a="kopiuj" data-co="opis">${ik('kopiuj')}Kopiuj</button>`
+      : pierscien(g.procent);
+    wstaw($('#of-hero'), `<div class="naglowek-ekranu"><a class="okragly" href="#/o/${o.id}/karta" aria-label="Wróć do karty">${ik('wstecz')}</a><h1 class="zloty-tekst">${ZAKLADKI[S.tab]}</h1>${prawy}</div>`);
+    wstaw($('#of-seg'), ''); $('#of-seg').hidden = true;
+  } else {
+    $('#of-seg').hidden = false;
+    wstaw($('#of-hero'), `<div class="hero">${fotoHTML(o)}
+      <div class="hero-gora"><a class="okragly tylko-telefon" href="#/" aria-label="Wróć do listy">${ik('wstecz')}</a><span class="rozp"></span><button class="okragly" data-a="menu" aria-label="Więcej">${ik('kropki')}</button></div>
+      <div class="hero-tresc">
+        <h1>${esc(o.roboczy || M.tytul(o))}</h1><div class="zlota-linia"></div>
+        <div class="hero-dol">${cenaHTML(o, 'hero-cena')}<button class="serce ${o.ulubiona ? 'akt' : ''}" data-a="ulub" data-oid="${o.id}" aria-label="Wyróżnij">${ik('serce')}</button></div>
+        <label class="hero-status">${statusHTML(o.status, ik('dol', 'dol-ik'))}<select data-k="status" aria-label="Status oferty">${Object.entries(M.STATUSY).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
+        <span class="hero-postep">${pierscien(g.procent, 'maly')}${g.braki.length ? `${g.procent}% · <span style="color:var(--zle)">${g.braki.length} do uzupełnienia</span>` : '<span style="color:var(--ok)">gotowa</span>'}</span>
+      </div></div>`);
+    const zak = szeroki.matches ? ['karta', 'zdjecia'] : Object.keys(ZAKLADKI);
+    wstaw($('#of-seg'), `<nav class="segment">${zak.map((k) => `<a href="#/o/${o.id}/${k}" class="${S.tab === k ? 'akt' : ''}">${ZAKLADKI[k]}${k === 'kontrola' && g.braki.length ? ` <span class="licznik">${g.braki.length}</span>` : ''}${k === 'ogloszenie' && slowa ? ` <span class="licznik">${slowa}</span>` : ''}</a>`).join('')}</nav>`);
+  }
   const t = $('#ed-tresc');
   const klucz = `${o.id}:${S.tab}`;
   if (t.__klucz !== klucz) { t.__klucz = klucz; t.innerHTML = ''; t.__html = null; }
@@ -217,126 +259,147 @@ function odswiezOferte() {
   else if (S.tab === 'zdjecia') tabZdjecia(t, o);
   else if (S.tab === 'ogloszenie') wstaw(t, htmlOgloszenie(o));
   else if (S.tab === 'kontrola') wstaw(t, htmlKontrola(o));
-  // podgląd na laptopie
   const p = $('#podglad');
   if (szeroki.matches) {
-    const zk = `<nav class="podglad-zakl"><a href="#" data-a="podglad" data-v="ogloszenie" class="${S.podglad === 'ogloszenie' ? 'akt' : ''}">Ogłoszenie${slowa ? ` <span class="licznik">${slowa}</span>` : ''}</a><a href="#" data-a="podglad" data-v="kontrola" class="${S.podglad === 'kontrola' ? 'akt' : ''}">Kontrola${g.braki.length ? ` <span class="licznik">${g.braki.length}</span>` : ''}</a></nav>`;
+    const zk = `<div class="podglad-zakl"><nav class="segment"><button data-a="podglad" data-v="ogloszenie" class="${S.podglad === 'ogloszenie' ? 'akt' : ''}">Ogłoszenie${slowa ? ` <span class="licznik">${slowa}</span>` : ''}</button><button data-a="podglad" data-v="kontrola" class="${S.podglad === 'kontrola' ? 'akt' : ''}">Kontrola${g.braki.length ? ` <span class="licznik">${g.braki.length}</span>` : ''}</button></nav></div>`;
     wstaw(p, `${zk}<div class="tresc">${S.podglad === 'kontrola' ? htmlKontrola(o) : htmlOgloszenie(o)}</div>`);
   }
 }
 
-// ----- zakładka: karta -----
+// ----- karta: sekcje-akordeony -----
 const SEK_KARTY = [
   ['podstawy', 'Podstawy'], ['lokalizacja', 'Lokalizacja'], ['lokal', 'Nieruchomość'], ['pom', 'Pomieszczenia'], ['koszty', 'Koszty'],
   ['atuty', 'Atuty'], ['minusy', 'Co warto wiedzieć'], ['okolica', 'Okolica'], ['weryfikacja', 'Sprawdziliśmy'], ['energia', 'Świadectwo'],
-  ['tekst', 'Tytuł i wstęp'], ['wlasciciel', 'Właściciel'],
+  ['tekst', 'Tytuł i wstęp'], ['wlasciciel', 'Właściciel i umowa'],
 ];
-function tabKarta(t, o) {
-  if (!t.firstChild) {
-    t.innerHTML = `<div class="skoki">${SEK_KARTY.map(([k, v]) => `<button class="chip" data-a="skok" data-v="${k}">${v}</button>`).join('')}</div>`
-      + SEK_KARTY.map(([k]) => `<section class="sekcja ${k === 'wlasciciel' ? 'prywatna' : ''}" id="sek-${k}" data-wstaw></section>`).join('');
+const puste = (v) => v === undefined || v === null || v === '';
+function licznikSekcji(k, o) {
+  const sek = M.SEKCJE.find((s) => s.id === k);
+  if (sek) {
+    const pola = sek.pola.filter((p) => M.poleWidoczne(p, o) && p.t !== 'b');
+    return { z: pola.filter((p) => !puste(o[p.k])).length, w: pola.length };
   }
+  if (k === 'pom') { const p = (o.pom || []).filter((x) => x.nazwa); return { z: p.filter((x) => !puste(x.m)).length, w: Math.max(p.length, 1) }; }
+  if (k === 'atuty') return { z: Math.min(2, (o.atuty || []).filter((a) => a.t).length), w: 2 };
+  if (k === 'minusy') return { z: Math.min(1, (o.minusy || []).filter((a) => a.t).length), w: 1 };
+  if (k === 'okolica') return { z: Math.min(3, (o.okolica || []).filter((a) => a.nazwa && a.min).length), w: 3 };
+  if (k === 'weryfikacja') { const l = M.WERYFIKACJA.filter((x) => !x.dla || x.dla === o.transakcja); return { z: l.filter((x) => o.weryf?.[x.k]?.ok).length, w: l.length }; }
+  if (k === 'tekst') return null;
+  return null;
+}
+function glowaSekcji(k, nazwa, i, o) {
+  const l = licznikSekcji(k, o);
+  let wsk = '';
+  if (l) {
+    const pelne = l.z >= l.w && l.w > 0;
+    wsk = `<span class="sek-licz">${l.z}/${l.w}</span>${pelne ? ik('okKolo', 'sek-ok') : pierscien(Math.round((l.z / Math.max(1, l.w)) * 100), 'maly')}`;
+  } else wsk = '<span class="sek-licz wyc male">opcjonalnie</span>';
+  return `<button class="sek-glowa" data-a="sekcja" data-v="${k}" aria-expanded="${S.otwarte.has(k)}">
+    <img src="img/ikony/${k}.png" alt=""><span class="sek-nr">${String(i + 1).padStart(2, '0')}</span><span class="sek-tyt">${esc(nazwa)}</span>${wsk}<span class="sek-strz">${ik('dol')}</span></button>`;
+}
+function tabKarta(t, o) {
+  if (!t.firstChild) t.innerHTML = SEK_KARTY.map(([k]) => `<section class="sek szklo ${k === 'wlasciciel' ? 'prywatna' : ''}" id="sek-${k}" data-wstaw></section>`).join('');
   const sek = Object.fromEntries(M.SEKCJE.map((s) => [s.id, s]));
-  for (const [k] of SEK_KARTY) {
+  SEK_KARTY.forEach(([k, nazwa], i) => {
     let h = '';
     if (sek[k]) h = sekcjaPol(sek[k], o);
     else if (k === 'pom') h = sekcjaPom(o);
-    else if (k === 'atuty') h = sekcjaListy(o, 'atuty', 'Atuty', 'Tylko fakty, które da się sprawdzić: co, kiedy, ile. Bez ocen.', 'np. okna wymienione w 2019 r.');
-    else if (k === 'minusy') h = sekcjaListy(o, 'minusy', 'Co warto wiedzieć', 'Uczciwe minusy, zanim ktoś je odkryje na prezentacji. To buduje zaufanie i oszczędza czas obu stronom.', 'np. brak windy, 4. piętro');
+    else if (k === 'atuty') h = sekcjaListy(o, 'atuty', 'Tylko fakty, które da się sprawdzić: co, kiedy, ile. Bez ocen.', 'np. okna wymienione w 2019 r.');
+    else if (k === 'minusy') h = sekcjaListy(o, 'minusy', 'Uczciwe minusy, zanim ktoś je odkryje na prezentacji. To buduje zaufanie i oszczędza czas obu stronom.', 'np. brak windy, 4. piętro');
     else if (k === 'okolica') h = sekcjaOkolicy(o);
     else if (k === 'weryfikacja') h = sekcjaWeryfikacji(o);
     else if (k === 'tekst') h = sekcjaTekstu(o);
-    wstaw($(`#sek-${k}`, t), h);
-  }
+    const el = $(`#sek-${k}`, t);
+    el.classList.toggle('otwarta', S.otwarte.has(k));
+    wstaw(el, glowaSekcji(k, nazwa, i, o) + `<div class="sek-tresc">${h}</div>`);
+  });
 }
 function wartoscPola(p, o) {
   const v = o[p.k];
   if (v === undefined || v === null) return '';
-  if (p.t === 'n') return Math.abs(Number(v)) >= 10000 ? M.liczba(v).replace(/\u00a0/g, ' ') : String(v).replace('.', ',');
+  if (p.t === 'n') return Math.abs(Number(v)) >= 10000 ? M.liczba(v).replace(/ /g, ' ') : String(v).replace('.', ',');
   return String(v);
 }
+const ZR_IK = { dok: 'dok', pom: 'linijka', ogl: 'oko', wl: 'osoba' };
+function pigulkiPasuja(p) { const w = Object.values(p.o); return w.length <= 3 && w.join('').length <= 30; }
 function poleHTML(p, o) {
   const id = `f-${p.k}`;
   const v = wartoscPola(p, o);
-  let we;
-  const jedn = p.k === 'cena' && o.transakcja === 'najem' ? p.jNajem : p.j;
   if (p.t === 'b') {
     const inf = p.info ? p.info(o) : '';
-    return `<div class="pole"><label class="tnk"><input type="checkbox" data-k="${p.k}" data-t="b" ${o[p.k] ? 'checked' : ''}><span>${esc(p.e)}</span></label>${inf ? `<div class="wyc male" style="margin-top:6px">${esc(inf)}</div>` : ''}</div>`;
+    return `<div class="pole pelna"><label class="przel"><span class="tekst">${esc(p.e)}</span><input type="checkbox" data-k="${p.k}" data-t="b" ${o[p.k] ? 'checked' : ''}><span class="suwak"></span></label>${inf ? `<div class="info-pola">${esc(inf)}</div>` : ''}</div>`;
   }
-  if (p.t === 'w') {
-    we = `<select id="${id}" data-k="${p.k}" data-t="w"><option value="">— wybierz —</option>${Object.entries(p.o).map(([k, n]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`;
-  } else if (p.t === 'n') {
-    we = `<input id="${id}" data-k="${p.k}" data-t="n" inputmode="decimal" autocomplete="off" value="${esc(v)}">`;
-  } else if (p.t === 'd') {
-    we = `<input id="${id}" data-k="${p.k}" data-t="d" type="date" value="${esc(v)}">`;
-  } else if (p.dlugi) {
-    we = `<textarea id="${id}" data-k="${p.k}" data-t="t" rows="3">${esc(v)}</textarea>`;
-  } else {
-    we = `<input id="${id}" data-k="${p.k}" data-t="t" type="${p.typ || 'text'}" ${p.lista ? `list="dl-${p.lista}"` : ''} placeholder="${esc(p.pl || '')}" value="${esc(v)}" autocomplete="off">`;
+  if (p.t === 'w' && pigulkiPasuja(p)) {
+    return `<div class="pole ${Object.values(p.o).join('').length > 16 ? 'pelna' : ''}"><span class="et">${esc(p.e)}</span><div class="pigulki" role="group" aria-label="${esc(p.e)}">${Object.entries(p.o).map(([k, n]) => `<button type="button" data-a="wybor" data-k="${p.k}" data-v="${k}" class="${v === k ? 'akt' : ''}" aria-pressed="${v === k}">${esc(n)}</button>`).join('')}</div></div>`;
   }
+  let we;
+  const jedn = p.k === 'cena' && o.transakcja === 'najem' ? p.jNajem : p.j;
+  if (p.t === 'w') we = `<select id="${id}" data-k="${p.k}" data-t="w"><option value="">— wybierz —</option>${Object.entries(p.o).map(([k, n]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`;
+  else if (p.t === 'n') we = `<input id="${id}" data-k="${p.k}" data-t="n" inputmode="decimal" autocomplete="off" value="${esc(v)}">`;
+  else if (p.t === 'd') we = `<input id="${id}" data-k="${p.k}" data-t="d" type="date" value="${esc(v)}">`;
+  else if (p.dlugi) we = `<textarea id="${id}" data-k="${p.k}" data-t="t" rows="3">${esc(v)}</textarea>`;
+  else we = `<input id="${id}" data-k="${p.k}" data-t="t" type="${p.typ || 'text'}" ${p.lista ? `list="dl-${p.lista}"` : ''} placeholder="${esc(p.pl || '')}" value="${esc(v)}" autocomplete="off">`;
   let zr = '';
   if (p.zr) {
     const akt = o.zr?.[p.k];
-    const brak = !akt && v !== '';
-    zr = `<div class="zrodla ${brak ? 'brak' : ''}" title="Skąd to wiemy?">${Object.entries(M.ZRODLA).map(([k, n]) => `<button type="button" data-a="zr" data-k="${p.k}" data-v="${k}" class="${akt === k ? 'akt' : ''}">${n}</button>`).join('')}</div>`;
+    zr = `<div class="zrodla-et">Źródło danych</div><div class="zrodla ${!akt && v !== '' ? 'brak' : ''}">${Object.entries(M.ZRODLA).map(([k, n]) => `<button type="button" data-a="zr" data-k="${p.k}" data-v="${k}" class="${akt === k ? 'akt' : ''}" aria-pressed="${akt === k}">${ik(ZR_IK[k])}<span>${n}</span>${ik('ok', 'ok')}</button>`).join('')}</div>`;
   }
-  return `<div class="pole ${p.dlugi ? 'pelna' : ''}"><label class="et" for="${id}">${esc(p.e)}</label><div class="wejscie">${we}${jedn ? `<span class="jedn">${esc(jedn)}</span>` : ''}</div>${zr}</div>`;
+  return `<div class="pole ${p.dlugi || p.zr ? 'pelna' : ''}"><label class="et" for="${id}">${esc(p.e)}</label><div class="wejscie">${we}${jedn ? `<span class="jedn">${esc(jedn)}</span>` : ''}</div>${zr}</div>`;
 }
 function sekcjaPol(s, o) {
   const pola = s.pola.filter((p) => M.poleWidoczne(p, o));
-  let opisSek = '';
-  if (s.id === 'lokal') opisSek = '<p class="opis-sek">Przy polach z wyborem źródła zaznacz, skąd jest informacja. „Wg właściciela” pojawi się w ogłoszeniu jako dopisek.</p>';
-  if (s.id === 'energia') opisSek = '<p class="opis-sek">Jeśli świadectwo jest sporządzone, ustawa wymaga podania w ogłoszeniu wszystkich pięciu wskaźników.</p>';
-  if (s.id === 'wlasciciel') opisSek = '<p class="opis-sek">Te dane widzicie tylko Wy dwaj. Nigdy nie trafiają do ogłoszenia.</p>';
+  let opis = '';
+  if (s.id === 'lokal') opis = 'Przy polach ze źródłem zaznacz, skąd jest informacja. „Wg właściciela” pojawi się w ogłoszeniu jako dopisek.';
+  if (s.id === 'energia') opis = 'Jeśli świadectwo jest sporządzone, ustawa wymaga podania w ogłoszeniu wszystkich pięciu wskaźników.';
+  if (s.id === 'wlasciciel') opis = 'Te dane widzicie tylko Wy dwaj. Nigdy nie trafiają do ogłoszenia.';
   const dl = pola.some((p) => p.lista === 'dzielnice') ? `<datalist id="dl-dzielnice">${M.DZIELNICE_LUBLIN.map((d) => `<option value="${d}">`).join('')}</datalist>` : '';
-  return `<h2>${esc(s.tytul)}</h2>${opisSek}<div class="siatka">${pola.map((p) => poleHTML(p, o)).join('')}</div>${dl}`;
+  return `${opis ? `<p class="sek-opis">${opis}</p>` : ''}<div class="siatka">${pola.map((p) => poleHTML(p, o)).join('')}</div>${dl}`;
 }
 function sekcjaPom(o) {
   const pom = o.pom || [];
   const suma = pom.reduce((s, p) => s + (Number(p.m) || 0), 0);
-  return `<h2>Pomieszczenia</h2><p class="opis-sek">Każde pomieszczenie dostanie swoje zdjęcia. Suma: <b>${M.m2(Math.round(suma * 100) / 100)}</b>${o.pow ? ` z ${M.m2(o.pow)}` : ''}.</p>
+  return `<p class="sek-opis">Każde pomieszczenie dostanie swoje zdjęcia. Suma: <b style="color:var(--gold-l)">${M.m2(Math.round(suma * 100) / 100)}</b>${o.pow ? ` z ${M.m2(o.pow)}` : ''}.</p>
     <datalist id="dl-pom">${M.TYPY_POM.map((x) => `<option value="${x}">`).join('')}</datalist>
     <div class="wiersze">${pom.map((p, i) => `<div class="wiersz"><div class="pola pom">
       <div class="wejscie"><input data-l="pom" data-i="${i}" data-p="nazwa" data-t="t" list="dl-pom" placeholder="Nazwa, np. Sypialnia" value="${esc(p.nazwa || '')}" aria-label="Nazwa pomieszczenia"></div>
-      <div class="wejscie"><input data-l="pom" data-i="${i}" data-p="m" data-t="n" inputmode="decimal" placeholder="m²" value="${esc(p.m === undefined || p.m === null ? '' : String(p.m).replace('.', ','))}" aria-label="Metraż"><span class="jedn">m²</span></div>
+      <div class="wejscie"><input data-l="pom" data-i="${i}" data-p="m" data-t="n" inputmode="decimal" placeholder="metraż" value="${esc(puste(p.m) ? '' : String(p.m).replace('.', ','))}" aria-label="Metraż"><span class="jedn">m²</span></div>
       <div class="wejscie op"><input data-l="pom" data-i="${i}" data-p="opis" data-t="t" placeholder="Krótko, faktami: okno na zachód, zabudowa 2021" value="${esc(p.opis || '')}" aria-label="Opis"></div>
-    </div><button class="ikbtn" data-a="usun-wiersz" data-l="pom" data-i="${i}" aria-label="Usuń pomieszczenie">${ik('x')}</button></div>`).join('')}</div>
+    </div><button class="usun-w" data-a="usun-wiersz" data-l="pom" data-i="${i}" aria-label="Usuń pomieszczenie">${ik('x')}</button></div>`).join('')}</div>
     <button class="dodaj" data-a="dodaj-wiersz" data-l="pom">${ik('plus')}Dodaj pomieszczenie</button>`;
 }
-function sekcjaListy(o, l, tyt, opis, pl) {
+function sekcjaListy(o, l, opis, pl) {
   const L = o[l] || [];
-  return `<h2>${tyt}</h2><p class="opis-sek">${opis}</p><div class="wiersze">${L.map((a, i) => `<div class="wiersz"><div class="pola">
-    <div class="wejscie"><input data-l="${l}" data-i="${i}" data-p="t" data-t="t" placeholder="${esc(pl)}" value="${esc(a.t || '')}" aria-label="${tyt} ${i + 1}"></div></div>
-    <button class="ikbtn" data-a="usun-wiersz" data-l="${l}" data-i="${i}" aria-label="Usuń">${ik('x')}</button></div>`).join('')}</div>
+  return `<p class="sek-opis">${opis}</p><div class="wiersze">${L.map((a, i) => `<div class="wiersz"><div class="pola">
+    <div class="wejscie"><input data-l="${l}" data-i="${i}" data-p="t" data-t="t" placeholder="${esc(pl)}" value="${esc(a.t || '')}" aria-label="Punkt ${i + 1}"></div></div>
+    <button class="usun-w" data-a="usun-wiersz" data-l="${l}" data-i="${i}" aria-label="Usuń">${ik('x')}</button></div>`).join('')}</div>
     <button class="dodaj" data-a="dodaj-wiersz" data-l="${l}">${ik('plus')}Dodaj</button>`;
 }
 function sekcjaOkolicy(o) {
   const L = o.okolica || [];
   const jak = { pieszo: 'pieszo', rower: 'rowerem', auto: 'autem', mpk: 'komunikacją' };
-  return `<h2>Okolica</h2><p class="opis-sek">Czas zmierz na mapie albo przejdź sam. Podawaj tylko to, co sprawdzone.</p><div class="wiersze">${L.map((a, i) => `<div class="wiersz"><div class="pola okol">
+  return `<p class="sek-opis">Czas zmierz na mapie albo przejdź sam. Podawaj tylko to, co sprawdzone.</p><div class="wiersze">${L.map((a, i) => `<div class="wiersz"><div class="pola okol">
     <div class="wejscie"><input data-l="okolica" data-i="${i}" data-p="nazwa" data-t="t" placeholder="np. przystanek MPK, szkoła nr 51" value="${esc(a.nazwa || '')}" aria-label="Miejsce"></div>
-    <div class="wejscie"><input data-l="okolica" data-i="${i}" data-p="min" data-t="n" inputmode="numeric" placeholder="min" value="${esc(a.min ?? '')}" aria-label="Minuty"><span class="jedn">min</span></div>
+    <div class="wejscie"><input data-l="okolica" data-i="${i}" data-p="min" data-t="n" inputmode="numeric" placeholder="czas" value="${esc(a.min ?? '')}" aria-label="Minuty"><span class="jedn">min</span></div>
     <div class="wejscie"><select data-l="okolica" data-i="${i}" data-p="jak" data-t="w" aria-label="Jak">${Object.entries(jak).map(([k, v]) => `<option value="${k}" ${(a.jak || 'pieszo') === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
-    </div><button class="ikbtn" data-a="usun-wiersz" data-l="okolica" data-i="${i}" aria-label="Usuń">${ik('x')}</button></div>`).join('')}</div>
+    </div><button class="usun-w" data-a="usun-wiersz" data-l="okolica" data-i="${i}" aria-label="Usuń">${ik('x')}</button></div>`).join('')}</div>
     <button class="dodaj" data-a="dodaj-wiersz" data-l="okolica">${ik('plus')}Dodaj miejsce</button>`;
 }
 function sekcjaWeryfikacji(o) {
   const w = o.weryf || {};
   const lista = M.WERYFIKACJA.filter((x) => !x.dla || x.dla === o.transakcja);
-  return `<h2>Sprawdziliśmy</h2><p class="opis-sek">Zaznaczone punkty pojawią się w ogłoszeniu w sekcji „Sprawdziliśmy” z datą. To przekłada „Sprawdzone do końca” na konkret.</p>
-    <div class="weryf">${lista.map((x) => `<div class="w"><label><input type="checkbox" data-w="${x.k}" data-p="ok" ${w[x.k]?.ok ? 'checked' : ''}><span>${esc(x.t)}</span></label>
+  return `<p class="sek-opis">Zaznaczone punkty trafią do ogłoszenia jako „Sprawdziliśmy” z datą. Tak „Sprawdzone do końca” staje się konkretem.</p>
+    <div class="weryf">${lista.map((x) => `<div class="w"><label><span class="ptaszek"><input type="checkbox" data-w="${x.k}" data-p="ok" ${w[x.k]?.ok ? 'checked' : ''}><i></i></span><span>${esc(x.t)}</span></label>
     <input type="date" data-w="${x.k}" data-p="d" value="${esc(w[x.k]?.d || '')}" aria-label="Data: ${esc(x.t)}"></div>`).join('')}</div>`;
 }
 function sekcjaTekstu(o) {
-  return `<h2>Tytuł i wstęp</h2><p class="opis-sek">Opcjonalnie. Puste pola = tytuł i wstęp złożą się same z faktów. Wstęp to 1–2 zdania od Was, bez ocen.</p>
+  return `<p class="sek-opis">Puste pola = tytuł i wstęp złożą się same z faktów. Wstęp to 1–2 zdania od Was, bez ocen.</p>
     <div class="siatka">
-      <div class="pole pelna"><label class="et" for="f-tytul">Własny tytuł (zamiast automatycznego)</label><div class="wejscie"><input id="f-tytul" data-k="tytul" data-t="t" placeholder="${esc(M.tytul({ ...o, tytul: '' }))}" value="${esc(o.tytul || '')}"></div></div>
+      <div class="pole pelna"><label class="et" for="f-tytul">Własny tytuł</label><div class="wejscie"><input id="f-tytul" data-k="tytul" data-t="t" placeholder="${esc(M.tytul({ ...o, tytul: '' }))}" value="${esc(o.tytul || '')}"></div></div>
       <div class="pole pelna"><label class="et" for="f-lead">Wstęp</label><div class="wejscie"><textarea id="f-lead" data-k="lead" data-t="t" rows="3" placeholder="np. Mieszkanie po jednym właścicielu, regularnie remontowane.">${esc(o.lead || '')}</textarea></div></div>
     </div>`;
 }
 
-// ----- zakładka: zdjęcia -----
+// ----- zdjęcia -----
 function nazwaMiejsca(z, o) {
   if (!z.pom) return '';
   const p = (o.pom || []).find((x) => x.id === z.pom);
@@ -348,29 +411,26 @@ function opcjeMiejsc(o, wybrane, pusta = '— gdzie zrobione? —') {
     <optgroup label="Inne">${Object.entries(M.MIEJSCA_ZDJEC).map(([k, v]) => `<option value="${k}" ${wybrane === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</optgroup>`;
 }
 function tabZdjecia(t, o) {
-  if (!t.firstChild) t.innerHTML = '<div id="zdj-licznik" data-wstaw></div><div class="sekcja" style="margin-bottom:12px"><div id="zdj-dodaj" data-wstaw></div><p class="postep" id="zdj-postep"></p></div><div id="zdj-braki" data-wstaw></div><div class="zdjecia" id="zdj-siatka" data-wstaw></div>';
+  if (!t.firstChild) t.innerHTML = '<div id="zdj-licznik" data-wstaw></div><div class="panel szklo"><div id="zdj-dodaj" data-wstaw></div><p class="postep" id="zdj-postep"></p></div><div id="zdj-braki" data-wstaw></div><div class="zdjecia" id="zdj-siatka" data-wstaw></div>';
   const zdj = o.zdj || [];
   const zwykle = zdj.filter((z) => !z.wiz).length;
   const L = M.checklista(o);
   const bez = L.find((x) => x.id === 'zdjPom');
   const brakRzutu = L.find((x) => x.id === 'rzut' && !x.ok);
-  wstaw($('#zdj-licznik', t), `<div class="zdj-gora">
-      <div><b>${zdj.length}</b> zdjęć <span class="wyc">· prawdziwych ${zwykle}, minimum ${M.minZdjec(o)}</span></div>
-      <div class="rzad">${zdj.length ? `<button class="btn maly" data-a="pobierz-zdj">${ik('pobierz')}Pobierz w kolejności</button>` : ''}</div>
-    </div>`);
-  // ten fragment zawiera pole wyboru plików — odświeżany tylko, gdy zmieni się lista pomieszczeń
-  wstaw($('#zdj-dodaj', t), `<div class="siatka">
-      <div class="pole"><label class="et" for="pom-dodaj">Dodawane zdjęcia przypisz do</label><div class="wejscie"><select id="pom-dodaj">${opcjeMiejsc(o, null, 'później wybiorę')}</select></div></div>
+  wstaw($('#zdj-licznik', t), `<div class="zdj-licznik"><b>${zdj.length}</b><span class="wyc">zdjęć · prawdziwych ${zwykle}, minimum ${M.minZdjec(o)}</span><span class="rozp"></span>
+    ${zdj.length ? `<button class="btn kontur maly" data-a="pobierz-zdj">${ik('pobierz')}Pobierz w kolejności</button>` : ''}</div>`);
+  // pole wyboru plików — odświeżane tylko, gdy zmieni się lista pomieszczeń
+  wstaw($('#zdj-dodaj', t), `<div class="siatka" style="padding-top:0">
+      <div class="pole"><label class="et" for="pom-dodaj">Przypisz dodawane do</label><div class="wejscie"><select id="pom-dodaj">${opcjeMiejsc(o, null, 'później wybiorę')}</select></div></div>
       <div class="pole" style="display:flex;align-items:flex-end"><label class="btn zloty wybierz-plik" style="width:100%">${ik('aparat')}Dodaj zdjęcia<input type="file" id="dodaj-zdj" accept="image/*" multiple></label></div>
     </div>`);
   const sel = $('#pom-dodaj', t);
   if (sel && document.activeElement !== sel) sel.value = [...sel.options].some((x) => x.value === S.pomDodawania) ? S.pomDodawania : '';
   $('#zdj-postep', t).textContent = S.postep;
-  wstaw($('#zdj-braki', t), `${bez && !bez.ok && bez.info ? `<div class="braki-zdj">${ik('uwaga')} ${esc(bez.info)}</div>` : ''}
-    ${brakRzutu ? `<div class="braki-zdj">${ik('uwaga')} Brak rzutu. Dodaj go jako zdjęcie i przypisz do „Rzut”.</div>` : ''}
-    <p class="male wyc">Kolejność tutaj = kolejność w ogłoszeniu. Pierwsze zdjęcie najlepiej ustaw jako główne. Wizualizacje (meble dodane cyfrowo) muszą mieć przypięty oryginał i nie mogą być zdjęciem głównym.</p>`);
+  wstaw($('#zdj-braki', t), `${bez && !bez.ok && bez.info ? `<div class="braki-zdj">${ik('uwaga')}<span>${esc(bez.info)}</span></div>` : ''}
+    ${brakRzutu ? `<div class="braki-zdj">${ik('uwaga')}<span>Brak rzutu. Dodaj go jako zdjęcie i przypisz do „Rzut”.</span></div>` : ''}`);
   const oryginaly = zdj.filter((z) => !z.wiz);
-  wstaw($('#zdj-siatka', t), zdj.map((z, i) => `<div class="zdj ${z.glowne ? 'glowne' : ''}">
+  wstaw($('#zdj-siatka', t), zdj.map((z, i) => `<div class="zdj szklo ${z.glowne ? 'glowne' : ''}">
     <div class="obraz">${imgMini(z.id, nazwaMiejsca(z, o))}<span class="nr">${i + 1}</span>
       <span class="znaczki">${z.glowne ? '<span class="zn gl">Główne</span>' : ''}${z.wiz ? '<span class="zn wiz">Wizualizacja</span>' : ''}${D.czekaNaWyslanie(z.id) ? `<span class="zn">${ik('wysyla')}</span>` : ''}</span></div>
     <div class="dane-zdj">
@@ -388,26 +448,58 @@ function tabZdjecia(t, o) {
 }
 
 // ----- ogłoszenie -----
+const NAGLOWEK = /^[A-ZĄĆĘŁŃÓŚŹŻ][A-ZĄĆĘŁŃÓŚŹŻ ,]+$/;
+function blokiOpisu(tekst) {
+  const surowe = tekst.split('\n\n');
+  const bloki = [];
+  surowe.forEach((b, i) => {
+    const linie = b.split('\n');
+    if (NAGLOWEK.test(linie[0].trim()) && linie.length > 1) { bloki.push({ tyt: linie[0].trim(), linie: linie.slice(1), tekst: b }); return; }
+    const tyt = i === surowe.length - 1 ? 'KONTAKT' : !bloki.length || bloki[bloki.length - 1].tyt === 'WSTĘP' ? 'WSTĘP' : 'INFORMACJE';
+    const ost = bloki[bloki.length - 1];
+    if (ost && ost.tyt === tyt) { ost.linie.push('', ...linie); ost.tekst += `\n\n${b}`; }
+    else bloki.push({ tyt, linie, tekst: b });
+  });
+  return bloki;
+}
+function liniaHTML(l, tyt) {
+  if (l.startsWith('– ')) {
+    let t = esc(l.slice(2));
+    if (tyt === 'KOSZTY') {
+      const m = l.slice(2).match(/^([^:]+): ([^—(]+?)(\s*[—(].*)?$/);
+      if (m) t = `${esc(m[1])}: <b>${esc(m[2])}</b>${esc(m[3] || '')}`;
+    }
+    return `<li>${t}</li>`;
+  }
+  return l.trim() ? `<p>${esc(l)}</p>` : '';
+}
 function htmlOgloszenie(o) {
   const uw = M.kontrolaSlow(o);
   const tyt = M.tytul(o), op = M.opis(o, { agent: agent() }), kr = M.krotki(o, { agent: agent() });
   const pola = M.polaPortalu(o);
-  return `${uw.length ? `<div class="uwagi"><h3>${ik('uwaga')} Do poprawy przed publikacją (${uw.length})</h3><ul>${uw.map((u) => `<li><b>${esc(u.gdzie)}:</b> „${esc(u.fraza)}” — ${esc(u.porada)}</li>`).join('')}</ul></div>` : ''}
-    <div class="blok"><div class="blok-gora"><h3>Tytuł</h3><span class="wyc male">${tyt.length} zn.</span><button class="btn maly" data-a="kopiuj" data-co="tytul">${ik('kopiuj')}Kopiuj</button></div><div class="tytul-og">${esc(tyt)}</div></div>
-    <div class="blok"><div class="blok-gora"><h3>Opis — Otodom, OLX, strona</h3><span class="wyc male">${op.length} zn.</span><button class="btn maly" data-a="kopiuj" data-co="opis">${ik('kopiuj')}Kopiuj</button></div><pre class="tekst-og">${esc(op)}</pre></div>
-    <div class="blok"><div class="blok-gora"><h3>Krótka wersja — Facebook, Instagram</h3><button class="btn maly" data-a="kopiuj" data-co="krotki">${ik('kopiuj')}Kopiuj</button></div><pre class="tekst-og">${esc(kr)}</pre></div>
-    <div class="blok"><div class="blok-gora"><h3>Pola formularza portalu</h3></div><div class="pola-portalu">${pola.map((p, i) => `<div class="pp"><span><small>${esc(p.e)}</small>${esc(p.v)}</span><button class="ikbtn" data-a="kopiuj" data-co="pole" data-v="${i}" aria-label="Kopiuj: ${esc(p.e)}">${ik('kopiuj')}</button></div>`).join('')}</div></div>`;
+  const bloki = blokiOpisu(op);
+  const gora = telefon.matches && S.ekran === 'oferta' && S.tab === 'ogloszenie' ? '' : `<div class="rzad" style="margin:0 0 12px"><span class="znaki">Opis: ${op.length} znaków</span><span class="rozp"></span><button class="btn kontur maly" data-a="kopiuj" data-co="opis">${ik('kopiuj')}Kopiuj całość</button></div>`;
+  return `${uw.length ? `<div class="uwagi szklo"><h3>${ik('uwaga')}Do poprawy (${uw.length})</h3><ul>${uw.map((u) => `<li><b>${esc(u.gdzie)}:</b> „${esc(u.fraza)}” — ${esc(u.porada)}</li>`).join('')}</ul></div>` : ''}
+    ${gora}
+    <div class="karta-og szklo">${bloki.map((b, i) => `<div class="blok-og ${b.tyt === 'SPRAWDZILIŚMY' ? 'spr' : ''}">
+      <div class="blok-glowa"><h3>${esc(b.tyt.toLowerCase().replace(/^./, (c) => c.toUpperCase()))}</h3><button class="btn kontur" data-a="kopiuj-blok" data-v="${i}">${ik('kopiuj')}Kopiuj</button></div>
+      ${b.linie.some((l) => l.startsWith('– ')) ? `<ul>${b.linie.map((l) => liniaHTML(l, b.tyt)).join('')}</ul>` : b.linie.map((l) => liniaHTML(l, b.tyt)).join('')}
+    </div>`).join('')}</div>
+    <div class="karta-og szklo"><div class="blok-og"><div class="blok-glowa"><h3>Tytuł</h3><span class="znaki">${tyt.length} zn.</span><button class="btn kontur" data-a="kopiuj" data-co="tytul">${ik('kopiuj')}Kopiuj</button></div><div class="tytul-og">${esc(tyt)}</div></div></div>
+    <div class="karta-og szklo"><div class="blok-og"><div class="blok-glowa"><h3>Facebook, Instagram</h3><button class="btn kontur" data-a="kopiuj" data-co="krotki">${ik('kopiuj')}Kopiuj</button></div><pre class="tekst-og">${esc(kr)}</pre></div></div>
+    <div class="karta-og szklo"><div class="blok-og"><div class="blok-glowa"><h3>Pola portalu</h3></div><div>${pola.map((p, i) => `<div class="pp"><span><small>${esc(p.e)}</small>${esc(p.v)}</span><button class="okragly" data-a="kopiuj" data-co="pole" data-v="${i}" aria-label="Kopiuj: ${esc(p.e)}">${ik('kopiuj')}</button></div>`).join('')}</div></div></div>`;
 }
 // ----- kontrola -----
 function htmlKontrola(o) {
   const L = M.checklista(o);
   const tw = L.filter((x) => x.twarde), zal = L.filter((x) => !x.twarde);
   const g = M.gotowosc(o);
-  const li = (x) => `<li data-a="idz" data-id="${x.id}" data-zak="${x.zakladka}"><span class="${x.ok ? 'ok' : x.twarde ? 'nie' : 'zal'}">${ik(x.ok ? 'ok' : x.twarde ? 'x' : 'uwaga')}</span><span>${esc(x.tekst)}${x.info && !x.ok ? `<br><span class="info">${esc(x.info)}</span>` : ''}</span></li>`;
-  return `<div class="blok"><div class="blok-gora"><h3>${g.wszystkieTwarde ? 'Gotowa do publikacji' : `Wymagane: brakuje ${g.braki.length}`}</h3><span class="wyc male">${g.procent}%</span></div>
-    <ul class="check">${tw.map(li).join('')}</ul></div>
-    <div class="blok"><div class="blok-gora"><h3>Zalecane</h3></div><ul class="check">${zal.map(li).join('')}</ul></div>
-    <p class="male wyc">Status „Gotowa do publikacji” i „Opublikowana” da się ustawić dopiero, gdy wszystkie wymagane punkty są spełnione.</p>`;
+  const li = (x) => `<li data-a="idz" data-id="${x.id}" data-zak="${x.zakladka}"><span class="znak ${x.ok ? 'ok' : x.twarde ? 'nie' : 'zal'}">${ik(x.ok ? 'ok' : x.twarde ? 'x' : 'uwaga')}</span><span>${esc(x.tekst)}${x.info && !x.ok ? `<span class="info">${esc(x.info)}</span>` : ''}</span>${x.ok ? '' : `<span class="strz">${ik('prawo')}</span>`}</li>`;
+  return `<div class="karta-og szklo"><div class="blok-og"><div class="blok-glowa"><h3>Status</h3></div>
+      <div class="wejscie"><select data-k="status" aria-label="Status oferty">${Object.entries(M.STATUSY).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>
+      <p class="info-pola">„Gotowa do publikacji” i „Opublikowana” da się ustawić dopiero, gdy wszystkie wymagane punkty są spełnione.</p></div></div>
+    <div class="karta-og szklo"><div class="blok-og"><div class="blok-glowa"><h3>Wymagane</h3><span class="sek-licz">${tw.filter((x) => x.ok).length}/${tw.length}</span>${pierscien(Math.round((tw.filter((x) => x.ok).length / Math.max(1, tw.length)) * 100), 'maly')}</div><ul class="check">${tw.map(li).join('')}</ul></div></div>
+    <div class="karta-og szklo"><div class="blok-og"><div class="blok-glowa"><h3>Zalecane</h3></div><ul class="check">${zal.map(li).join('')}</ul></div></div>`;
 }
 
 // ----- ustawienia -----
@@ -415,28 +507,25 @@ function odswiezUstawienia() {
   const e = $('#edytor'); e.dataset.tryb = 'ustawienia';
   const a = agent();
   const pushOk = 'PushManager' in window;
-  wstaw(e, `<div class="tresc ust">
-    <h1 style="font-size:26px;margin:4px 0 14px;color:var(--gold-l)">Ustawienia</h1>
-    <section class="sekcja"><h2>Stopka ogłoszeń</h2>
-      <div class="siatka">
-        <div class="pole"><label class="et" for="u-nazwa">Twoje imię i nazwisko</label><div class="wejscie"><input id="u-nazwa" data-u="nazwa" value="${esc(a.nazwa)}"></div></div>
-        <div class="pole"><label class="et" for="u-tel">Telefon w ogłoszeniach</label><div class="wejscie"><input id="u-tel" data-u="telefon" type="tel" value="${esc(a.telefon)}"></div></div>
+  wstaw(e, `<div class="ust">
+    <section class="sek szklo"><h2>Stopka ogłoszeń</h2><div class="sek-tresc"><div class="siatka">
+        <div class="pole"><label class="et" for="u-nazwa">Imię i nazwisko</label><div class="wejscie"><input id="u-nazwa" data-u="nazwa" value="${esc(a.nazwa)}"></div></div>
+        <div class="pole"><label class="et" for="u-tel">Telefon</label><div class="wejscie"><input id="u-tel" data-u="telefon" type="tel" value="${esc(a.telefon)}"></div></div>
         <div class="pole"><label class="et" for="u-firma">Nazwa firmy</label><div class="wejscie"><input id="u-firma" data-u="firma" value="${esc(a.firma)}"></div></div>
         <div class="pole"><label class="et" for="u-haslo">Hasło pod nazwą</label><div class="wejscie"><input id="u-haslo" data-u="haslo" value="${esc(a.haslo)}"></div></div>
-      </div></section>
-    <section class="sekcja"><h2>Powiadomienia</h2>
-      <p class="opis-sek">Dostaniesz powiadomienie, gdy wspólnik doda ofertę albo zmieni jej status. Na iPhonie działa tylko w aplikacji dodanej do ekranu początkowego.</p>
-      <div class="rzad">${pushOk ? (D.stan.push ? '<span style="color:var(--ok)">Włączone na tym urządzeniu</span><button class="btn maly" data-a="push-off">Wyłącz</button>' : '<button class="btn" data-a="push-on">Włącz powiadomienia</button>') : '<span class="wyc">To urządzenie nie obsługuje powiadomień w tej formie. Dodaj aplikację do ekranu początkowego.</span>'}</div></section>
-    <section class="sekcja"><h2>Synchronizacja</h2>
-      <p class="opis-sek">Wszystko zapisuje się najpierw na tym urządzeniu, a potem od razu na serwerze. Bez internetu możesz dalej pracować — zmiany wyślą się same.</p>
-      <div>Do wysłania: <b>${D.ileWKolejce()}</b> · stan danych: ${D.stan.seq}</div>
-      <div class="wyc male">Serwer: ${esc(D.API)}</div>
-      <div class="rzad"><button class="btn maly" data-a="sync">Synchronizuj teraz</button></div></section>
-    <section class="sekcja"><h2>Konto</h2>
-      <div>Zalogowany: <b>${esc(D.stan.konto?.nazwa || '')}</b> <span class="wyc">(${esc(D.stan.konto?.login || '')})</span></div>
-      ${D.stan.konta.length > 1 ? `<div class="wyc male">Konta w biurze: ${D.stan.konta.map((k) => esc(k.nazwa)).join(', ')}</div>` : ''}
-      <div class="rzad"><button class="btn maly zly" data-a="wyloguj">Wyloguj to urządzenie</button></div></section>
-    <p class="male wyc">AM Oferty ${WERSJA}</p>
+      </div></div></section>
+    <section class="sek szklo"><h2>Powiadomienia</h2><div class="sek-tresc">
+      <p class="tekst-ust" style="padding:0">Powiadomienie, gdy wspólnik doda ofertę albo zmieni jej status. Na iPhonie działa w aplikacji dodanej do ekranu początkowego.</p>
+      <div class="rzad" style="margin-top:12px">${pushOk ? (D.stan.push ? '<span style="color:var(--ok)">Włączone na tym urządzeniu</span><button class="btn kontur maly" data-a="push-off">Wyłącz</button>' : '<button class="btn zloty" data-a="push-on">Włącz powiadomienia</button>') : '<span class="wyc">To urządzenie nie obsługuje powiadomień w tej formie.</span>'}</div></div></section>
+    <section class="sek szklo"><h2>Synchronizacja</h2><div class="sek-tresc">
+      <p class="tekst-ust" style="padding:0">Wszystko zapisuje się najpierw na urządzeniu, potem od razu na serwerze. Bez internetu pracujesz dalej — zmiany wyślą się same.</p>
+      <p style="margin:12px 0 4px">Do wysłania: <b style="color:var(--gold-l)">${D.ileWKolejce()}</b> · stan danych ${D.stan.seq}</p>
+      <div class="rzad"><button class="btn kontur maly" data-a="sync">Synchronizuj teraz</button></div></div></section>
+    <section class="sek szklo"><h2>Konto</h2><div class="sek-tresc">
+      <p style="margin:6px 0">Zalogowany: <b>${esc(D.stan.konto?.nazwa || '')}</b> <span class="wyc">(${esc(D.stan.konto?.login || '')})</span></p>
+      ${D.stan.konta.length > 1 ? `<p class="wyc male" style="margin:0 0 10px">W biurze: ${D.stan.konta.map((k) => esc(k.nazwa)).join(', ')}</p>` : ''}
+      <button class="btn zly maly" data-a="wyloguj">Wyloguj to urządzenie</button></div></section>
+    <p class="male wyc" style="text-align:center">AM Oferty ${WERSJA}</p>
   </div>`);
 }
 
@@ -452,15 +541,15 @@ function wartosc(el) {
 }
 function zapisz(el) {
   timery.delete(el);
-  const o = D.oferta(S.id); if (!o) return;
+  const o = D.oferta(S.id);
+  if (el.dataset.u) return D.ustawAgenta({ [el.dataset.u]: el.value.trim() });
+  if (!o) return;
   if (el.dataset.k) {
     const k = el.dataset.k;
-    if (k === 'status') return zmienStatus(o, el);
+    if (k === 'status') return zmienStatus(o, el.value, el);
     const v = wartosc(el);
     if (JSON.stringify(o[k] ?? null) === JSON.stringify(v)) return;
-    const pola = { [k]: v };
-    // zmiana transakcji: cena z innego trybu nie ma sensu bez sprawdzenia
-    D.zmien(S.id, pola);
+    D.zmien(S.id, { [k]: v });
   } else if (el.dataset.l) {
     const l = el.dataset.l, i = Number(el.dataset.i), p = el.dataset.p;
     const arr = (o[l] || []).map((x) => ({ ...x }));
@@ -478,16 +567,13 @@ function zapisz(el) {
   } else if (el.dataset.z) {
     const zdj = (o.zdj || []).map((z) => (z.id === el.dataset.z ? { ...z, [el.dataset.p]: el.value || undefined } : z));
     D.zmien(S.id, { zdj: zdj.map((z) => JSON.parse(JSON.stringify(z))) });
-  } else if (el.dataset.u) {
-    D.ustawAgenta({ [el.dataset.u]: el.value.trim() });
   }
 }
-function zmienStatus(o, el) {
-  const v = el.value;
+function zmienStatus(o, v, el) {
   if (M.STATUSY_WYMAGAJACE.includes(v)) {
     const g = M.gotowosc(o);
     if (!g.wszystkieTwarde) {
-      el.value = o.status;
+      if (el) el.value = o.status;
       toast(`Najpierw uzupełnij wymagane punkty (${g.braki.length}).`, 3000);
       if (szeroki.matches) { S.podglad = 'kontrola'; odswiez(); } else idzDo(`#/o/${o.id}/kontrola`);
       return;
@@ -498,10 +584,10 @@ function zmienStatus(o, el) {
   D.zmien(o.id, pola);
 }
 const natychmiast = (el) => el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'date';
+const doZapisu = (el) => el.dataset.k || el.dataset.l || el.dataset.w || el.dataset.z || el.dataset.u;
 document.addEventListener('input', (e) => {
   const el = e.target;
-  if (!(el.dataset.k || el.dataset.l || el.dataset.w || el.dataset.z || el.dataset.u)) return;
-  if (natychmiast(el)) return; // obsłuży 'change'
+  if (!doZapisu(el) || natychmiast(el)) return;
   clearTimeout(timery.get(el));
   timery.set(el, setTimeout(() => zapisz(el), 450));
 });
@@ -509,7 +595,7 @@ document.addEventListener('change', (e) => {
   const el = e.target;
   if (el.id === 'pom-dodaj') { S.pomDodawania = el.value; return; }
   if (el.id === 'dodaj-zdj') return dodajZdjecia(el);
-  if (!(el.dataset.k || el.dataset.l || el.dataset.w || el.dataset.z || el.dataset.u)) return;
+  if (!doZapisu(el)) return;
   clearTimeout(timery.get(el));
   zapisz(el);
 });
@@ -519,7 +605,7 @@ document.addEventListener('focusout', (e) => {
   setTimeout(() => { if (!document.activeElement || !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) odswiez(); }, 30);
 });
 
-// ---------- zdjęcia: dodawanie, kolejność, pobieranie ----------
+// ---------- zdjęcia: dodawanie, pobieranie, podgląd ----------
 let kolejkaDodawania = Promise.resolve();
 function dodajZdjecia(input) {
   const pliki = [...input.files];
@@ -551,14 +637,12 @@ async function pobierzZdjecia(o) {
     const pliki = [];
     for (let i = 0; i < zdj.length; i++) {
       const z = zdj[i];
-      const blob = await D.blobZdjecia(z.id);
-      pliki.push({ nazwa: `${String(i + 1).padStart(2, '0')}-${slug(nazwaMiejsca(z, o))}${z.wiz ? '-wizualizacja' : ''}.jpg`, blob });
+      pliki.push({ nazwa: `${String(i + 1).padStart(2, '0')}-${slug(nazwaMiejsca(z, o))}${z.wiz ? '-wizualizacja' : ''}.jpg`, blob: await D.blobZdjecia(z.id) });
     }
     const mobilny = /iPhone|iPad|Android/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
     const files = pliki.map((p) => new File([p.blob], p.nazwa, { type: 'image/jpeg' }));
-    if (mobilny && navigator.canShare?.({ files })) {
-      await navigator.share({ files, title: o.roboczy || M.tytul(o) });
-    } else {
+    if (mobilny && navigator.canShare?.({ files })) await navigator.share({ files, title: o.roboczy || M.tytul(o) });
+    else {
       const zip = await zrobZip(pliki);
       const a = document.createElement('a');
       a.href = URL.createObjectURL(zip); a.download = `${slug(o.roboczy || M.tytul(o))}-zdjecia.zip`;
@@ -571,7 +655,7 @@ async function pobierzZdjecia(o) {
 async function podgladZdjecia(id) {
   const tlo = document.createElement('div');
   tlo.className = 'podglad-zdj';
-  tlo.innerHTML = `<img alt="Zdjęcie" src="${miniUrl.get(id) || ''}"><button class="ikbtn" aria-label="Zamknij">${ik('x')}</button>`;
+  tlo.innerHTML = `<img alt="Zdjęcie" src="${obrazy.get(`${id}:mini`) || ''}"><button class="okragly" aria-label="Zamknij">${ik('x')}</button>`;
   tlo.addEventListener('click', () => tlo.remove());
   document.body.appendChild(tlo);
   try { const b = await D.blobZdjecia(id); $('img', tlo).src = URL.createObjectURL(b); } catch { /* zostaje miniatura */ }
@@ -581,13 +665,13 @@ async function podgladZdjecia(id) {
 function okno(tytul, html) {
   const tlo = document.createElement('div');
   tlo.className = 'okno-tlo';
-  tlo.innerHTML = `<div class="okno" role="dialog" aria-modal="true" aria-label="${esc(tytul)}"><div class="okno-gora"><h2>${esc(tytul)}</h2><button class="ikbtn" data-zamknij aria-label="Zamknij">${ik('x')}</button></div><div class="okno-tresc">${html}</div></div>`;
+  tlo.innerHTML = `<div class="okno szklo" role="dialog" aria-modal="true" aria-label="${esc(tytul)}"><div class="okno-gora"><h2>${esc(tytul)}</h2><button class="okragly" data-zamknij aria-label="Zamknij">${ik('x')}</button></div><div class="okno-tresc">${html}</div></div>`;
   tlo.addEventListener('click', (e) => { if (e.target === tlo || e.target.closest('[data-zamknij]')) tlo.remove(); });
   document.body.appendChild(tlo);
   return tlo;
 }
 const NAZWY_POL = { pom: 'Pomieszczenia', atuty: 'Atuty', minusy: 'Co warto wiedzieć', okolica: 'Okolica', zdj: 'Zdjęcia', weryf: 'Sprawdziliśmy', zr: 'Źródła danych',
-  lead: 'Wstęp', tytul: 'Własny tytuł', status: 'Status', _usunieta: 'Usunięcie oferty', dataPublikacji: 'Data publikacji', utworzyl: 'Utworzył(a)', id: 'Utworzenie' };
+  lead: 'Wstęp', tytul: 'Własny tytuł', status: 'Status', _usunieta: 'Usunięcie oferty', dataPublikacji: 'Data publikacji', utworzyl: 'Utworzenie', id: 'Utworzenie', ulubiona: 'Wyróżnienie' };
 function etykieta(k) { for (const s of M.SEKCJE) for (const p of s.pola) if (p.k === k) return p.e; return NAZWY_POL[k] || k; }
 function pokazWartosc(k, j) {
   if (j === null || j === undefined) return '—';
@@ -598,16 +682,34 @@ function pokazWartosc(k, j) {
   if (typeof v === 'boolean') return v ? 'tak' : 'nie';
   return esc(String(v).slice(0, 80));
 }
+const kiedy = (t) => new Date(t).toLocaleString('pl-PL', { dateStyle: 'medium', timeStyle: 'short' });
 async function pokazHistorie() {
   const w = okno('Historia zmian', '<p class="wyc">Wczytuję…</p>');
   try {
     const h = await D.historia(S.id);
-    $('.okno-tresc', w).innerHTML = h.length ? `<ul class="hist">${h.map((x) => `<li><div><b>${esc(etykieta(x.pole))}</b>: ${pokazWartosc(x.pole, x.stara)} → ${pokazWartosc(x.pole, x.nowa)}</div><div class="kiedy">${esc(x.kto || '')} · ${new Date(x.kiedy).toLocaleString('pl-PL', { dateStyle: 'medium', timeStyle: 'short' })}</div></li>`).join('')}</ul>` : '<p class="wyc">Brak zapisanych zmian (albo nie dotarły jeszcze na serwer).</p>';
+    $('.okno-tresc', w).innerHTML = h.length ? `<ul class="hist">${h.map((x) => `<li><div><b>${esc(etykieta(x.pole))}</b>: ${pokazWartosc(x.pole, x.stara)} → ${pokazWartosc(x.pole, x.nowa)}</div><div class="kiedy">${esc(x.kto || '')} · ${kiedy(x.kiedy)}</div></li>`).join('')}</ul>` : '<p class="wyc">Brak zapisanych zmian.</p>';
   } catch { $('.okno-tresc', w).innerHTML = '<p class="wyc">Historia jest na serwerze. Połącz się z internetem, żeby ją zobaczyć.</p>'; }
+}
+function pokazAktywnosc() {
+  const A = D.stan.aktywnosc || [];
+  // grupowanie: ta sama oferta i osoba w odstępie do 10 minut = jedna pozycja
+  const grupy = [];
+  for (const a of A) {
+    const g = grupy[grupy.length - 1];
+    if (g && g.oferta === a.oferta && g.kto === a.kto && g.od - a.kiedy < 10 * 60e3) { g.od = a.kiedy; if (!g.pola.includes(a.pole)) g.pola.push(a.pole); if (a.pole === 'status') g.status = a.nowa; continue; }
+    grupy.push({ oferta: a.oferta, nazwa: a.nazwa, kto: a.kto, kiedy: a.kiedy, od: a.kiedy, pola: [a.pole], status: a.pole === 'status' ? a.nowa : null });
+  }
+  const widziana = D.stan.aktywnoscWidziana;
+  okno('Zmiany wspólnika', grupy.length ? `<ul class="hist">${grupy.slice(0, 40).map((g) => {
+    const nowa = g.pola.includes('id') || g.pola.includes('transakcja') && g.pola.includes('rodzaj') && g.pola.length > 4;
+    const opis = g.pola.includes('_usunieta') ? 'usunął(-ęła) ofertę' : nowa ? 'dodał(a) ofertę' : g.status ? `status → ${pokazWartosc('status', g.status)}` : `zmienił(a): ${[...new Set(g.pola.map(etykieta))].slice(0, 4).join(', ')}${g.pola.length > 4 ? '…' : ''}`;
+    return `<li data-a="otworz" data-oid="${g.oferta}" style="cursor:pointer"><div class="of">${esc(g.nazwa || 'Oferta')}${g.kiedy > widziana ? ' <span class="licznik" style="background:var(--gold);color:#1A1408">nowe</span>' : ''}</div><div>${esc(g.kto || '')} ${opis}</div><div class="kiedy">${kiedy(g.kiedy)}</div></li>`;
+  }).join('')}</ul>` : '<p class="wyc">Wspólnik nie wprowadzał jeszcze zmian.</p>');
+  D.aktywnoscWidziana();
 }
 function potwierdz(tytul, tresc, przycisk) {
   return new Promise((ok) => {
-    const w = okno(tytul, `<p>${tresc}</p><div class="rzad" style="justify-content:flex-end;margin-top:14px"><button class="btn" data-n>Anuluj</button><button class="btn zly" data-t>${esc(przycisk)}</button></div>`);
+    const w = okno(tytul, `<p>${tresc}</p><div class="rzad" style="justify-content:flex-end;margin-top:16px"><button class="btn" data-n>Anuluj</button><button class="btn zly" data-t>${esc(przycisk)}</button></div>`);
     w.addEventListener('click', (e) => { if (e.target.closest('[data-t]')) { w.remove(); ok(true); } else if (e.target.closest('[data-n]') || !document.body.contains(w)) { w.remove(); ok(false); } });
   });
 }
@@ -631,20 +733,32 @@ document.addEventListener('click', async (e) => {
   if (!b) return;
   const a = b.dataset.a;
   if (b.tagName === 'A' && b.getAttribute('href') === '#') e.preventDefault();
+  if (a === 'ulub') { e.preventDefault(); e.stopPropagation(); }
   const o = S.id ? D.oferta(S.id) : null;
   switch (a) {
     case 'nowa': {
       e.preventDefault();
       const id = M.noweId(10);
       await D.zmien(id, M.nowaOferta(id, D.stan.konto?.nazwa));
+      S.otwarte = new Set(['podstawy']);
       idzDo(`#/o/${id}/karta`);
-      setTimeout(() => $('#f-roboczy')?.focus(), 80);
       break;
     }
     case 'filtr': S.filtr = b.dataset.v; odswiezListe(); break;
+    case 'wiecej': S.wiecej = !S.wiecej; odswiezListe(); break;
     case 'sync': D.synchronizuj().then(() => toast(D.stan.blad || 'Zsynchronizowano')); break;
-    case 'skok': $(`#sek-${b.dataset.v}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); break;
+    case 'aktywnosc': pokazAktywnosc(); break;
+    case 'otworz': $$('.okno-tlo').forEach((x) => x.remove()); idzDo(`#/o/${b.dataset.oid}/karta`); break;
     case 'podglad': e.preventDefault(); S.podglad = b.dataset.v; odswiez(); break;
+    case 'ulub': { const x = D.oferta(b.dataset.oid); if (x) D.zmien(x.id, { ulubiona: x.ulubiona ? null : true }); break; }
+    case 'sekcja': {
+      const k = b.dataset.v;
+      if (S.otwarte.has(k)) S.otwarte.delete(k); else S.otwarte.add(k);
+      const el = $(`#sek-${k}`); el?.classList.toggle('otwarta', S.otwarte.has(k)); b.setAttribute('aria-expanded', S.otwarte.has(k));
+      if (S.otwarte.has(k)) setTimeout(() => el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 30);
+      break;
+    }
+    case 'wybor': D.zmien(o.id, { [b.dataset.k]: o[b.dataset.k] === b.dataset.v && b.dataset.k !== 'transakcja' ? null : b.dataset.v }); break;
     case 'zr': {
       const zr = { ...(o.zr || {}) };
       zr[b.dataset.k] = zr[b.dataset.k] === b.dataset.v ? undefined : b.dataset.v;
@@ -675,6 +789,7 @@ document.addEventListener('click', async (e) => {
       if (t) kopiuj(t);
       break;
     }
+    case 'kopiuj-blok': { const bl = blokiOpisu(M.opis(o, { agent: agent() }))[Number(b.dataset.v)]; if (bl) kopiuj(bl.tekst); break; }
     case 'zdj-ruch': {
       const zdj = [...(o.zdj || [])];
       const i = zdj.findIndex((z) => z.id === b.dataset.z), j = i + Number(b.dataset.v);
@@ -706,12 +821,17 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'pobierz-zdj': pobierzZdjecia(o); break;
-    case 'historia': pokazHistorie(); break;
-    case 'usun-oferte': {
-      if (!(await potwierdz('Usunąć ofertę?', 'Oferta i jej zdjęcia znikną na obu kontach. Jeśli transakcja się zakończyła, lepiej ustaw status „Zakończona”.', 'Usuń na zawsze'))) return;
-      await D.usunOferte(o.id);
-      idzDo('#/');
-      toast('Oferta usunięta');
+    case 'menu': {
+      const w = okno(o.roboczy || M.tytul(o), `<div class="menu-lista"><button data-m="historia">${ik('zegar')}Historia zmian</button><button data-m="usun" class="zly">${ik('kosz')}Usuń ofertę</button></div>`);
+      w.addEventListener('click', async (ev) => {
+        const m = ev.target.closest('[data-m]')?.dataset.m; if (!m) return;
+        w.remove();
+        if (m === 'historia') pokazHistorie();
+        if (m === 'usun') {
+          if (!(await potwierdz('Usunąć ofertę?', 'Oferta i jej zdjęcia znikną na obu kontach. Jeśli transakcja się zakończyła, lepiej ustaw status „Zakończona”.', 'Usuń na zawsze'))) return;
+          await D.usunOferte(o.id); idzDo('#/'); toast('Oferta usunięta');
+        }
+      });
       break;
     }
     case 'idz': {
@@ -720,15 +840,16 @@ document.addEventListener('click', async (e) => {
       if (zak === 'zdjecia') idzDo(`#/o/${o.id}/zdjecia`);
       else if (zak === 'ogloszenie') { if (szeroki.matches) { S.podglad = 'ogloszenie'; odswiez(); } else idzDo(`#/o/${o.id}/ogloszenie`); }
       else {
+        if (sekc) S.otwarte.add(sekc);
         idzDo(`#/o/${o.id}/karta`);
-        if (sekc) setTimeout(() => { const s = $(`#sek-${sekc}`); s?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80);
+        if (sekc) setTimeout(() => { const s = $(`#sek-${sekc}`); s?.classList.add('otwarta'); s?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80);
       }
       break;
     }
     case 'push-on': try { await D.wlaczPush(); toast('Powiadomienia włączone'); } catch (er) { toast(er.message, 4500); } break;
     case 'push-off': try { await D.wylaczPush(); toast('Powiadomienia wyłączone'); } catch (er) { toast(er.message, 4500); } break;
     case 'wyloguj':
-      if (!(await potwierdz('Wylogować to urządzenie?', 'Niewysłane zmiany z tego urządzenia zostaną wysłane po ponownym zalogowaniu.', 'Wyloguj'))) return;
+      if (!(await potwierdz('Wylogować to urządzenie?', 'Niewysłane zmiany z tego urządzenia wyślą się po ponownym zalogowaniu.', 'Wyloguj'))) return;
       await D.wyloguj(); render(); break;
   }
 });
@@ -740,7 +861,8 @@ document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: fals
 
 // ---------- start ----------
 addEventListener('hashchange', trasa);
-szeroki.addEventListener('change', () => { resetEdytora(); trasa(); });
+szeroki.addEventListener('change', () => { resetEdytora(); const e = $('#edytor'); if (e) e.dataset.tryb = ''; trasa(); });
+telefon.addEventListener('change', () => { resetEdytora(); const e = $('#edytor'); if (e) e.dataset.tryb = ''; trasa(); });
 D.naZmiane(() => { if (!D.stan.token && zbudowany) { render(); return; } odswiez(); });
 await D.start();
 render();

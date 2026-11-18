@@ -67,6 +67,10 @@ await test('zdjęcia: wysyłka, pobranie, odrzucenie nie-JPG, usunięcie', async
   assert.equal(r.status, 200);
   r = await fetch(`${baza}/zdjecie/zdj000001?oferta=oferta002`, { method: 'PUT', body: jpg, headers: { Authorization: `Bearer ${tA}` } });
   assert.equal(r.status, 200);
+  r = await fetch(`${baza}/zdjecie/zdj000001?oferta=oferta002&rodzaj=sr`, { method: 'PUT', body: jpg, headers: { Authorization: `Bearer ${tA}` } });
+  assert.equal(r.status, 200);
+  r = await fetch(`${baza}/zdjecie/zdj000001?rodzaj=sr`, { headers: { Authorization: `Bearer ${tB}` } });
+  assert.equal(r.status, 200); await r.arrayBuffer();
   r = await fetch(`${baza}/zdjecie/zdj000001?rodzaj=mini`, { headers: { Authorization: `Bearer ${tB}` } });
   assert.equal(r.status, 200); assert.equal((await r.arrayBuffer()).byteLength, jpg.length);
   r = await fetch(`${baza}/zdjecie/zdj000002?oferta=oferta002`, { method: 'PUT', body: Buffer.from('<svg>'), headers: { Authorization: `Bearer ${tA}` } });
@@ -75,6 +79,8 @@ await test('zdjęcia: wysyłka, pobranie, odrzucenie nie-JPG, usunięcie', async
   assert.equal(r.status, 200);
   r = await fetch(`${baza}/zdjecie/zdj000001`, { headers: { Authorization: `Bearer ${tA}` } });
   assert.equal(r.status, 404);
+  r = await fetch(`${baza}/zdjecie/zdj000001?rodzaj=sr`, { headers: { Authorization: `Bearer ${tA}` } });
+  assert.equal(r.status, 404, 'średnie też usunięte');
 });
 await test('SSE wysyła numer zmiany', async () => {
   const ac = new AbortController();
@@ -92,6 +98,12 @@ await test('push trafia tylko do wspólnika', async () => {
   S.wyslanePush.length = 0;
   await api('/zmiany', { method: 'POST', body: JSON.stringify({ zmiany: [{ oid: 'oferta003', cid: 'c8', pola: { status: 'gotowa' } }] }) }, tB);
   assert.equal(S.wyslanePush.length, 0, 'autor zmiany nie dostaje powiadomienia');
+});
+await test('aktywność pokazuje tylko zmiany wspólnika', async () => {
+  const r = await api('/aktywnosc', {}, tA);
+  assert.equal(r.kod, 200); assert.ok(r.j.aktywnosc.length > 0);
+  assert.ok(r.j.aktywnosc.every((x) => x.kto === 'Anna Wspólnik'), 'Marek widzi tylko zmiany Anny');
+  assert.ok(r.j.aktywnosc.some((x) => x.pole === 'status' && x.nazwa === 'Dom Konopnica'));
 });
 await test('zmiana hasła wylogowuje urządzenia konta', async () => {
   S.zapiszKonto('marek', 'Marek Lewandowski', 'nowehaslo1');

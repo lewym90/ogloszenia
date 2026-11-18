@@ -49,7 +49,7 @@ const idbDel = (st, k) => tx(st, 'readwrite', (s) => { s.delete(k); });
 const bazy = new Map();      // id -> {id, dane, seq, zmieniona, kto, usunieta}
 let kolejka = [];            // [{cid, oid, pola?, usun?, t}]
 let wysylki = [];            // [{klucz, id, oid, rodzaj}]
-export const stan = { token: null, konto: null, konta: [], seq: 0, online: navigator.onLine, polaczony: false, blad: '', agent: {} };
+export const stan = { token: null, konto: null, konta: [], seq: 0, online: navigator.onLine, polaczony: false, blad: '', agent: {}, aktywnosc: [], aktywnoscWidziana: 0 };
 const sluchacze = new Set();
 export const naZmiane = (f) => { sluchacze.add(f); return () => sluchacze.delete(f); };
 let zaplanowane = false;
@@ -64,6 +64,8 @@ export async function start() {
   stan.konta = await idbGet('meta', 'konta') || [];
   stan.seq = await idbGet('meta', 'seq') || 0;
   stan.agent = await idbGet('meta', 'agent') || {};
+  stan.aktywnosc = await idbGet('meta', 'aktywnosc') || [];
+  stan.aktywnoscWidziana = await idbGet('meta', 'aktywnoscWidziana') || 0;
   for (const b of await idbAll('baza')) bazy.set(b.id, b);
   kolejka = (await idbAll('kolejka')).sort((a, b) => a.t - b.t);
   wysylki = await idbAll('wysylka');
@@ -71,7 +73,7 @@ export async function start() {
   addEventListener('offline', () => { stan.online = false; powiadom(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { synchronizuj(); polaczNaZywo(); } });
   setInterval(() => synchronizuj(), 60e3);
-  if (stan.token) { polaczNaZywo(); synchronizuj(); odswiezJa(); }
+  if (stan.token) { polaczNaZywo(); synchronizuj(); odswiezJa(); pobierzAktywnosc(); }
   powiadom();
 }
 
@@ -213,6 +215,28 @@ async function pobierz() {
     for (const o of j.oferty) bazy.set(o.id, o);
   }
   if (j.seq !== stan.seq) { stan.seq = j.seq; await idbPut('meta', j.seq, 'seq'); }
+  if (j.oferty.length) pobierzAktywnosc();
+  powiadom();
+}
+
+// ---------- aktywność wspólnika ----------
+let tAkt = 0;
+export function pobierzAktywnosc() {
+  clearTimeout(tAkt);
+  tAkt = setTimeout(async () => {
+    if (!stan.token || !navigator.onLine) return;
+    try {
+      const j = await api('/aktywnosc');
+      stan.aktywnosc = j.aktywnosc;
+      await idbPut('meta', j.aktywnosc, 'aktywnosc');
+      powiadom();
+    } catch { /* offline */ }
+  }, 400);
+}
+export const nowaAktywnosc = () => stan.aktywnosc.some((a) => a.kiedy > stan.aktywnoscWidziana);
+export async function aktywnoscWidziana() {
+  stan.aktywnoscWidziana = Math.max(Date.now(), ...stan.aktywnosc.map((a) => a.kiedy));
+  await idbPut('meta', stan.aktywnoscWidziana, 'aktywnoscWidziana');
   powiadom();
 }
 
@@ -251,10 +275,12 @@ export async function przygotujZdjecia(oid, pliki, naPostep) {
     i++; naPostep?.(i, pliki.length);
     const id = noweId(12);
     const pelne = await przeskaluj(plik, 2560, 0.88);
-    const mini = await przeskaluj(pelne.blob, 520, 0.8);
+    const sr = await przeskaluj(pelne.blob, 1400, 0.84);
+    const mini = await przeskaluj(sr.blob, 520, 0.8);
     await idbPut('pliki', pelne.blob, `${id}:pelne`);
+    await idbPut('pliki', sr.blob, `${id}:sr`);
     await idbPut('pliki', mini.blob, `${id}:mini`);
-    for (const rodzaj of ['mini', 'pelne']) {
+    for (const rodzaj of ['mini', 'sr', 'pelne']) {
       const w = { klucz: `${id}:${rodzaj}`, id, oid, rodzaj };
       wysylki.push(w); await idbPut('wysylka', w);
     }
@@ -291,9 +317,9 @@ export async function urlZdjecia(id, rodzaj = 'mini') {
   if (!blob) {
     if (!stan.token || !navigator.onLine) return null;
     const r = await fetch(`${API}/zdjecie/${id}?rodzaj=${rodzaj}`, { headers: { Authorization: `Bearer ${stan.token}` } });
-    if (!r.ok) return null;
+    if (!r.ok) return rodzaj === 'sr' ? urlZdjecia(id, 'mini') : null;
     blob = await r.blob();
-    if (rodzaj === 'mini') await idbPut('pliki', blob, k);
+    if (rodzaj !== 'pelne') await idbPut('pliki', blob, k);
   }
   const u = URL.createObjectURL(blob);
   urlCache.set(k, u);
@@ -308,9 +334,9 @@ export async function blobZdjecia(id) {
 }
 export async function usunZdjeciePlik(id) {
   wysylki = wysylki.filter((w) => w.id !== id);
-  await tx('wysylka', 'readwrite', (s) => { s.delete(`${id}:mini`); s.delete(`${id}:pelne`); });
-  await tx('pliki', 'readwrite', (s) => { s.delete(`${id}:mini`); s.delete(`${id}:pelne`); });
-  for (const r of ['mini', 'pelne']) { const u = urlCache.get(`${id}:${r}`); if (u) URL.revokeObjectURL(u); urlCache.delete(`${id}:${r}`); }
+  await tx('wysylka', 'readwrite', (s) => { for (const r of ['mini', 'sr', 'pelne']) s.delete(`${id}:${r}`); });
+  await tx('pliki', 'readwrite', (s) => { for (const r of ['mini', 'sr', 'pelne']) s.delete(`${id}:${r}`); });
+  for (const r of ['mini', 'sr', 'pelne']) { const u = urlCache.get(`${id}:${r}`); if (u) URL.revokeObjectURL(u); urlCache.delete(`${id}:${r}`); }
   if (stan.token && navigator.onLine) { try { await api(`/zdjecie/${id}`, { method: 'DELETE' }); } catch { /* zostanie, nic złego */ } }
 }
 

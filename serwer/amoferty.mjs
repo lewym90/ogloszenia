@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
-export const WERSJA = '1.0.0';
+export const WERSJA = '1.1.0';
 const PORT = Number(process.env.PORT || 18930);
 const DANE = process.env.AM_DANE || './dane';
 const ORIGINS = (process.env.AM_ORIGINS || 'https://lewym90.github.io,http://localhost:8766,http://127.0.0.1:8766').split(',');
@@ -41,6 +41,8 @@ db.exec(`
     pelne INTEGER NOT NULL DEFAULT 0, kto INTEGER, utworzone INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS przyjete (cid TEXT PRIMARY KEY, kiedy INTEGER NOT NULL);
 `);
+// 1.1.0: zdjęcie średnie (karty i nagłówek oferty)
+try { db.exec('ALTER TABLE zdjecia ADD COLUMN sr INTEGER NOT NULL DEFAULT 0'); } catch { /* już jest */ }
 
 const teraz = () => Date.now();
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -328,6 +330,16 @@ export function utworzSerwer() {
         const rows = db.prepare('SELECT h.pole, h.stara, h.nowa, h.kiedy, k.nazwa AS kto FROM historia h LEFT JOIN konta k ON k.id = h.kto WHERE h.oferta = ? ORDER BY h.kiedy DESC, h.id DESC LIMIT 300').all(oid);
         return json(res, nag, 200, { historia: rows });
       }
+      if (p === '/aktywnosc' && req.method === 'GET') {
+        // ostatnie zmiany wspólnika (innych kont) we wszystkich ofertach
+        const rows = db.prepare(`SELECT h.oferta, h.pole, h.stara, h.nowa, h.kiedy, k.nazwa AS kto, o.dane FROM historia h
+          LEFT JOIN konta k ON k.id = h.kto LEFT JOIN oferty o ON o.id = h.oferta
+          WHERE h.kto != ? AND h.pole NOT IN ('zr', 'id', 'utworzyl') ORDER BY h.kiedy DESC, h.id DESC LIMIT 120`).all(dev.konto);
+        return json(res, nag, 200, { aktywnosc: rows.map((r) => {
+          let n = ''; try { const d = JSON.parse(r.dane || '{}'); n = d.roboczy || d.ulica || d.dzielnica || ''; } catch { /* */ }
+          return { oferta: r.oferta, nazwa: n, pole: r.pole, stara: r.stara, nowa: r.nowa, kiedy: r.kiedy, kto: r.kto };
+        }) });
+      }
       if (p === '/na-zywo' && req.method === 'GET') {
         res.writeHead(200, { ...nag, 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
         res.write(`retry: 4000\nevent: seq\ndata: ${Number(ust('seq') || 0)}\n\n`);
@@ -335,12 +347,12 @@ export function utworzSerwer() {
         req.on('close', () => sluchacze.delete(res));
         return;
       }
-      // zdjęcia: /zdjecie/<id>?oferta=<oid>&rodzaj=pelne|mini
+      // zdjęcia: /zdjecie/<id>?oferta=<oid>&rodzaj=pelne|sr|mini
       const mz = p.match(/^\/zdjecie\/([A-Za-z0-9_-]{6,40})$/);
       if (mz) {
         const id = mz[1];
-        const rodzaj = u.searchParams.get('rodzaj') === 'mini' ? 'mini' : 'pelne';
-        const plik = path.join(P_ZDJ, `${id}${rodzaj === 'mini' ? '.mini' : ''}.jpg`);
+        const rodzaj = ['mini', 'sr'].includes(u.searchParams.get('rodzaj')) ? u.searchParams.get('rodzaj') : 'pelne';
+        const plik = path.join(P_ZDJ, `${id}${rodzaj === 'pelne' ? '' : `.${rodzaj}`}.jpg`);
         if (req.method === 'PUT') {
           const oid = u.searchParams.get('oferta');
           if (!okId(oid)) return json(res, nag, 400, { blad: 'Brak oferty.' });
@@ -363,7 +375,7 @@ export function utworzSerwer() {
           return fs.createReadStream(plik).pipe(res);
         }
         if (req.method === 'DELETE') {
-          for (const f of [`${id}.jpg`, `${id}.mini.jpg`]) fs.rmSync(path.join(P_ZDJ, f), { force: true });
+          for (const f of [`${id}.jpg`, `${id}.sr.jpg`, `${id}.mini.jpg`]) fs.rmSync(path.join(P_ZDJ, f), { force: true });
           db.prepare('DELETE FROM zdjecia WHERE id = ?').run(id);
           return json(res, nag, 200, { ok: true });
         }

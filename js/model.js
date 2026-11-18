@@ -32,7 +32,7 @@ const WSZ = ['mieszkanie', 'dom', 'lokal', 'dzialka', 'pokoj', 'garaz'];
 const BUD = ['mieszkanie', 'dom', 'lokal', 'pokoj'];
 export const SEKCJE = [
   { id: 'podstawy', tytul: 'Podstawy', pola: [
-    { k: 'roboczy', e: 'Nazwa robocza (tylko dla nas)', t: 't', pl: 'np. Narutowicza 12/4' },
+    { k: 'roboczy', e: 'Nazwa robocza', t: 't', pl: 'tylko dla nas, np. Narutowicza 12/4' },
     { k: 'transakcja', e: 'Transakcja', t: 'w', o: TRANSAKCJE },
     { k: 'rodzaj', e: 'Rodzaj', t: 'w', o: RODZAJE },
     { k: 'cena', e: 'Cena', t: 'n', j: 'zł', jNajem: 'zł / mies.' },
