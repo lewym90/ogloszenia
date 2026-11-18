@@ -102,3 +102,8 @@ C. Gdy będzie sprzęt / potrzeba
 13. Wideo pionowe: FFmpeg na serwerze lub laptopie, napisy whisper.cpp.
 14. Skan 3D (splatting) dla droższych ofert, dron dla domów/działek.
 15. Otodom API — tylko jeśli zmieni się decyzja (dziś: kopiowanie pól).
+
+## 1.5.1–1.5.2 (18.11.2026)
+- Scalanie pomieszczeń z rzutu: pomiar a×b z dalmierza nienaruszalny (`scalPomieszczenia`), przycisk przywracania wymiarów z historii (`odzyskajWymiary`). Plan rzutu nie ginie przy 415 (zostaje w kolejce). Serwer ma teraz numer 1.5.1 (wcześniej został 1.3.0 mimo zmian).
+- Edytor: „Granica pomieszczeń (bez ściany)” w ustawieniach ściany (pole `granica: true`, grubość 1 cm) — dzieli otwartą przestrzeń (przedpokój/salon) na osobne pomieszczenia i metraże, na rzucie i w PNG przerywana linia bez wymiaru, w 3D pomijana. Test: `test/ui_granica_test.py`.
+- Edytor nie pokazuje już fałszywego konfliktu („zmienił się w innej karcie”) przy otwieraniu planu z serwera/urządzenia (`localStore.load(id)` przed zapisem). Domyślne nazwy po polsku: Parter, Piętro N, Piwnica, Pomieszczenie N.
