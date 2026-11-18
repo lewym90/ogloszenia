@@ -61,6 +61,18 @@ test('najem: inne sekcje', () => {
   assert.match(t, /Najemca nie płaci prowizji/);
   assert.doesNotMatch(t, /Cena za m²/);
 });
+test('prowizja równa czynszowi przelicza się z ceną', () => {
+  const n = { ...o, transakcja: 'najem', cena: 3500, kaucja: 7000, prowizjaKl: 'tak', prowizjaKlCzynsz: true };
+  assert.match(M.opis(n), /Prowizja od najemcy: 3\u00a0500\u00a0zł \(równowartość miesięcznego czynszu najmu, bez opłat administracyjnych\)/);
+  assert.match(M.opis({ ...n, cena: 3800 }), /Prowizja od najemcy: 3\u00a0800\u00a0zł/);
+  assert.match(M.krotki(n), /Prowizja od najemcy: 3\u00a0500/);
+  assert.ok(M.checklista(n).find((x) => x.id === 'prowizja').ok);
+  assert.equal(M.checklista({ ...n, cena: undefined }).find((x) => x.id === 'prowizja').ok, false);
+  const pole = (k) => M.SEKCJE.flatMap((s) => s.pola).find((p) => p.k === k);
+  assert.equal(M.poleWidoczne(pole('prowizjaKlTekst'), n), false, 'ręczne pole chowa się przy czynszu');
+  assert.equal(M.poleWidoczne(pole('prowizjaKlCzynsz'), { ...n, transakcja: 'sprzedaz' }), false, 'przy sprzedaży nie ma czynszu');
+  assert.match(M.opis({ ...n, transakcja: 'sprzedaz', prowizjaKlTekst: '2% ceny' }), /Prowizja od kupującego: 2% ceny/);
+});
 test('kontrola słów', () => {
   assert.equal(M.kontrolaSlow(o).length, 0);
   const z = M.kontrolaSlow({ ...o, lead: 'Prawdziwa PEREŁKA! Okazja, nie przegap', atuty: [{ t: 'idealne dla rodziny' }] });

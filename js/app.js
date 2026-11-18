@@ -3,7 +3,7 @@ import * as M from './model.js';
 import * as D from './dane.js';
 import { zrobZip } from './zip.js';
 
-export const WERSJA = '1.0.2';
+export const WERSJA = '1.0.3';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -45,7 +45,8 @@ function resetEdytora() { $$('[data-wstaw]').forEach((el) => { el.__html = null;
 function wstaw(el, html) {
   if (!el || el.__html === html) return;
   const a = document.activeElement;
-  if (a && a !== document.body && el.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) { el.__czeka = true; return; }
+  // nie podmieniamy fragmentu, w którym ktoś pisze (pola wyboru tak/nie się nie liczą — po kliknięciu od razu odświeżamy)
+  if (a && a !== document.body && el.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !['checkbox', 'radio'].includes(a.type)) { el.__czeka = true; return; }
   el.innerHTML = html; el.__html = html; el.__czeka = false;
   wypelnijObrazy(el);
 }
@@ -260,7 +261,8 @@ function poleHTML(p, o) {
   let we;
   const jedn = p.k === 'cena' && o.transakcja === 'najem' ? p.jNajem : p.j;
   if (p.t === 'b') {
-    return `<div class="pole"><label class="tnk"><input type="checkbox" data-k="${p.k}" data-t="b" ${o[p.k] ? 'checked' : ''}><span>${esc(p.e)}</span></label></div>`;
+    const inf = p.info ? p.info(o) : '';
+    return `<div class="pole"><label class="tnk"><input type="checkbox" data-k="${p.k}" data-t="b" ${o[p.k] ? 'checked' : ''}><span>${esc(p.e)}</span></label>${inf ? `<div class="wyc male" style="margin-top:6px">${esc(inf)}</div>` : ''}</div>`;
   }
   if (p.t === 'w') {
     we = `<select id="${id}" data-k="${p.k}" data-t="w"><option value="">— wybierz —</option>${Object.entries(p.o).map(([k, n]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`;

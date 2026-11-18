@@ -1,7 +1,7 @@
 # AM Oferty — notatki do kontynuacji
 
 Repo: lewym90/ogloszenia (aplikacja: https://lewym90.github.io/ogloszenia/).
-Stan: wersja 1.0.2 (18.11.2026). Firma rusza ok. luty/marzec 2027 — do tego czasu aplikacja testowa.
+Stan: wersja 1.0.3 (18.11.2026). Firma rusza ok. luty/marzec 2027 — do tego czasu aplikacja testowa.
 
 ## Zasady (od właściciela)
 - Zero ściemy: ogłoszenie tylko z faktów, wizualizacje oznaczone + oryginał, bez pustych słów i presji.
@@ -21,6 +21,7 @@ Stan: wersja 1.0.2 (18.11.2026). Firma rusza ok. luty/marzec 2027 — do tego cz
 - `wstaw(el, html)` nie podmienia fragmentu, w którym ktoś pisze; po wyjściu z pola odświeża.
 - Pole wyboru plików (`#zdj-dodaj`) nie może zależeć od stanu (inaczej podmiana w trakcie wyboru gubi zdjęcia) — wartość selecta ustawiana po renderze.
 - Status „Gotowa do publikacji” / „Opublikowana” blokowany, dopóki checklista ma braki.
+- Prowizja od najemcy: zaznaczenie „równa miesięcznemu czynszowi (bez opłat adm.)” — kwota liczona na bieżąco z ceny (`prowizjaKlienta()` w model.js), od 1.0.3.
 - Cały ekran: `.uklad` ma `position: fixed; inset: 0`, przewijają się tylko kolumny. NIE blokować przewijania dokumentu (overflow hidden) — iOS w aplikacji z ekranu początkowego skraca wtedy okno o pasek statusu (czarny pas na dole). Naprawia to niewidoczny `#docspacer` wyższy niż ekran (jak w Planerze AM 2027 i Globtroterze), od 1.0.2. Blokada powiększania: viewport `maximum-scale=1, user-scalable=no`, `touch-action: pan-x pan-y`, blokada gestów w `app.js` (od 1.0.1).
 
 ## Testy (wszystkie przechodzą 18.11.2026)

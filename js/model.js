@@ -38,7 +38,9 @@ export const SEKCJE = [
     { k: 'cena', e: 'Cena', t: 'n', j: 'zł', jNajem: 'zł / mies.' },
     { k: 'cenaNeg', e: 'Cena do negocjacji', t: 'b' },
     { k: 'prowizjaKl', e: 'Prowizja od kupującego / najemcy', t: 'w', o: { brak: 'Brak (płaci właściciel)', tak: 'Tak' } },
-    { k: 'prowizjaKlTekst', e: 'Wysokość prowizji od kupującego / najemcy', t: 't', gdy: (o) => o.prowizjaKl === 'tak', pl: 'np. 2% + VAT' },
+    { k: 'prowizjaKlCzynsz', e: 'Prowizja równa miesięcznemu czynszowi (bez opłat administracyjnych)', t: 'b', gdy: (o) => o.prowizjaKl === 'tak' && o.transakcja === 'najem',
+      info: (o) => (o.prowizjaKlCzynsz ? (o.cena ? `Teraz: ${zl(o.cena)}. Zmieni się sama, gdy zmienisz cenę najmu.` : 'Wpisz cenę najmu — prowizja przeliczy się sama.') : '') },
+    { k: 'prowizjaKlTekst', e: 'Wysokość prowizji od kupującego / najemcy', t: 't', gdy: (o) => o.prowizjaKl === 'tak' && !(o.transakcja === 'najem' && o.prowizjaKlCzynsz), pl: 'np. 2% ceny' },
   ] },
   { id: 'lokalizacja', tytul: 'Lokalizacja', pola: [
     { k: 'miasto', e: 'Miejscowość', t: 't', pl: 'Lublin' },
@@ -142,6 +144,12 @@ export function data(d) {
   if (!d) return '';
   const [r, m, dz] = String(d).split('-');
   return r && m && dz ? `${dz}.${m}.${r}` : String(d);
+}
+// wysokość prowizji od kupującego / najemcy: z czynszu (liczona na bieżąco) albo wpisana ręcznie
+export function prowizjaKlienta(o) {
+  if (o.prowizjaKl !== 'tak') return '';
+  if (o.transakcja === 'najem' && o.prowizjaKlCzynsz) return o.cena ? `${zl(o.cena)} (równowartość miesięcznego czynszu najmu, bez opłat administracyjnych)` : '';
+  return String(o.prowizjaKlTekst || '').trim();
 }
 const wg = (o, k) => (o.zr && o.zr[k] === 'wl' ? ' (wg właściciela)' : '');
 const wybor = (k, v) => { for (const s of SEKCJE) for (const p of s.pola) if (p.k === k && p.o) return p.o[v] || ''; return ''; };
@@ -250,7 +258,7 @@ export function opis(o, ctx = {}) {
   if (najem && o.umowaNajmu) k.push(`Umowa: ${wybor('umowaNajmu', o.umowaNajmu).toLowerCase()}`);
   if (najem && o.zwierzeta) k.push(`Zwierzęta: ${wybor('zwierzeta', o.zwierzeta).toLowerCase()}`);
   if (o.prowizjaKl === 'brak') k.push(`${najem ? 'Najemca' : 'Kupujący'} nie płaci prowizji`);
-  if (o.prowizjaKl === 'tak' && o.prowizjaKlTekst) k.push(`Prowizja od ${najem ? 'najemcy' : 'kupującego'}: ${o.prowizjaKlTekst}`);
+  if (prowizjaKlienta(o)) k.push(`Prowizja od ${najem ? 'najemcy' : 'kupującego'}: ${prowizjaKlienta(o)}`);
   if (k.length) A.push(`KOSZTY\n${k.map((x) => `– ${x}`).join('\n')}`);
 
   // okolica
@@ -314,6 +322,7 @@ export function krotki(o, ctx = {}) {
   if (at.length) { l.push(''); at.forEach((a) => l.push(`– ${a}`)); }
   if (o.dostepneOd) l.push(`Dostępne od ${data(o.dostepneOd)}`);
   if (o.prowizjaKl === 'brak') l.push(`${najem ? 'Najemca' : 'Kupujący'} nie płaci prowizji.`);
+  else if (prowizjaKlienta(o)) l.push(`Prowizja od ${najem ? 'najemcy' : 'kupującego'}: ${prowizjaKlienta(o)}.`);
   const ag = ctx.agent || {};
   l.push('');
   l.push(`${ag.firma || 'AM Nieruchomości'}${ag.nazwa ? ` · ${ag.nazwa}` : ''}${ag.telefon ? ` · ${ag.telefon}` : ''}`);
@@ -410,7 +419,7 @@ export function checklista(o) {
   const zwykle = zdj.filter((z) => !z.wiz);
   add('podstawy', 'Transakcja i rodzaj nieruchomości wybrane', o.transakcja && r, true, 'karta');
   add('cena', 'Cena podana', !puste(o.cena) && Number(o.cena) > 0, true, 'karta');
-  add('prowizja', 'Określone, czy kupujący / najemca płaci prowizję', !!o.prowizjaKl && (o.prowizjaKl === 'brak' || !puste(o.prowizjaKlTekst)), true, 'karta');
+  add('prowizja', 'Określone, czy kupujący / najemca płaci prowizję, i w jakiej wysokości', !!o.prowizjaKl && (o.prowizjaKl === 'brak' || !!prowizjaKlienta(o)), true, 'karta');
   add('pow', 'Powierzchnia podana i ma źródło', !puste(o.pow) && o.zr?.pow, true, 'karta', puste(o.pow) ? '' : 'Zaznacz, skąd jest metraż: dokument, pomiar albo wg właściciela.');
   add('lokalizacja', 'Dzielnica / lokalizacja podana', o.dzielnica || o.miasto, true, 'karta');
   if (['mieszkanie', 'dom', 'lokal'].includes(r)) add('pokoje', 'Liczba pokoi podana', !puste(o.pokoje), true, 'karta');
