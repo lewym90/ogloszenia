@@ -11,8 +11,10 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; height: 100%; background: var(--onyx); color: var(--bone); font: 400 16px/1.45 var(--text); -webkit-text-size-adjust: 100%; }
-body { overscroll-behavior: none; }
+html, body { margin: 0; height: 100%; background: var(--onyx); color: var(--bone); font: 400 16px/1.45 var(--text); -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+/* cały ekran: strona się nie przesuwa, przewijają się tylko kolumny w środku; bez powiększania */
+html, body { overflow: hidden; overscroll-behavior: none; touch-action: pan-x pan-y; }
+body { position: fixed; inset: 0; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 h1, h2, h3 { font-family: var(--display); font-weight: 400; letter-spacing: .01em; margin: 0; }
@@ -24,7 +26,7 @@ a { color: var(--gold-l); }
 
 /* ---------- układ ---------- */
 #app { height: 100%; }
-.uklad { display: grid; height: 100%; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr auto; }
+.uklad { position: fixed; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr auto; }
 .pasek { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: calc(var(--st) + 10px) 16px 10px; border-bottom: 1px solid var(--line); background: var(--onyx); z-index: 5; }
 .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--bone); min-width: 0; }
 .logo img { width: 34px; height: 34px; border-radius: 8px; }
@@ -36,12 +38,13 @@ a { color: var(--gold-l); }
 .sync.ok i { background: var(--ok); } .sync.czeka i { background: var(--warn); } .sync.zle i { background: var(--zle); }
 .ikbtn { display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--graphite); color: var(--bone); }
 .ikbtn:hover { border-color: var(--line-2); }
-.kol-lista, .kol-edytor, .kol-podglad { min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; }
+.kol-lista, .kol-edytor, .kol-podglad { min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-x pan-y; }
 .kol-podglad { display: none; }
 .dol { display: flex; border-top: 1px solid var(--line); background: var(--graphite); padding-bottom: var(--sb); }
 .dol a { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px 6px; font-size: 12px; color: var(--ash); text-decoration: none; min-height: 52px; justify-content: center; }
 .dol a.akt { color: var(--gold-l); }
-.dol a.nowa .ik { width: 26px; height: 26px; color: var(--onyx); background: var(--gold); border-radius: 50%; padding: 4px; stroke-width: 2.2; }
+.dol a .ik { width: 26px; height: 26px; }
+.dol a.nowa .ik { color: var(--onyx); background: var(--gold); border-radius: 50%; padding: 4px; stroke-width: 2.2; }
 
 /* telefon: jeden ekran naraz */
 @media (max-width: 759px) {
@@ -196,7 +199,7 @@ a { color: var(--gold-l); }
 .kol-podglad .tresc { padding: 14px; }
 
 /* ---------- logowanie, ustawienia, okna ---------- */
-.logowanie { min-height: 100%; display: grid; place-items: center; padding: 30px 20px calc(30px + var(--sb)); }
+.logowanie { position: fixed; inset: 0; overflow: auto; overscroll-behavior: contain; display: grid; place-items: center; padding: 30px 20px calc(30px + var(--sb)); }
 .logowanie form { width: min(400px, 100%); display: grid; gap: 14px; }
 .logowanie .znak { width: 96px; height: 96px; border-radius: 22px; margin: 0 auto 6px; display: block; }
 .logowanie h1 { text-align: center; font-size: 30px; color: var(--gold-l); }
@@ -208,7 +211,7 @@ a { color: var(--gold-l); }
 @media (min-width: 760px) { .okno { border-radius: 16px; } }
 .okno-gora { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
 .okno-gora h2 { flex: 1; font-size: 20px; color: var(--gold-l); }
-.okno-tresc { overflow: auto; padding: 12px 14px 18px; }
+.okno-tresc { overflow: auto; overscroll-behavior: contain; padding: 12px 14px 18px; }
 .hist li { padding: 8px 0; border-top: 1px solid var(--line); list-style: none; font-size: 14px; }
 .hist { margin: 0; padding: 0; }
 .hist .kiedy { color: var(--ash); font-size: 12.5px; }

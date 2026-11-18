@@ -1,5 +1,5 @@
 // AM Oferty — praca offline i powiadomienia.
-const WERSJA = 'amoferty-1.0.0';
+const WERSJA = 'amoferty-1.0.1';
 const PLIKI = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'js/app.js', 'js/dane.js', 'js/model.js', 'js/zip.js',
   'fonts/archivo.woff2', 'fonts/marcellus.woff2', 'ikony/icon-192.png', 'ikony/icon-512.png', 'ikony/apple-touch-icon.png'];
 
