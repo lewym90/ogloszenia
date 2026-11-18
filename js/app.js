@@ -3,8 +3,9 @@ import * as M from './model.js';
 import * as D from './dane.js';
 import { zrobZip } from './zip.js';
 import * as K from './kopia.js';
+import * as R from './rzut.js';
 
-export const WERSJA = '1.4.0';
+export const WERSJA = '1.5.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -468,7 +469,7 @@ function sekcjaPom(o) {
   const pom = o.pom || [];
   const suma = pom.reduce((s, p) => s + (Number(p.m) || 0), 0);
   const num = (v) => (puste(v) ? '' : String(v).replace('.', ','));
-  return `<p class="sek-opis">Wpisz długość i szerokość — metraż policzy się sam. Pomieszczenie nieregularne? Zostaw wymiary puste i wpisz metraż ręcznie. Suma: <b style="color:var(--gold-l)">${M.m2(Math.round(suma * 100) / 100)}</b>${o.pow ? ` z ${M.m2(o.pow)}` : ''}.</p>
+  return `${panelRzutu(o)}<p class="sek-opis">Wpisz długość i szerokość — metraż policzy się sam. Pomieszczenie nieregularne? Zostaw wymiary puste i wpisz metraż ręcznie. Suma: <b style="color:var(--gold-l)">${M.m2(Math.round(suma * 100) / 100)}</b>${o.pow ? ` z ${M.m2(o.pow)}` : ''}.</p>
     <datalist id="dl-pom">${M.TYPY_POM.map((x) => `<option value="${x}">`).join('')}</datalist>
     ${pom.map((p, i) => grupa(p.nazwa || `Pomieszczenie ${i + 1}`, `<div class="siatka">
       <div class="pole pelna"><span class="et">Nazwa</span><div class="wejscie"><input data-l="pom" data-i="${i}" data-p="nazwa" data-t="t" list="dl-pom" placeholder="np. Sypialnia" value="${esc(p.nazwa || '')}" aria-label="Nazwa pomieszczenia"></div></div>
@@ -649,6 +650,80 @@ async function otworzPlikDok(f) {
   } catch (e) { toast(navigator.onLine ? e.message : 'Połącz się z internetem, żeby otworzyć dokument.', 3500); }
 }
 
+// zdjęciem głównym może być tylko prawdziwe zdjęcie: nie wizualizacja i nie rzut
+const mozeBycGlowne = (z) => !z.wiz && z.pom !== 'rzut';
+
+// ----- rzut z edytora -----
+function panelRzutu(o) {
+  const jest = !!o.rzutPlan;
+  const zdj = (o.zdj || []).find((z) => z.rzutAuto);
+  return `<div class="panel-rzut szklo">
+    ${zdj ? `<div class="rzut-mini">${imgMini(zdj.id, 'Rzut')}</div>` : `<img class="rzut-ik" src="img/ikony/pom.png" alt="">`}
+    <div class="rzut-tx"><b>${jest ? 'Rzut narysowany' : 'Rzut z wymiarami'}</b><span>${jest ? `zapisany ${kiedy(o.rzutPlan.t)}${o.rzutPlan.kto ? ` · ${esc(o.rzutPlan.kto)}` : ''}` : 'Narysuj ściany albo wczytaj skan z iPhone\'a — obraz trafi do zdjęć, a metraże do pomieszczeń.'}</span></div>
+    <button class="btn ${jest ? 'kontur' : 'zloty'} maly" data-a="rzut-otworz">${ik(jest ? 'olowek' : 'plus')}${jest ? 'Edytuj' : 'Narysuj'}</button>
+  </div>`;
+}
+async function otworzRzut(o) {
+  let plan = null;
+  if (o.rzutPlan?.id) {
+    try { plan = await (await D.blobPliku(o.rzutPlan.id)).text(); }
+    catch { toast(navigator.onLine ? 'Nie udało się pobrać planu z serwera.' : 'Połącz się z internetem, żeby otworzyć zapisany rzut.', 3500); return; }
+  }
+  await R.wloz(`wejscie:${o.id}`, { plan, nazwa: o.roboczy || M.tytul(o) });
+  location.href = `rzut/editor?am=${encodeURIComponent(o.id)}`;
+}
+let odbieranie = false;
+async function odbierzRzuty() {
+  if (odbieranie || !D.stan.token) return;
+  odbieranie = true;
+  try {
+    for (const w of await R.wyniki()) {
+      const o = D.oferta(w.oid);
+      if (!o || !w.png) { await R.usun(`wynik:${w.oid}`); continue; }
+      toast('Zapisuję rzut w ofercie…', 4000);
+      const plik = new File([w.png], 'rzut.png', { type: w.png.type || 'image/png' });
+      const [nowe] = await D.przygotujZdjecia(w.oid, [plik]);
+      nowe.pom = 'rzut'; nowe.rzutAuto = true;
+      const plan = await D.przygotujPlanRzutu(w.oid, w.plan);
+      const o2 = D.oferta(w.oid);
+      const zdj = [...(o2.zdj || [])];
+      const i = zdj.findIndex((z) => z.rzutAuto);
+      const stare = i >= 0 ? zdj[i] : null;
+      if (i >= 0) zdj.splice(i, 1, nowe); else zdj.push(nowe);
+      if (!zdj.some((z) => z.glowne)) { const p = zdj.find(mozeBycGlowne); if (p) p.glowne = true; }
+      const staryPlan = o2.rzutPlan?.id;
+      await D.zmien(w.oid, { zdj: zdj.map((z) => JSON.parse(JSON.stringify(z))), rzutPlan: { id: plan.id, t: plan.t, kto: D.stan.konto?.nazwa || '' } });
+      await R.usun(`wynik:${w.oid}`);
+      if (stare) D.usunZdjeciePlik(stare.id);
+      if (staryPlan) D.usunPlik(staryPlan);
+      const pokoje = R.nazwyPomieszczen((w.pokoje || []).filter((r) => r.m != null));
+      if (pokoje.length) zaproponujPomieszczenia(w.oid, pokoje);
+      else toast('Rzut zapisany w ofercie', 3000);
+    }
+  } catch (e) { toast(e?.message || 'Nie udało się zapisać rzutu', 4000); }
+  finally { odbieranie = false; }
+}
+function zaproponujPomieszczenia(oid, pokoje) {
+  const o = D.oferta(oid);
+  const nazwane = pokoje.filter((r) => r.nazwa);
+  const sk = R.scalPomieszczenia(o.pom || [], pokoje, M.noweId);
+  const suma = nazwane.reduce((a, r) => a + r.m, 0);
+  const w = okno('Pomieszczenia z rzutu', `<p class="sek-opis" style="margin-top:0">Rzut zapisany. Edytor policzył metraż wewnętrzny (podłoga między ścianami). Przenieść go do karty?</p>
+    <ul class="pom-rzut">${nazwane.map((r) => `<li><span>${esc(r.kond ? `${r.nazwa} (${r.kond})` : r.nazwa)}</span><b>${esc(M.m2(r.m))}</b></li>`).join('')}<li class="suma"><span>Razem</span><b>${esc(M.m2(Math.round(suma * 100) / 100))}</b></li></ul>
+    ${sk.bezNazwy ? `<p class="info-pola">${sk.bezNazwy} ${sk.bezNazwy === 1 ? 'pomieszczenie nie ma' : 'pomieszczenia nie mają'} nazwy — nadaj je w edytorze, żeby też trafiły do karty.</p>` : ''}
+    <p class="info-pola">Pomieszczenia o tej samej nazwie dostaną metraż z rzutu, nowe zostaną dopisane. Pamiętaj: metraż z rysunku jest tak dokładny jak wymiary, które wpisałeś.</p>
+    <div class="rzad" style="justify-content:flex-end;margin-top:14px"><button class="btn" data-n>Nie teraz</button><button class="btn zloty" data-t ${nazwane.length ? '' : 'disabled'}>Przenieś do karty</button></div>`);
+  w.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-n]')) { w.remove(); toast('Rzut zapisany w ofercie', 2500); }
+    if (e.target.closest('[data-t]')) {
+      w.remove();
+      const of = D.oferta(oid); const s2 = R.scalPomieszczenia(of.pom || [], pokoje, M.noweId);
+      await D.zmien(oid, { pom: s2.pom });
+      toast(`Pomieszczenia: ${s2.zmienione} zaktualizowane, ${s2.dodane} dopisane`, 3500);
+    }
+  });
+}
+
 // ----- zdjęcia -----
 function nazwaMiejsca(z, o) {
   if (!z.pom) return '';
@@ -661,12 +736,13 @@ function opcjeMiejsc(o, wybrane, pusta = '— gdzie zrobione? —') {
     <optgroup label="Inne">${Object.entries(M.MIEJSCA_ZDJEC).map(([k, v]) => `<option value="${k}" ${wybrane === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</optgroup>`;
 }
 function tabZdjecia(t, o) {
-  if (!t.firstChild) t.innerHTML = '<div id="zdj-licznik" data-wstaw></div><div class="panel szklo"><div id="zdj-dodaj" data-wstaw></div><p class="postep" id="zdj-postep"></p></div><div id="zdj-braki" data-wstaw></div><div class="zdjecia" id="zdj-siatka" data-wstaw></div>';
+  if (!t.firstChild) t.innerHTML = '<div id="zdj-rzut" data-wstaw></div><div id="zdj-licznik" data-wstaw></div><div class="panel szklo"><div id="zdj-dodaj" data-wstaw></div><p class="postep" id="zdj-postep"></p></div><div id="zdj-braki" data-wstaw></div><div class="zdjecia" id="zdj-siatka" data-wstaw></div>';
   const zdj = o.zdj || [];
   const zwykle = zdj.filter((z) => !z.wiz).length;
   const L = M.checklista(o);
   const bez = L.find((x) => x.id === 'zdjPom');
   const brakRzutu = L.find((x) => x.id === 'rzut' && !x.ok);
+  wstaw($('#zdj-rzut', t), panelRzutu(o));
   wstaw($('#zdj-licznik', t), `<div class="zdj-licznik"><b>${zdj.length}</b><span class="wyc">zdjęć · prawdziwych ${zwykle}, minimum ${M.minZdjec(o)}</span><span class="rozp"></span>
     ${zdj.length ? `<button class="btn kontur maly" data-a="pobierz-zdj">${ik('pobierz')}Pobierz w kolejności</button>` : ''}</div>`);
   // pole wyboru plików — odświeżane tylko, gdy zmieni się lista pomieszczeń
@@ -921,7 +997,7 @@ async function dodajPaczke(oid, pliki, pom) {
     const o = D.oferta(oid);
     const zdj = [...(o.zdj || [])];
     for (const z of nowe) { if (pom) z.pom = pom; zdj.push(z); }
-    if (!zdj.some((z) => z.glowne)) { const p = zdj.find((z) => !z.wiz); if (p) p.glowne = true; }
+    if (!zdj.some((z) => z.glowne)) { const p = zdj.find(mozeBycGlowne); if (p) p.glowne = true; }
     await D.zmien(oid, { zdj });
     toast(`Dodano ${nowe.length} ${nowe.length === 1 ? 'zdjęcie' : nowe.length < 5 ? 'zdjęcia' : 'zdjęć'}`);
   } catch (e) { toast(e.message || 'Nie udało się dodać zdjęć', 3500); }
@@ -1218,6 +1294,7 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'zdj-gl': {
+      if ((o.zdj || []).find((z) => z.id === b.dataset.z)?.pom === 'rzut') return toast('Rzut nie może być zdjęciem głównym — okładką ma być prawdziwe zdjęcie.', 3500);
       const z0 = (o.zdj || []).find((z) => z.id === b.dataset.z);
       if (z0?.wiz) return toast('Wizualizacja nie może być zdjęciem głównym.', 3000);
       D.zmien(o.id, { zdj: (o.zdj || []).map((z) => ({ ...z, glowne: z.id === b.dataset.z })) });
@@ -1234,7 +1311,7 @@ document.addEventListener('click', async (e) => {
       if (!(await potwierdz('Usunąć zdjęcie?', 'Zniknie z oferty na wszystkich urządzeniach i z serwera.', 'Usuń'))) return;
       const id = b.dataset.z;
       const zdj = (o.zdj || []).filter((z) => z.id !== id).map((z) => (z.oryg === id ? { ...z, oryg: undefined } : z)).map((z) => JSON.parse(JSON.stringify(z)));
-      if (!zdj.some((z) => z.glowne)) { const p = zdj.find((z) => !z.wiz); if (p) p.glowne = true; }
+      if (!zdj.some((z) => z.glowne)) { const p = zdj.find(mozeBycGlowne); if (p) p.glowne = true; }
       await D.zmien(o.id, { zdj });
       D.usunZdjeciePlik(id);
       break;
@@ -1269,6 +1346,7 @@ document.addEventListener('click', async (e) => {
       try { const w = await K.zrob(); if (w) toast(w.nowe ? `Kopia gotowa: ${w.nowe} nowych plików` : 'Kopia była aktualna', 3000); }
       catch (er) { toast(er.message || 'Kopia się nie udała', 4000); }
       break;
+    case 'rzut-otworz': otworzRzut(o); break;
     case 'push-on': try { await D.wlaczPush(); toast('Powiadomienia włączone'); } catch (er) { toast(er.message, 4500); } break;
     case 'push-off': try { await D.wylaczPush(); toast('Powiadomienia wyłączone'); } catch (er) { toast(er.message, 4500); } break;
     case 'wyloguj':
@@ -1291,6 +1369,8 @@ await D.start();
 K.naZmiane(() => { if (S.ekran === 'ustawienia') odswiezUstawienia(); });
 K.start();
 render();
+odbierzRzuty();
+addEventListener('pageshow', () => odbierzRzuty());
 trasa();
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});

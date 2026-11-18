@@ -294,10 +294,11 @@ export async function przygotujZdjecia(oid, pliki, naPostep) {
   wyslijZdjecia();
   return nowe;
 }
-let wysylaZdjecia = false;
+let wysylaZdjecia = false, jeszczeRaz = false;
 async function wyslijZdjecia() {
-  if (wysylaZdjecia || !stan.token || !navigator.onLine) return;
-  wysylaZdjecia = true;
+  if (wysylaZdjecia) { jeszczeRaz = true; return; } // dopisane w trakcie wysyłki pójdą zaraz po niej
+  if (!stan.token || !navigator.onLine) return;
+  wysylaZdjecia = true; jeszczeRaz = false;
   try {
     // dokumenty, których serwer nie przyjął (np. stara wersja serwera), czekają — nie blokują zdjęć
     for (const w of [...wysylki]) {
@@ -318,8 +319,8 @@ async function wyslijZdjecia() {
       wysylki = wysylki.filter((x) => x.klucz !== w.klucz); await idbDel('wysylka', w.klucz);
       powiadom();
     }
-  } catch { /* spróbuję przy następnej synchronizacji */ }
-  finally { wysylaZdjecia = false; powiadom(); }
+  } catch { jeszczeRaz = false; /* spróbuję przy następnej synchronizacji */ }
+  finally { wysylaZdjecia = false; powiadom(); if (jeszczeRaz) setTimeout(wyslijZdjecia, 0); }
 }
 export const czekaNaWyslanie = (id) => wysylki.some((w) => w.id === id);
 export async function urlZdjecia(id, rodzaj = 'mini') {
@@ -372,6 +373,16 @@ export async function przygotujPlik(oid, plik) {
   powiadom();
   wyslijZdjecia();
   return { id, nazwa, typ, rozm: blob.size, t: Date.now() };
+}
+// plan rzutu z edytora: tekst JSON wysyłany tą samą kolejką co dokumenty
+export async function przygotujPlanRzutu(oid, tekst) {
+  const id = noweId(12);
+  const blob = new Blob([tekst], { type: 'application/json' });
+  await idbPut('pliki', blob, `pl:${id}`);
+  const w = { klucz: `pl:${id}`, id, oid, rodzaj: 'plik', nazwa: 'rzut.json' };
+  wysylki.push(w); await idbPut('wysylka', w);
+  powiadom(); wyslijZdjecia();
+  return { id, t: Date.now() };
 }
 let klucz = null;
 async function kluczPlikow() {

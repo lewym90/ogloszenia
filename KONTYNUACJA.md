@@ -1,7 +1,7 @@
 # AM Oferty — notatki do kontynuacji
 
 Repo: lewym90/ogloszenia (aplikacja: https://lewym90.github.io/ogloszenia/).
-Stan: wersja 1.4.0 (kopia zapasowa na komputerze, kosz 30 dni, ikony z arkusza właściciela) (18.11.2026). Serwer 1.3.0. Firma rusza ok. luty/marzec 2027 — do tego czasu aplikacja testowa.
+Stan: wersja 1.5.0 (rzut z edytora openPlan3D po polsku, połączony z ofertą; wcześniej 1.4.0: kopia zapasowa, kosz) (18.11.2026). Serwer 1.3.0. Firma rusza ok. luty/marzec 2027 — do tego czasu aplikacja testowa.
 
 ## Zasady (od właściciela)
 - Zero ściemy: ogłoszenie tylko z faktów, wizualizacje oznaczone + oryginał, bez pustych słów i presji.
@@ -17,6 +17,17 @@ Stan: wersja 1.4.0 (kopia zapasowa na komputerze, kosz 30 dni, ikony z arkusza w
 - Zdjęcia: `PUT /zdjecie/<id>?oferta=&rodzaj=mini|pelne` (tylko JPG), `GET`, `DELETE`. Kopie bazy co godzinę (48 ostatnich + 1 dziennie przez 60 dni). Zdjęcia nie są w kopii bazy.
 - Push: powiadamia tylko konta wspólnika (nie autora): nowa oferta, zmiana statusu, nowa prezentacja (otwiera ekran Wizyty).
 - Dokumenty (serwer 1.2.0): `PUT /plik/<id>?oferta=&nazwa=` (PDF/JPG/PNG po sygnaturze, maks. 30 MB), `GET` (Bearer albo `?k=`), `DELETE`, `GET /klucz-plikow`. Klucz `k` = id urządzenia + ważność 24 h + HMAC (sekret `sekret_plikow` w ustawieniach), wylogowanie urządzenia go unieważnia. Potrzebny, bo PDF otwiera się w przeglądarce telefonu (iPhone: okno z „Gotowe”) bez nagłówka Authorization. Pliki nie są w kopii bazy (jak zdjęcia).
+
+## Rzut (od 1.5.0) — openPlan3D (MIT, laanlabs) z naszymi łatkami
+- Zbudowany edytor leży w `rzut/` (16 MB, ten sam adres co aplikacja: /ogloszenia/rzut/). Budowanie: `bash narzedzia/rzut/zbuduj.sh` — klonuje oryginał w przypiętym commicie, nakłada `narzedzia/rzut/lataj.py`, buduje statycznie, kopiuje licencje (LICENSE-openPlan3D.txt, Kenney/ambientCG CC0). Aktualizacja edytora = zmiana commita w zbuduj.sh + przebudowa + sprawdzenie łatek.
+- Łatki: adapter statyczny (base /ogloszenia/rzut), usunięte trasy serwerowe (asystent, przekazywanie przez chmurę autorów), Firebase/analityka wyłączone, polski język domyślny (`pliki/pl.ts` — 1567 tekstów, `meble-pl.txt` — 191 nazw mebli), daty pl-PL, most `amMost.ts` + pasek `AmMost.svelte` („‹ Oferta” / „Zapisz w ofercie”), przechwycenie pobrania PNG w `export.ts` (`globalThis.__amPobranie`).
+- GitHub Pages nie podaje 404.html z podkatalogu → `rzut/editor.html` (kopia powłoki) obsługuje adres /rzut/editor. Serwer testowy `test/serwer_jak_github.py` naśladuje to zachowanie.
+- Wymiana danych: wspólna baza IndexedDB `am-rzut` (`js/rzut.js` po stronie aplikacji): `wejscie:<oid>` = plan z serwera (aplikacja → edytor), `wynik:<oid>` = plan JSON + PNG + pomieszczenia (edytor → aplikacja, odbiór w `odbierzRzuty()` po powrocie).
+- W ofercie: zdjęcie z `pom: 'rzut', rzutAuto: true` (podmieniane przy każdym zapisie, nigdy zdjęcie główne — `mozeBycGlowne`, checklista też to sprawdza), plan jako plik JSON na serwerze (`rzutPlan: {id, t, kto}`, typ `json` w /plik), więc wspólnik otwiera ten sam plan na swoim urządzeniu.
+- Pomieszczenia: metraż WEWNĘTRZNY (`interiorRoomArea`, bez ścian; „po osiach” zawyża), nazwy ze skanu tłumaczone (Bedroom → Sypialnia), powtórzone numerowane (Sypialnia 1, 2), scalanie po nazwie, okno z potwierdzeniem.
+- Service worker: `/rzut/` ma osobną pamięć `amoferty-rzut` (nie nadpisuje index.html aplikacji; raz otwarty edytor działa offline).
+- Znane: eksport PDF z samego edytora używa czcionki bez polskich znaków (jsPDF helvetica) — do oferty idzie PNG, więc nas to nie dotyczy.
+- Test: `test/ui_rzut_test.py [chromium|webkit]` (skan `test/dane/skan-roomplan.json`).
 
 ## Kopia zapasowa (od 1.4.0, serwer 1.3.0)
 - Serwer: baza co godzinę (`kopie/`), usunięte zdjęcia i dokumenty idą do `kosz/` (nazwa `zdjecia--<plik>` / `pliki--<plik>`) i znikają po 30 dniach (`oproznijKosz` w `kopia()`). Przywrócenie z kosza ręcznie: `sudo mv /var/lib/amoferty/kosz/zdjecia--X.jpg /var/lib/amoferty/zdjecia/X.jpg`.
@@ -73,7 +84,7 @@ Po stronie właściciela: zaktualizować serwer (install.sh) do 1.2.0, sprawdzi�
 
 A. Przed startem firmy
 1. ZROBIONE (1.4.0): kopia na komputer + kosz 30 dni.
-2. Rzut: własna kopia openPlan3D na serwerze (bez Firebase i analityki), przycisk „Narysuj rzut” w Zdjęciach, eksport PNG/PDF → zdjęcie „Rzut”; potem import JSON skanu (iPhone LiDAR) → Pomieszczenia z metrażami (źródło „Pomiar”).
+2. ZROBIONE (1.5.0): rzut z openPlan3D (po polsku, pod adresem aplikacji, bez cudzej chmury), skan LiDAR → pomieszczenia z metrażem wewnętrznym.
 3. Raport dla właściciela: strona na link / PDF — wizyty, wrażenia klientów, kontakty, zmiany ceny (obiecany na stronie amnieruchomosci).
 4. Uczciwa korekta zdjęć (sharp na serwerze): kadr pod portale, piony, jasność, balans bieli; zamknięta lista operacji, bez retuszu.
 5. RODO i AML: retencja danych klientów (przypomnienie o usunięciu po czasie), eksport danych osoby; karta klienta AML przy transakcji (biuro pośrednictwa = instytucja obowiązana).

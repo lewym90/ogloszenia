@@ -530,7 +530,7 @@ export function checklista(o) {
   }
   add('zdjIlosc', `Co najmniej ${minZdjec(o)} prawdziwych zdjęć`, zwykle.length >= minZdjec(o), true, 'zdjecia', `Jest ${zwykle.length}.`);
   const gl = zdj.find((z) => z.glowne);
-  add('glowne', 'Zdjęcie główne wybrane (prawdziwe, nie wizualizacja)', gl && !gl.wiz, true, 'zdjecia');
+  add('glowne', 'Zdjęcie główne wybrane (prawdziwe zdjęcie — nie wizualizacja i nie rzut)', gl && !gl.wiz && gl.pom !== 'rzut', true, 'zdjecia');
   const wiz = zdj.filter((z) => z.wiz);
   if (wiz.length) add('wiz', 'Każda wizualizacja ma przypięte oryginalne zdjęcie', wiz.every((z) => z.oryg && zdj.some((y) => y.id === z.oryg && !y.wiz)), true, 'zdjecia');
   if (['mieszkanie', 'dom', 'lokal'].includes(r)) add('rzut', 'Rzut z wymiarami dołączony', zdj.some((z) => z.pom === 'rzut'), true, 'zdjecia');

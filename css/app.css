@@ -582,3 +582,17 @@ input[type=date]:not(:valid)::-webkit-datetime-edit, input[type=datetime-local]:
 .przypomnienie .ik { width: 18px; height: 18px; color: var(--zle); flex: none; }
 .przypomnienie span { flex: 1; min-width: 0; }
 .przypomnienie .ik:last-child { color: var(--ash); }
+
+/* 1.5.0: rzut z edytora */
+.panel-rzut { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-bottom: 14px; border-radius: 18px; }
+.panel-rzut .rzut-ik { width: 44px; height: 44px; flex: none; }
+.panel-rzut .rzut-mini { width: 64px; height: 48px; flex: none; border-radius: 8px; overflow: hidden; background: #fff; border: 1px solid var(--ramka-s); }
+.panel-rzut .rzut-mini img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.rzut-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rzut-tx b { color: var(--gold-l); font-family: var(--display); font-size: 19px; font-weight: 600; }
+.rzut-tx span { font-size: 13px; color: var(--ash); line-height: 1.35; }
+.panel-rzut .btn { flex: none; }
+.pom-rzut { list-style: none; margin: 10px 0; padding: 0; }
+.pom-rzut li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 2px; border-bottom: 1px solid var(--linia); font-size: 15.5px; }
+.pom-rzut li b { color: var(--gold-l); font-variant-numeric: lining-nums tabular-nums; white-space: nowrap; }
+.pom-rzut li.suma { border-bottom: 0; font-weight: 600; }

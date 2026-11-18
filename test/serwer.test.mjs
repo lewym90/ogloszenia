@@ -126,6 +126,11 @@ await test('dokumenty: PDF i JPG, link z kluczem, odrzucenie innych typów, usun
   assert.equal((await api('/plik/dok00000001', { method: 'DELETE' }, tA)).kod, 200);
   assert.equal((await fetch(`${baza}/plik/dok00000001?k=${encodeURIComponent(k)}`)).status, 404);
   globalThis.kluczA = k;
+  // plan rzutu z edytora (JSON)
+  r = await fetch(`${baza}/plik/planrzut01?oferta=oferta001&nazwa=rzut.json`, { method: 'PUT', body: '{"floors":[]}', headers: { Authorization: `Bearer ${tA}` } });
+  assert.equal(r.status, 200); assert.equal((await r.json()).typ, 'json');
+  r = await fetch(`${baza}/plik/planrzut02?oferta=oferta001`, { method: 'PUT', body: '{nie json', headers: { Authorization: `Bearer ${tA}` } });
+  assert.equal(r.status, 415, 'uszkodzony JSON odrzucony');
 });
 await test('kopia na komputer: spis, pobieranie, baza, zgłoszenie; kosz zamiast kasowania', async () => {
   const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]);

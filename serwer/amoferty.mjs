@@ -72,11 +72,13 @@ function sprawdzKluczPlikow(k) {
   if (Number(e) < teraz()) return false;
   return !!db.prepare('SELECT 1 FROM urzadzenia WHERE id = ?').get(Number(d));
 }
-const TYPY_PLIKOW = { pdf: 'application/pdf', jpg: 'image/jpeg', png: 'image/png' };
+const TYPY_PLIKOW = { pdf: 'application/pdf', jpg: 'image/jpeg', png: 'image/png', json: 'application/json' };
 function typPliku(b) {
   if (b.length > 4 && b.subarray(0, 4).toString('latin1') === '%PDF') return 'pdf';
   if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8) return 'jpg';
   if (b.length > 8 && b.readUInt32BE(0) === 0x89504e47) return 'png';
+  // plan rzutu z edytora (JSON) — musi się dać sparsować
+  if (b.length > 1 && b[0] === 0x7b) { try { JSON.parse(b.toString('utf8')); return 'json'; } catch { return null; } }
   return null;
 }
 
@@ -299,7 +301,7 @@ function oproznijKosz() {
 // przywrócenie z kosza ręcznie: mv kosz/zdjecia--<plik> zdjecia/<plik> (patrz KONTYNUACJA.md)
 
 // ---------- kopia na komputer wspólnika (aplikacja na laptopie ściąga brakujące pliki) ----------
-const RE_PLIK_KOPII = /^(zdjecia|pliki)\/[A-Za-z0-9_-]{6,40}(\.(mini|sr))?\.(jpg|pdf|png)$/;
+const RE_PLIK_KOPII = /^(zdjecia|pliki)\/[A-Za-z0-9_-]{6,40}(\.(mini|sr))?\.(jpg|pdf|png|json)$/;
 export function spisKopii() {
   const pliki = [];
   for (const [kat, P] of [['zdjecia', P_ZDJ], ['pliki', P_PLIKI]]) {
