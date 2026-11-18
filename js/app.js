@@ -3,7 +3,7 @@ import * as M from './model.js';
 import * as D from './dane.js';
 import { zrobZip } from './zip.js';
 
-export const WERSJA = '1.0.1';
+export const WERSJA = '1.0.2';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

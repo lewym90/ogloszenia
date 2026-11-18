@@ -12,9 +12,12 @@
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; height: 100%; background: var(--onyx); color: var(--bone); font: 400 16px/1.45 var(--text); -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-/* cały ekran: strona się nie przesuwa, przewijają się tylko kolumny w środku; bez powiększania */
-html, body { overflow: hidden; overscroll-behavior: none; touch-action: pan-x pan-y; }
-body { position: fixed; inset: 0; }
+/* cały ekran: układ przypięty do ekranu, przewijają się tylko kolumny w środku; bez powiększania */
+html, body { overscroll-behavior: none; touch-action: pan-x pan-y; }
+body { overflow-x: hidden; }
+/* iOS (aplikacja z ekranu początkowego) skraca okno o wysokość paska statusu, jeśli dokument nie jest przewijalny.
+   Niewidoczny dystans dłuższy niż ekran to naprawia (tak samo jak w Planerze AM 2027 i Globtroterze). */
+#docspacer { position: absolute; top: 0; left: 0; width: 1px; height: calc(100vh + 120px); height: calc(100lvh + 120px); visibility: hidden; pointer-events: none; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 h1, h2, h3 { font-family: var(--display); font-weight: 400; letter-spacing: .01em; margin: 0; }
