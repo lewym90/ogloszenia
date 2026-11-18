@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { amOid, amZapisz, adresOferty } from '$lib/services/amMost';
+  import { amOid, amZapisz, adresRzutu } from '$lib/services/amMost';
   const oid = amOid();
   let trwa = $state(false);
   let blad = $state('');
@@ -11,8 +11,8 @@
 
 {#if oid}
   <div class="am-most" role="region" aria-label="AM Oferty">
-    <a class="am-wroc" href={adresOferty(oid, 's/pom')} title="Wróć do oferty bez zapisywania rzutu w ofercie (plan zostaje na tym urządzeniu)">‹ Oferta</a>
-    <button class="am-zapisz" onclick={zapisz} disabled={trwa}>{trwa ? 'Zapisuję…' : 'Zapisz w ofercie'}</button>
+    <a class="am-wroc" href={adresRzutu(oid)} title="Wróć do rzutu bez zmian z tego edytora">‹ Rzut</a>
+    <button class="am-zapisz" onclick={zapisz} disabled={trwa}>{trwa ? 'Przenoszę…' : 'Gotowe'}</button>
     {#if blad}<span class="am-blad" role="alert">{blad}</span>{/if}
   </div>
 {/if}

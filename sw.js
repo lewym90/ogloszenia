@@ -1,8 +1,8 @@
 // AM Oferty — praca offline i powiadomienia.
-const WERSJA = 'amoferty-1.5.2';
+const WERSJA = 'amoferty-1.6.0';
 // edytor rzutów (rzut/) ma osobną pamięć: pliki z hashem w nazwie, raz pobrane działają też bez internetu
 const RZUT = 'amoferty-rzut';
-const PLIKI = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'js/app.js', 'js/dane.js', 'js/model.js', 'js/zip.js', 'js/kopia.js', 'js/rzut.js',
+const PLIKI = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'js/app.js', 'js/dane.js', 'js/model.js', 'js/zip.js', 'js/kopia.js', 'js/rzut.js', 'plan.html', 'css/plan.css', 'js/plan/edytor.js', 'js/plan/rysuj.js', 'js/plan/biblioteka.js', 'js/plan/geom.js',
   'fonts/archivo.woff2', ...['latin', 'latin-ext'].flatMap((z) => [500, 600].map((g) => `fonts/cormorant-${z}-${g}.woff2`)), 'ikony/icon-192.png', 'ikony/icon-512.png', 'ikony/apple-touch-icon.png',
   'img/tlo.jpg', 'img/monogram.png', ...['podstawy', 'lokalizacja', 'lokal', 'pom', 'koszty', 'atuty', 'minusy', 'okolica', 'weryfikacja', 'energia', 'tekst', 'wlasciciel', 'wyp', 'klienci', 'wizyty', 'dokumenty', 'zdjecia', 'ogloszenie', 'kontrola'].map((n) => `img/ikony/${n}.png`)];
 
@@ -18,10 +18,15 @@ self.addEventListener('fetch', (e) => {
   if (new URL(r.url).pathname.includes('/rzut/')) { e.respondWith(rzut(r)); return; }
   e.respondWith((async () => {
     const c = await caches.open(WERSJA);
+    const sciezka = new URL(r.url).pathname;
     if (r.mode === 'navigate') {
-      try { const n = await fetch(r); c.put('index.html', n.clone()); return n; } catch { return (await c.match('index.html')) || Response.error(); }
+      const klucz = sciezka.endsWith('/plan.html') ? 'plan.html' : 'index.html'; // edytor rzutu ma własną stronę
+      try { const n = await fetch(r); if (n.ok) c.put(klucz, n.clone()); return n; } catch { return (await c.match(klucz)) || Response.error(); }
     }
-    const z = await c.match(r, { ignoreSearch: true });
+    if (sciezka.endsWith('/img/plan/biblioteka.json')) { // spis grafik biblioteki: zawsze świeży, gdy jest sieć
+      try { const n = await fetch(r, { cache: 'no-cache' }); if (n.ok) c.put(r, n.clone()); return n; } catch { return (await c.match(r)) || Response.error(); }
+    }
+    const z = await c.match(r, { ignoreSearch: !sciezka.includes('/img/plan/') });
     if (z) return z;
     try { const n = await fetch(r); if (n.ok) c.put(r, n.clone()); return n; } catch { return Response.error(); }
   })());

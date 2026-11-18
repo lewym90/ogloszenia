@@ -29,18 +29,10 @@ with sync_playwright() as p:
     assert 'Pomieszczenia: 2' in pom, pom
     assert 'Pobierz kopię JSON' not in tx, 'konflikt przy otwarciu'
     pg.screenshot(path=f'/tmp/amshots/g-{silnik}-1-edytor.png')
-    pg.click('.am-zapisz'); pg.wait_for_url('**/ogloszenia/#/o/**', timeout=30000); pg.wait_for_selector('.okno', timeout=20000); pg.wait_for_timeout(500)
-    t = pg.inner_text('.okno-tresc'); print('okno:', t[:300]); pg.screenshot(path=f'/tmp/amshots/g-{silnik}-2-okno.png')
-    zd = pg.evaluate(f"(async()=>{{const D=await import('./js/dane.js'); const o=D.oferta('{oid}'); const z=o.zdj.find(z=>z.pom==='rzut'); return z.id}})()")
-    pg.wait_for_timeout(500); pg.click('.okno [data-n]')
-    # PNG rzutu do obejrzenia
-    b64 = pg.evaluate(f"(async()=>{{const D=await import('./js/dane.js'); const b=await D.blobZdjecia('{zd}').catch(()=>null); if(!b) return null; const a=new Uint8Array(await b.arrayBuffer()); let s=''; for(const x of a) s+=String.fromCharCode(x); return btoa(s)}})()")
-    if b64:
-        import base64; open(f'/tmp/amshots/g-{silnik}-3-rzut.jpg','wb').write(base64.b64decode(b64))
-    # ponowne otwarcie z planu na serwerze — bez komunikatu o konflikcie
-    pg.wait_for_function("!document.querySelector('.stan-sync')", timeout=30000); pg.wait_for_timeout(800)
-    pg.evaluate(f"location.hash='#/o/{oid}/zdjecia'"); pg.wait_for_selector('[data-a=rzut-otworz]'); pg.click('[data-a=rzut-otworz]')
-    pg.wait_for_url('**/rzut/editor**'); pg.wait_for_selector('.am-most'); pg.wait_for_timeout(2500)
-    tx = pg.evaluate("document.body.innerText"); assert 'Pobierz kopię JSON' not in tx, 'konflikt przy ponownym otwarciu'; assert 'Pomieszczenia: 2' in tx
-    pg.screenshot(path=f'/tmp/amshots/g-{silnik}-4-ponownie.png')
+    pg.click('.am-zapisz'); pg.wait_for_url('**/plan.html**', timeout=30000); pg.wait_for_timeout(1500)
+    n = pg.evaluate("window.__plan.sc.pokoje.length"); print('Rzut AM pomieszczeń:', n); assert n == 2
+    pg.screenshot(path=f'/tmp/amshots/g-{silnik}-2-rzutam.png')
+    pg.click('[data-a=zapisz]'); pg.wait_for_url('**/ogloszenia/#/o/**', timeout=30000); pg.wait_for_selector('.okno', timeout=20000); pg.wait_for_timeout(500)
+    t = pg.inner_text('.okno-tresc'); print('okno:', t[:200].replace(chr(10), ' | '))
+    assert 'nie mają nazw' in t, t
     print('BLEDY', bl[:6]); assert not bl

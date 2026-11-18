@@ -5,7 +5,7 @@ import { zrobZip } from './zip.js';
 import * as K from './kopia.js';
 import * as R from './rzut.js';
 
-export const WERSJA = '1.5.2';
+export const WERSJA = '1.6.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -665,16 +665,13 @@ function panelRzutu(o) {
 }
 const odzyskSprawdzony = (oid) => { try { return localStorage.getItem(`am-odzysk:${oid}`) === '1'; } catch { return false; } };
 async function otworzRzut(o) {
-  let plan = null;
+  let plan = null, brakNaSerwerze = false;
   if (o.rzutPlan?.id) {
-    try { plan = await (await D.blobPliku(o.rzutPlan.id)).text(); }
-    catch {
-      // planu nie ma na serwerze (np. zapisany przy starej wersji serwera) — edytor otworzy wersję zapisaną na tym urządzeniu
-      if (!(await potwierdz('Planu nie ma na serwerze', 'Otworzę rzut zapisany na tym telefonie. Po poprawkach stuknij „Zapisz w ofercie”, żeby trafił na serwer i do wspólnika.', 'Otwórz', 'zloty'))) return;
-    }
+    // planu może nie być na serwerze (np. zapisany przy starej wersji serwera) — edytor weźmie wtedy wersję z tego urządzenia
+    try { plan = await (await D.blobPliku(o.rzutPlan.id)).text(); } catch { brakNaSerwerze = true; }
   }
-  await R.wloz(`wejscie:${o.id}`, { plan, nazwa: o.roboczy || M.tytul(o) });
-  location.href = `rzut/editor?am=${encodeURIComponent(o.id)}`;
+  await R.wloz(`wejscie:${o.id}`, { plan, brakNaSerwerze, nazwa: o.roboczy || M.tytul(o), pom: (o.pom || []).map((p) => ({ nazwa: p.nazwa, a: p.a, b: p.b, m: p.m })), t: o.rzutPlan?.t ?? null });
+  location.href = `plan.html?am=${encodeURIComponent(o.id)}`;
 }
 let odbieranie = false;
 async function odbierzRzuty() {

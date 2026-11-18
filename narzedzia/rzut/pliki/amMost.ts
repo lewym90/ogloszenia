@@ -10,7 +10,6 @@ import { localStore } from '$lib/services/datastore';
 import { resolveRoomGeometry } from '$lib/utils/roomDetection';
 import { roomHoles } from '$lib/utils/roomNesting';
 import { interiorRoomArea } from '$lib/utils/interiorArea';
-import { exportAsPNG } from '$lib/utils/export';
 
 function baza(): Promise<IDBDatabase> {
   return new Promise((ok, zle) => {
@@ -90,18 +89,14 @@ export function pokojeZPlanu(p = get(currentProject)): Pokoj[] {
   return L;
 }
 
-/** Zapisuje plan, obraz i pomieszczenia dla aplikacji i wraca do oferty. */
+/** Przekazuje plan z powrotem do edytora Rzut AM (plan.html) — tam powstaje obraz do ogłoszenia i zapis w ofercie. */
+export const adresRzutu = (oid: string) => new URL(`../plan.html?am=${encodeURIComponent(oid)}`, location.href).href;
 export async function amZapisz(): Promise<void> {
   const oid = amOid();
   const p = get(currentProject);
   if (!oid || !p) throw new Error('Brak otwartego planu.');
-  await autoSave();
-  let png: Blob | null = null;
-  const g = globalThis as unknown as { __amPobranie?: (b: Blob, n: string) => void };
-  g.__amPobranie = (b) => { png = b; };
-  try { await exportAsPNG(null, p); } finally { delete g.__amPobranie; }
-  if (!png) throw new Error('Plan jest pusty. Narysuj najpierw ściany.');
+  await autoSave().catch(() => {});
   try { localStorage.setItem(`am-projekt:${oid}`, p.id); } catch { /* */ }
-  await zapisz(`wynik:${oid}`, { plan: JSON.stringify(p), png, pokoje: pokojeZPlanu(p), t: Date.now() });
-  location.href = adresOferty(oid);
+  await zapisz(`wejscie:${oid}`, { plan: JSON.stringify(p), z3d: true, t: Date.now() });
+  location.href = adresRzutu(oid);
 }

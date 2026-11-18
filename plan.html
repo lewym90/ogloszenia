@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0B0B0D">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Rzut — AM Oferty</title>
+<link rel="icon" href="ikony/icon-192.png">
+<link rel="preload" href="fonts/archivo.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="css/plan.css">
+</head>
+<body>
+<div id="docspacer" aria-hidden="true"></div>
+<div class="plan-uklad">
+  <header class="plan-gora">
+    <button class="pg-wroc" data-a="wroc" aria-label="Wróć do oferty">‹ Oferta</button>
+    <div class="pg-tytul"><b id="tytul">Rzut</b><span id="podtytul"></span></div>
+    <button class="pg-ik" data-a="cofnij" aria-label="Cofnij" disabled><svg viewBox="0 0 24 24"><path d="M9 7.5L4.5 12 9 16.5"/><path d="M5 12h9.5a5 5 0 0 1 0 10H12"/></svg></button>
+    <button class="pg-ik" data-a="ponow" aria-label="Ponów" disabled><svg viewBox="0 0 24 24"><path d="M15 7.5l4.5 4.5L15 16.5"/><path d="M19 12H9.5a5 5 0 0 0 0 10H12"/></svg></button>
+    <button class="pg-zapisz" data-a="zapisz">Zapisz</button>
+  </header>
+  <main class="plan-plotno">
+    <canvas id="plotno" aria-label="Rzut mieszkania"></canvas>
+    <div id="pusto" class="pusto" hidden>
+      <b>Brak rzutu</b>
+      <p>Wczytaj skan z iPhone'a (plik .json lub .zip z aplikacji do skanowania) albo zbuduj rzut z wymiarów z dalmierza.</p>
+      <button class="btn-z" data-a="skan">Wczytaj skan</button>
+      <button class="btn-k" data-a="pokoj-nowy">Pokój z wymiarów</button>
+      <button class="btn-k" data-a="od-zera">Rysuj ściany od zera</button>
+    </div>
+    <div id="pasek-akcji" class="pasek-akcji" hidden></div>
+    <div id="podpowiedz" class="podpowiedz" hidden></div>
+  </main>
+  <section id="arkusz" class="arkusz" hidden aria-live="polite"></section>
+  <nav class="plan-dol">
+    <button data-a="dodaj" class="dodaj"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Dodaj</button>
+    <button data-a="narz" data-n="sciana" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M4 20V6h7v14M11 10h9v10"/></svg>Ściana</button>
+    <button data-a="narz" data-n="drzwi" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M4 20h16M6 20V5h8v15"/><path d="M14 5a9 9 0 0 1 6 8.5" stroke-dasharray="2 2"/></svg>Drzwi</button>
+    <button data-a="narz" data-n="okno" aria-pressed="false"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1"/><path d="M12 4v16M4 12h16"/></svg>Okno</button>
+    <button data-a="narz" data-n="granica" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M4 12h16" stroke-dasharray="3 3"/><path d="M4 5v14M20 5v14"/></svg>Granica</button>
+    <button data-a="wiecej"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>Więcej</button>
+  </nav>
+</div>
+<input type="file" id="plik-skanu" accept=".json,.zip,application/json,application/zip" hidden>
+<div id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="js/plan/edytor.js"></script>
+</body>
+</html>

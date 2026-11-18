@@ -18,6 +18,7 @@ async function op(tryb, f) {
   });
 }
 export const wloz = (k, v) => op('readwrite', (s) => { s.put(v, k); });
+export const czytaj = (k) => op('readonly', (s) => s.get(k));
 export const usun = (k) => op('readwrite', (s) => { s.delete(k); });
 export async function wyniki() {
   const klucze = (await op('readonly', (s) => s.getAllKeys())) || [];
