@@ -169,6 +169,33 @@ def bez_szwu(t):
     return Image.fromarray((a * m + b * (1 - m)).astype(np.uint8))
 
 
+# Podłogi z wyraźnymi fugami / łączeniami: kafel przycinany dokładnie na liniach — powtarza się bez szwu i bez „podwójnych” fug.
+# Pozostałe (dywan, beton, żwir, trawa…) — przejście miękkie (bez_szwu).
+LINIE_Y = {'dab', 'dab_miodowy', 'dab_szary', 'orzech', 'laminat', 'winyl', 'deska_tarasowa', 'kompozyt',
+           'plytka', 'gres', 'marmur', 'szachownica', 'kostka', 'plyty_tarasowe', 'plytki_balkonowe', 'lupek', 'heksagon'}
+LINIE_X = {'plytka', 'marmur', 'szachownica', 'plytki_balkonowe', 'plyty_tarasowe'}
+
+
+def linie(gray, os_):
+    """Środki ciemnych linii (fug, łączeń desek) wzdłuż osi: 0 = wiersze, 1 = kolumny. Pomija linie przy samym brzegu."""
+    from scipy import ndimage
+    prof = gray.mean(axis=1 - os_)
+    hp = prof - ndimage.uniform_filter1d(prof, 15)
+    prog = -max(6.0, hp.std() * 2.5)
+    etyk, n = ndimage.label(hp < prog)
+    L = [int(round(np.mean(np.where(etyk == k)[0]))) for k in range(1, n + 1)]
+    return [x for x in L if 4 <= x <= len(prof) - 5]
+
+
+def zakres(L, rozmiar):
+    """Przycięcie na liniach: od pierwszej do ostatniej (całe okresy wzoru); przy jednej linii — od niej do dalszego brzegu."""
+    if len(L) >= 2 and L[-1] - L[0] > rozmiar * 0.2:
+        return L[0], L[-1]
+    if len(L) == 1:
+        return (L[0], rozmiar) if L[0] < rozmiar / 2 + rozmiar * 0.1 and rozmiar - L[0] > rozmiar * 0.3 else (0, L[0])
+    return None
+
+
 def tnij_podlogi(nr, img, podglad):
     M = mapa()
     rgb = np.array(img.convert('RGB')).astype(np.float32)
@@ -177,11 +204,11 @@ def tnij_podlogi(nr, img, podglad):
     xs = podzialy(zaw.sum(axis=0).astype(np.float32), 3)
     ys = podzialy(zaw.sum(axis=1).astype(np.float32), 3)
     os.makedirs(PODLOGI_DIR, exist_ok=True)
-    zapisane, kafle = [], []
+    zapisane, kafle, rozmiary = [], [], {}
     for j in range(3):
         for i in range(3):
             pole = j * 3 + i + 1
-            if (nr, pole) not in M:
+            if (nr, pole) not in M or (POLA and pole not in POLA):
                 continue
             _, klucz = M[(nr, pole)]
             x0, x1, y0, y1 = xs[i], xs[i + 1], ys[j], ys[j + 1]
@@ -189,18 +216,58 @@ def tnij_podlogi(nr, img, podglad):
             yy, xx = np.where(k)
             if len(yy) < 500:
                 print(f'  pole {pole} ({klucz}): pusto — pomijam'); continue
-            # wnętrze próbki (bez białej ramki), 4% marginesu na zaokrąglone rogi
-            a0, a1, b0, b1 = yy.min(), yy.max(), xx.min(), xx.max()
-            mh, mw = int((a1 - a0) * 0.04), int((b1 - b0) * 0.04)
-            wyc = img.convert('RGB').crop((x0 + b0 + mw, y0 + a0 + mh, x0 + b1 - mw, y0 + a1 - mh))
-            bok = min(wyc.size); wyc = wyc.crop((0, 0, bok, bok)).resize((1024, 1024), Image.LANCZOS)
-            t = bez_szwu(wyc)
+            a0, a1, b0, b1 = y0 + yy.min() + 3, y0 + yy.max() - 3, x0 + xx.min() + 3, x0 + xx.max() - 3
+            probka = img.convert('RGB').crop((b0, a0, b1, a1))
+            pelny = probka.size[0]  # szerokość całej próbki = ok. 200 cm
+            g = np.array(probka.convert('L')).astype(np.float32)
+            c0, c1, r0, r1 = 0, probka.size[0], 0, probka.size[1]
+            if klucz in LINIE_Y:
+                z = zakres(linie(g, 0), probka.size[1])
+                if z: r0, r1 = z
+            if klucz in LINIE_X:
+                z = zakres(linie(g, 1), probka.size[0])
+                if z: c0, c1 = z
+            sposob = 'na liniach' if (r0, r1, c0, c1) != (0, probka.size[1], 0, probka.size[0]) else 'miękkie przejście'
+            t = probka.crop((c0, r0, c1, r1))
+            if sposob == 'miękkie przejście':
+                bok = min(t.size); t = bez_szwu(wyrownaj_swiatlo(t.crop((0, 0, bok, bok))))
+            elif klucz not in LINIE_X:  # deski: w poziomie przejście miękkie (styk desek i tak bywa w dowolnym miejscu)
+                t = bez_szwu_x(t)
+            skala = 1024 / t.size[0]
+            t = t.resize((1024, max(8, round(t.size[1] * skala))), Image.LANCZOS)
+            cm = round(200 * (c1 - c0) / pelny)
+            rozmiary[klucz] = cm
             t.save(os.path.join(PODLOGI_DIR, f'{klucz}.webp'), 'WEBP', quality=86, method=6)
             zapisane.append(klucz); kafle.append((klucz, t))
-            print(f'  pole {pole} → {klucz}')
+            print(f'  pole {pole} → {klucz:18s} {sposob}, kafel {cm} cm szerokości')
+    if rozmiary:
+        plik = os.path.join(PODLOGI_DIR, 'rozmiary.json')
+        try: stare = json.load(open(plik, encoding='utf-8'))
+        except Exception: stare = {}
+        stare.update(rozmiary); json.dump(stare, open(plik, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     if podglad:
         zapisz_podglad(nr, kafle, powtorz=True)
     return zapisane
+
+
+def wyrownaj_swiatlo(t):
+    """Usuwa plamy światła i ciemniejsze rogi (inaczej powtarzają się na całej podłodze jak wzór)."""
+    from scipy import ndimage
+    a = np.array(t.convert('RGB')).astype(np.float32)
+    jas = a.mean(axis=2)
+    tlo = ndimage.gaussian_filter(jas, sigma=max(8, min(a.shape[:2]) / 6))
+    a *= (jas.mean() / np.maximum(tlo, 1))[..., None]
+    return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+
+
+def bez_szwu_x(t):
+    """Tylko w poziomie: prawy brzeg płynnie przechodzi w lewy."""
+    a = np.array(t.convert('RGB')).astype(np.float32)
+    h, w = a.shape[:2]
+    b = np.roll(a, w // 2, axis=1)
+    xx = np.arange(w)
+    m = np.clip((1 - np.abs(xx - w / 2) / (w / 2)) * 3.2, 0, 1)[None, :, None]
+    return Image.fromarray((a * m + b * (1 - m)).astype(np.uint8))
 
 
 def zapisz_podglad(nr, kafle, powtorz=False):
@@ -210,10 +277,10 @@ def zapisz_podglad(nr, kafle, powtorz=False):
     o = Image.new('RGB', (K * 4, K * ((len(kafle) + 3) // 4)), (243, 240, 234))
     for n, (k, im) in enumerate(kafle):
         if powtorz:  # 2×2 powtórzenia — widać, czy jest szew
-            t = im.resize((K // 2, K // 2)); c = Image.new('RGB', (K, K))
+            t = im.resize((K // 2, max(4, round(K // 2 * im.size[1] / im.size[0])))); c = Image.new('RGB', (K, K))
             for a in range(2):
                 for b in range(2):
-                    c.paste(t, (a * K // 2, b * K // 2))
+                    c.paste(t, (a * K // 2, b * t.size[1]))
         else:
             c = Image.new('RGBA', (K, K), (243, 240, 234, 255)); t = im.copy(); t.thumbnail((K - 10, K - 10))
             c.alpha_composite(t, ((K - t.size[0]) // 2, (K - t.size[1]) // 2)); c = c.convert('RGB')
@@ -230,7 +297,9 @@ def spis():
     except Exception:
         pass
     wersja = int(stary.get('wersja', 0)) + 1
-    json.dump({'wersja': wersja, 'meble': meble, 'podlogi': podlogi}, open(SPIS, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    try: rozm = json.load(open(os.path.join(PODLOGI_DIR, 'rozmiary.json'), encoding='utf-8'))
+    except Exception: rozm = {}
+    json.dump({'wersja': wersja, 'meble': meble, 'podlogi': podlogi, 'cmPodlog': rozm}, open(SPIS, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     print(f'Spis: {len(meble)} mebli, {len(podlogi)} podłóg (wersja {wersja}) → {SPIS}')
 
 

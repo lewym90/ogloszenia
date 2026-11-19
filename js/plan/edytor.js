@@ -1020,7 +1020,7 @@ async function wczytajBiblioteke() {
     const spis = await (await fetch('img/plan/biblioteka.json', { cache: 'no-cache' })).json();
     await Promise.all([
       ...(spis.meble || []).map(async (k) => { const i = await laduj(`img/plan/meble/${k}.webp?v=${spis.wersja || 1}`); if (i) S.obrazy.set(`mebel:${k}`, i); }),
-      ...(spis.podlogi || []).map(async (k) => { const i = await laduj(`img/plan/podlogi/${k}.webp?v=${spis.wersja || 1}`); if (i) S.obrazy.set(`podloga:${k}`, i); }),
+      ...(spis.podlogi || []).map(async (k) => { const i = await laduj(`img/plan/podlogi/${k}.webp?v=${spis.wersja || 1}`); if (i) { S.obrazy.set(`podloga:${k}`, i); S.obrazy.set(`podlogaCm:${k}`, spis.cmPodlog?.[k] || 200); } }),
     ]);
   } catch { /* biblioteka grafik jeszcze pusta — rysuje kod */ }
   przebuduj(); if (S.arkusz) interfejs();

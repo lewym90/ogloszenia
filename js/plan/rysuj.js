@@ -57,7 +57,7 @@ const PX_CM = 4; // gęstość tekstury: 4 px na cm
 function losowy(ziarno) { let s = ziarno >>> 0 || 1; return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return ((s >>> 0) % 100000) / 100000; }; }
 function tekstura(klucz, obrazy) {
   const zBiblioteki = obrazy?.get?.(`podloga:${klucz}`);
-  if (zBiblioteki) return { img: zBiblioteki, cm: 200 };
+  if (zBiblioteki) return { img: zBiblioteki, cm: obrazy.get(`podlogaCm:${klucz}`) || 200 }; // szerokość kafla w cm (z narzędzia do cięcia)
   if (TEX.has(klucz)) return TEX.get(klucz);
   const opis = PODLOGI[klucz] || PODLOGI.dab;
   const R = 240, c = document.createElement('canvas'); c.width = c.height = R * PX_CM;

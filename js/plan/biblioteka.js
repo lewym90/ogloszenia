@@ -331,7 +331,7 @@ export const GRUPY_PODLOG = [['Drewno i miękkie', 17], ['Płytki i kamień', 18
 // podłoga domyślna wg nazwy pomieszczenia
 export function podlogaDla(nazwa) {
   const n = String(nazwa || '').toLowerCase();
-  if (/łazien|lazien|\bwc\b|toalet|łaźn|natrysk/.test(n)) return 'kamien_lazienka';
+  if (/łazien|lazien|\bwc\b|toalet|łaźn|natrysk/.test(n)) return 'gres';
   if (/przedpok|korytarz|\bhol\b|wiatroł|wiatrol|sień|klatk/.test(n)) return 'plytka';
   if (/^kuchnia|pralnia|spiżarn|spizarn|kotłown|kotlown|gospodarcz/.test(n)) return 'plytka';
   if (/balkon|loggia/.test(n)) return 'plytki_balkonowe';
