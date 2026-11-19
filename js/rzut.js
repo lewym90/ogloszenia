@@ -51,17 +51,31 @@ export function nazwyPomieszczen(pokoje) {
 }
 // scalanie pomieszczeń z rzutu z listą w karcie: po nazwie (bez wielkości liter), nowe na końcu
 export function scalPomieszczenia(pom, pokoje, noweId) {
-  // Pomiar dalmierzem (długość × szerokość) jest dokładniejszy niż skan — nigdy go nie nadpisujemy.
-  // Rzut uzupełnia metraż tylko tam, gdzie nie ma wymiarów, i dopisuje nowe pomieszczenia.
+  // Pomiar dalmierzem (długość × szerokość) nigdy nie jest zmieniany ani kasowany.
+  // Gdy rzut jest DOPASOWANY do tego pomiaru (skala z dalmierza, kształt ze skanu), jego metraż — z wnękami i załamaniami —
+  // zapisuje się obok jako mRzut i to on idzie do ogłoszenia. Rzut uzupełnia metraż pomieszczeń bez wymiarów i dopisuje nowe.
   const wynik = pom.map((p) => ({ ...p }));
   const klucz = (s) => String(s || '').trim().toLowerCase();
+  const bezNr = (s) => klucz(s).replace(/\s+\d+$/, '');
   let zmienione = 0, dodane = 0;
-  const porownanie = [];
+  const porownanie = [], uzyte = new Set();
   for (const r of pokoje) {
     if (!r.nazwa || r.m == null) continue;
     const nazwa = r.kond ? `${r.nazwa} (${r.kond})` : r.nazwa;
-    const ist = wynik.find((p) => klucz(p.nazwa) === klucz(nazwa));
-    if (ist && ist.a && ist.b) { porownanie.push({ nazwa, pomiar: ist.m, rzut: r.m }); continue; }
+    let ist = wynik.find((p) => !uzyte.has(p) && r.karta && klucz(p.nazwa) === klucz(r.kond ? `${r.karta} (${r.kond})` : r.karta))
+      || wynik.find((p) => !uzyte.has(p) && klucz(p.nazwa) === klucz(nazwa));
+    if (!ist) { // „Pokój 2” z rzutu ↔ „Pokój” w karcie — tylko gdy jednoznacznie
+      const k = wynik.filter((p) => !uzyte.has(p) && bezNr(p.nazwa) === bezNr(nazwa));
+      const rywale = pokoje.filter((q) => q.nazwa && bezNr(q.kond ? `${q.nazwa} (${q.kond})` : q.nazwa) === bezNr(nazwa));
+      if (k.length === 1 && rywale.length === 1 && !pokoje.some((q) => klucz(q.kond ? `${q.nazwa} (${q.kond})` : q.nazwa) === klucz(k[0].nazwa))) ist = k[0];
+    }
+    if (ist) uzyte.add(ist);
+    if (ist && ist.a && ist.b) {
+      const mR = r.dop ? r.m : undefined;
+      if (ist.mRzut !== mR) { if (mR == null) delete ist.mRzut; else ist.mRzut = mR; zmienione++; }
+      porownanie.push({ nazwa: ist.nazwa, nazwaRzutu: nazwa, pomiar: ist.m, rzut: r.m, dop: !!r.dop, a: ist.a, b: ist.b });
+      continue;
+    }
     if (ist) { if (ist.m !== r.m) { ist.m = r.m; zmienione++; } }
     else { wynik.push({ id: noweId(6), nazwa, m: r.m }); dodane++; }
   }

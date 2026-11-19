@@ -316,7 +316,7 @@ export function opis(o, ctx = {}) {
   // pomieszczenia
   const pom = (o.pom || []).filter((p) => p.nazwa || p.typ);
   if (pom.length) {
-    A.push(`POMIESZCZENIA\n${pom.map((p) => `– ${p.nazwa || p.typ}${p.m ? `: ${m2(p.m)}` : ''}${p.a && p.b ? ` (${liczba(p.a)} × ${liczba(p.b)} m)` : ''}${p.opis ? ` — ${punkt(p.opis).replace(/^./, (c) => c.toLowerCase())}` : ''}`).join('\n')}`);
+    A.push(`POMIESZCZENIA\n${pom.map((p) => `– ${p.nazwa || p.typ}${(p.mRzut ?? p.m) ? `: ${m2(p.mRzut ?? p.m)}` : ''}${p.a && p.b ? ` (${liczba(p.a)} × ${liczba(p.b)} m)` : ''}${p.opis ? ` — ${punkt(p.opis).replace(/^./, (c) => c.toLowerCase())}` : ''}`).join('\n')}`);
   }
 
   // wyposażenie

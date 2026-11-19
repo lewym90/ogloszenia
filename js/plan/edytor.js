@@ -3,7 +3,8 @@
 // Stuknięcie zaznacza. Zmienić można wyłącznie zaznaczony element i tylko gestem zaczętym na nim (albo na jego uchwycie).
 import * as G from './geom.js';
 import { rysuj3D, eksport3DPNG, skalaEksportu3D } from './rysuj3d.js';
-import { scena, rysuj, trafienie, eksportPNG, skalaEksportu, wMeblu, wymiaryMebla, pietro, przeliczSciany, warstwaPodlog } from './rysuj.js';
+import { scena, rysuj, trafienie, eksportPNG, skalaEksportu, wMeblu, wymiaryMebla, pietro, przeliczSciany, warstwaPodlog, dlugoscCzysta, wPokoju } from './rysuj.js';
+import { dopasujDoPomiarow } from './dopasuj.js';
 import { MEBLE, GRUPY, PODLOGI, GRUPY_PODLOG, rodzajMebla, nazwaMebla, NAZWY_POMIESZCZEN } from './biblioteka.js';
 import * as R from '../rzut.js';
 
@@ -60,12 +61,12 @@ function rysujTeraz() {
   }
   if (!S.sc) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#F3F0EA'; ctx.fillRect(0, 0, plotno.width, plotno.height); return; }
   const A = S.akcja, edycja = !!(A?.ruszony && A.zmiana);
-  const op = { meble: S.meble, wymiary: S.wymiary, zaznaczone: S.zazn, obrazy: S.obrazy, tlo: '#F3F0EA' };
+  const op = { meble: S.meble, wymiary: S.wymiary, wymiaryPokoi: wymiaryPokoi(), zaznaczone: S.zazn, obrazy: S.obrazy, tlo: '#F3F0EA' };
   if (edycja && A.mebel) { // przeciąganie mebla: podłogi z cieniami bez zmian — kopiujemy gotową warstwę
     if (!A.podlogi) A.podlogi = warstwaPodlog(S.sc, { ...S.widok, dpr: S.dpr }, op, plotno.width, plotno.height);
     op.podlogi = A.podlogi;
   } else if (edycja) op.bezCienia = true; // ściany i otwory: szybki podgląd, pełne cienie po puszczeniu
-  if (S.tryb3d) rysuj3D(ctx, S.sc, { ...S.widok, dpr: S.dpr }, { meble: S.meble, obrazy: S.obrazy, tlo: '#F3F0EA' }); // podgląd 3D: bez edycji
+  if (S.tryb3d) rysuj3D(ctx, S.sc, { ...S.widok, dpr: S.dpr }, { meble: S.meble, wymiaryPokoi: wymiaryPokoi(), obrazy: S.obrazy, tlo: '#F3F0EA' }); // podgląd 3D: bez edycji
   else rysuj(ctx, S.sc, { ...S.widok, dpr: S.dpr }, op);
   if (bufor.c.width !== plotno.width || bufor.c.height !== plotno.height) { bufor.c.width = plotno.width; bufor.c.height = plotno.height; }
   bufor.c.getContext('2d').drawImage(plotno, 0, 0); bufor.widok = { ...S.widok };
@@ -99,7 +100,8 @@ function nakladka() {
   const d = S.dpr; ctx.save(); ctx.setTransform(d, 0, 0, d, 0, 0);
   for (const u of uchwyty()) {
     if (u.typ === 'obrot') { ctx.beginPath(); ctx.moveTo(u.od.x, u.od.y); ctx.lineTo(u.x, u.y); ctx.strokeStyle = '#C8A44D'; ctx.lineWidth = 1.5; ctx.stroke(); }
-    ctx.beginPath(); ctx.arc(u.x, u.y, u.typ === 'obrot' ? 13 : 9, 0, 7); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = '#C8A44D'; ctx.stroke();
+    const ruchomy = u.typ === 'koniec' && S.zazn?.rodzaj === 'sciana' && element() && koniecSciany(element()) === u.koniec;
+    ctx.beginPath(); ctx.arc(u.x, u.y, u.typ === 'obrot' ? 13 : 9, 0, 7); ctx.fillStyle = ruchomy ? '#C8A44D' : '#fff'; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = '#C8A44D'; ctx.stroke();
     if (u.typ === 'obrot') { ctx.beginPath(); ctx.arc(u.x, u.y, 6, -2.6, 1.6); ctx.strokeStyle = '#7a5f22'; ctx.lineWidth = 1.8; ctx.stroke(); ctx.beginPath(); ctx.moveTo(u.x + 0.3, u.y + 6); ctx.lineTo(u.x - 3.2, u.y + 6.8); ctx.lineTo(u.x - 0.6, u.y + 3.6); ctx.stroke(); }
   }
   // podgląd rysowanej ściany
@@ -112,6 +114,7 @@ function nakladka() {
     etykieta(`${Math.round(L)} cm`, (a.x + b.x) / 2, (a.y + b.y) / 2 - 18);
   }
   if (r) for (const p of r.punkty) { const q = doEkranu(p.x, p.y); ctx.beginPath(); ctx.arc(q.x, q.y, 6, 0, 7); ctx.fillStyle = '#C8A44D'; ctx.fill(); }
+  if (S.para) for (const id of S.para.sciany) { const w = fl().walls.find((q) => q.id === id); if (!w) continue; const a = doEkranu(w.start.x, w.start.y), b = doEkranu(w.end.x, w.end.y); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineWidth = 7; ctx.strokeStyle = 'rgba(200,164,77,0.85)'; ctx.stroke(); }
   if (S.podglad?.tekst) etykieta(S.podglad.tekst, S.podglad.x, S.podglad.y);
   ctx.restore();
 }
@@ -399,17 +402,13 @@ function akcjaRozmiaru(kraw, x0, y0) {
 // przesuwanie ściany równolegle; połączone ściany idą za nią
 function akcjaSciany(p0) {
   const w = element(), f = fl(), ux = (w.end.x - w.start.x), uy = (w.end.y - w.start.y), L = Math.hypot(ux, uy) || 1, nx = -uy / L, ny = ux / L;
-  const s0 = { ...w.start }, e0 = { ...w.end };
-  const zwiazane = [];
-  for (const q of f.walls) if (q !== w) for (const k of ['start', 'end']) {
-    if (rownoPunkt(q[k], s0) || rownoPunkt(q[k], e0) || rzutNaOdcinek(q[k], s0, e0).d < 2) zwiazane.push({ q, k, baza: { ...q[k] } }); // narożniki i ściany dochodzące do środka
-  }
+  const kopia = f.walls.map((q) => [q, { ...q.start }, { ...q.end }]), linia = liniaSciany(w); // razem z przedłużeniami — nic się nie krzywi
   return {
     zmiana: true,
     ruch: (x, y) => {
+      for (const [q, a, b] of kopia) { q.start = { ...a }; q.end = { ...b }; }
       const p = doSwiata(x, y), o = Math.round((p.x - p0.x) * nx + (p.y - p0.y) * ny);
-      w.start = { x: s0.x + nx * o, y: s0.y + ny * o }; w.end = { x: e0.x + nx * o, y: e0.y + ny * o };
-      for (const z of zwiazane) z.q[z.k] = { x: z.baza.x + nx * o, y: z.baza.y + ny * o };
+      przesunLinie(linia, nx * o, ny * o);
       przebudujSzybko();
       const q = doEkranu((w.start.x + w.end.x) / 2, (w.start.y + w.end.y) / 2); S.podglad = { tekst: `${o > 0 ? '+' : ''}${o} cm`, x: q.x, y: q.y - 30 };
     },
@@ -418,6 +417,21 @@ function akcjaSciany(p0) {
 }
 function akcjaKonca(k) {
   const w = element(), f = fl(), baza = { ...w[k] }, drugi = k === 'start' ? 'end' : 'start';
+  if (naKoncu(w, k).length) { // narożnik / „T”: tylko wzdłuż ściany, ściana na końcu przesuwa się równolegle — nic się nie krzywi
+    const kopia = f.walls.map((q) => [q, { ...q.start }, { ...q.end }]), L0 = Math.hypot(w[k].x - w[drugi].x, w[k].y - w[drugi].y) || 1;
+    const ux = (w[k].x - w[drugi].x) / L0, uy = (w[k].y - w[drugi].y) / L0;
+    return {
+      zmiana: true,
+      ruch: (x, y) => {
+        for (const [q, a, b] of kopia) { q.start = { ...a }; q.end = { ...b }; }
+        const p = doSwiata(x, y); let d = Math.round((p.x - baza.x) * ux + (p.y - baza.y) * uy);
+        if (L0 + d < 10) d = 10 - L0;
+        przesunKoniec(w, k, d); przebudujSzybko();
+        const q = doEkranu(w[k].x, w[k].y); S.podglad = { tekst: `${Math.round(czysta(w))} cm`, x: q.x, y: q.y - 34 };
+      },
+      koniec: poScianach,
+    };
+  }
   const zwiazane = [];
   for (const q of f.walls) if (q !== w) for (const kk of ['start', 'end']) if (rownoPunkt(q[kk], baza)) zwiazane.push({ q, kk });
   return {
@@ -478,6 +492,7 @@ function stukniecie(x, y, typ = 'touch') {
   const p = doSwiata(x, y), tol = (typ === 'mouse' ? 10 : 20) / S.widok.s; // palec jest mniej dokładny niż kursor
   if (S.narzedzie === 'sciana' || S.narzedzie === 'granica') return punktSciany(p);
   if (S.narzedzie === 'drzwi' || S.narzedzie === 'okno') return wstawOtwor(p);
+  if (S.narzedzie === 'para' && S.para) return stuknijPare(p, tol);
   if (S.tryb3d) { if (trafienie(S.sc, p.x, p.y, tol, { meble: S.meble })) toast('W 3D tylko oglądasz — edycja w 2D', 2600); return; }
   const h = trafienie(S.sc, p.x, p.y, tol, { meble: S.meble });
   // ponowne stuknięcie w zaznaczony pokój — wybierz to, co pod spodem? zostaw zaznaczenie
@@ -532,7 +547,7 @@ function narzedzie(n, zostawZazn = false) {
   for (const b of document.querySelectorAll('.plan-dol [data-n]')) b.setAttribute('aria-pressed', String(b.dataset.n === n));
   interfejs(); odswiez();
 }
-function podpowiedz(t) { const el = $('#podpowiedz'); el.hidden = !t; el.textContent = t || ''; }
+function podpowiedz(t) { const el = $('#podpowiedz'); el.hidden = !t; el.textContent = t || ''; el.classList.remove('z-przyciskami'); }
 
 // ---------- operacje na meblach ----------
 function wyrownajDoSciany(f) {
@@ -681,6 +696,7 @@ function interfejs() {
   else if (a.typ === 'menu') ark.innerHTML = naglowek('Więcej') + htmlMenu();
   else if (a.typ === 'pokoj-nowy') ark.innerHTML = naglowek('Pokój prostokątny') + htmlNowegoPokoju(a);
   else if (a.typ === 'pomoc') ark.innerHTML = naglowek('Jak to działa') + htmlPomoc();
+  else if (a.typ === 'kalibracja') ark.innerHTML = naglowek('Dopasowanie do pomiarów') + htmlKalibracji();
   else if (a.typ === 'podloga') ark.innerHTML = naglowek('Podłoga') + htmlPodlogi(el);
   else if (a.typ === 'element' && z && el) ark.innerHTML = naglowek(tytulElementu(z, el)) + htmlElementu(z, el);
   else ark.innerHTML = naglowek('Rzut') + htmlPodsumowania();
@@ -725,18 +741,22 @@ function htmlElementu(z, el) {
       <div class="przyciski">${btn('usun', 'usun', 'Usuń okno', 'zly')}</div>`;
   }
   if (z.rodzaj === 'sciana') {
-    const g = S.sc.sciany.find((q) => q.w.id === el.id);
-    return `<label for="p-l">Długość (cm)</label><input id="p-l" type="number" inputmode="decimal" data-pole="dl" value="${Math.round(g?.L || 0)}">
-      <p class="info">Długość osi ściany. Przesuwa się koniec ściany razem z dochodzącymi ścianami.</p>
+    const kon = koniecSciany(el);
+    return `<label for="p-l">Długość w świetle (cm)</label><input id="p-l" type="number" inputmode="decimal" data-pole="dl" value="${Math.round(czysta(el))}">
+      <p class="info">Ta sama liczba co na rzucie — od ściany do ściany, jak mierzy miarka. Po wpisaniu przesuwa się ściana na wybranym końcu, równolegle — kąty zostają proste.</p>
+      <label>Przesuwa się</label><div class="chipy">${['start', 'end'].map((k) => chip('dl-koniec', nazwaKonca(el, k), kon === k, `data-v="${k}"`)).join('')}</div>
       ${el.granica ? '' : `<label>Grubość</label><div class="chipy">${[8, 12, 15, 25, 38].map((v) => chip('grubosc', `${v} cm`, Math.round(el.thickness) === v, `data-v="${v}"`)).join('')}</div>`}
       <label class="przelacznik"><span>Granica pomieszczeń (bez ściany)<small>Dzieli otwartą przestrzeń, np. przedpokój i salon. Na rzucie przerywana linia.</small></span><input type="checkbox" data-pole="granica" ${el.granica ? 'checked' : ''}></label>
       <div class="przyciski">${btn('usun', 'usun', el.granica ? 'Usuń granicę' : 'Usuń ścianę', 'zly')}</div>`;
   }
   if (z.rodzaj === 'pokoj') {
-    const p = el, k = S.pomKarty.find((q) => q.nazwa && q.nazwa.trim().toLowerCase() === (p.nazwa || '').toLowerCase());
+    const p = el, k = p.karta && p.wym ? p.karta : null, wy = (v) => Number(v).toFixed(2).replace('.', ',');
     return `<label for="p-n">Nazwa</label><input id="p-n" type="text" data-pole="nazwa" value="${esc(p.nazwa)}" placeholder="np. Salon" autocomplete="off">
       <div class="chipy" style="margin-top:8px">${NAZWY_POMIESZCZEN.map((n) => chip('nazwa-pok', n, n === p.nazwa, `data-v="${esc(n)}"`)).join('')}</div>
-      <p class="info">Metraż z rzutu: <b>${p.m != null ? m2(p.m) : '—'}</b>${k?.a && k?.b ? ` · Twój pomiar: <b>${m2(k.m)}</b> (${String(k.a).replace('.', ',')} × ${String(k.b).replace('.', ',')} m) — na rzucie pokazuję pomiar` : ''}</p>
+      ${k ? (p.dop ? `<p class="info">Rzut dopasowany do Twojego pomiaru ${wy(k.a)} × ${wy(k.b)} m${p.kartaPrzybl ? ` (w karcie: „${esc(k.nazwa)}”)` : ''}. Metraż z całego kształtu, z wnękami: <b>${p.m != null ? m2(p.m) : '—'}</b>.</p>`
+        : `<p class="info">Twój pomiar: ${wy(k.a)} × ${wy(k.b)} m = <b>${m2(k.m)}</b>${p.kartaPrzybl ? ` (w karcie: „${esc(k.nazwa)}”)` : ''}. Skan bez dopasowania: ${p.m != null ? m2(p.m) : '—'}.</p><div class="przyciski">${btn('kalibruj', 'linijka', 'Dopasuj rzut do pomiarów')}</div>`)
+        + `<label class="przelacznik"><span>Wymiary na obrazie<small>${wy(k.a)} × ${wy(k.b)} m pod metrażem</small></span><input type="checkbox" data-pole="wym-pok" ${p.room.amBezWymiarow ? '' : 'checked'}></label>`
+        : `<p class="info">Metraż z rzutu: <b>${p.m != null ? m2(p.m) : '—'}</b></p>`}
       <div class="przyciski">${btn('podloga-arkusz', 'podloga', `Podłoga: ${PODLOGI[p.podloga]?.nazwa || 'Dąb jasny'}`)}</div>`;
   }
   return '';
@@ -767,7 +787,8 @@ function htmlMenu() {
   const pietra = S.projekt ? `<label>Piętra</label><div class="chipy">${S.projekt.floors.map((f) => chip('pietro', f.name, f.id === pietro(S.projekt).id, `data-id="${esc(f.id)}"`)).join('')}${chip('pietro-dodaj', '+ Dodaj piętro', false)}</div>
     <div class="dwa" style="margin-top:8px"><input type="text" data-pole="nazwa-pietra" value="${esc(pietro(S.projekt).name)}" aria-label="Nazwa piętra">${S.projekt.floors.length > 1 ? btn('pietro-usun', 'usun', 'Usuń piętro', 'zly maly') : '<span></span>'}</div>` : '';
   const pok = !matchMedia('(min-width: 900px)').matches && S.sc ? `<label>Pomieszczenia</label>${htmlPodsumowania(true)}` : '';
-  return `${pok}${przel('meble', 'Meble i wyposażenie', 'Pokazuj na rzucie i w obrazie do ogłoszenia', S.meble)}${przel('wymiary', 'Wymiary ścian', 'Długości w centymetrach przy ścianach', S.wymiary)}${pietra}<div class="menu-lista">
+  return `${pok}${przel('meble', 'Meble i wyposażenie', 'Pokazuj na rzucie i w obrazie do ogłoszenia', S.meble)}${przel('wym-pokoi', 'Wymiary pokoi na obrazie', 'Długość × szerokość z Twojego pomiaru przy nazwie pomieszczenia', wymiaryPokoi())}${przel('wymiary', 'Wymiary ścian (tylko w edytorze)', 'Pomoc przy poprawianiu — nie trafiają do ogłoszenia', S.wymiary)}${pietra}<div class="menu-lista">
+    ${S.projekt ? btn('kalibruj', 'linijka', 'Dopasuj rzut do pomiarów z karty') : ''}
     ${btn('pokoj-nowy', 'podloga', 'Dodaj pokój prostokątny (z wymiarów)')}
     ${btn('dopasuj', 'wyrownaj', 'Pokaż cały rzut')}
     ${btn('skan', 'podloga', 'Wczytaj skan z iPhone\'a')}
@@ -784,6 +805,9 @@ function htmlPomoc() {
     <li><b>Dodawanie:</b> „Dodaj”, wybierz element z listy, przeciągnij na miejsce. Przy ścianie sam się do niej dosunie.</li>
     <li><b>Ściany i granice:</b> wybierz narzędzie i stukaj kolejne narożniki. Granica dzieli otwartą przestrzeń bez ściany.</li>
     <li><b>Drzwi i okna:</b> wybierz narzędzie i stuknij w ścianę.</li>
+    <li><b>Wymiary:</b> każda liczba na rzucie to wymiar w świetle — od ściany do ściany, jak mierzy dalmierz albo miarka. Stuknij ścianę, wpisz długość i wybierz, który koniec ma się przesunąć — ściana na tym końcu przesuwa się równolegle, kąty zostają proste.</li>
+    <li><b>Dopasowanie do pomiarów:</b> „Więcej” → „Dopasuj rzut do pomiarów z karty”. Edytor bierze długość × szerokość z karty i przesuwa ściany tak, żeby się zgadzały — kształt (wnęki, załomy) zostaje ze skanu, metraż liczy się z całego kształtu.</li>
+    <li><b>Na obrazie do ogłoszenia:</b> nazwa, metraż i wymiary z Twojego pomiaru. Wymiary ścian są tylko w edytorze.</li>
     <li><b>Klawiatura:</b> Delete usuwa, R obraca, strzałki przesuwają o 1 cm (z Shift o 10 cm), Ctrl+Z cofa, Ctrl+Y ponawia, Esc odznacza, F pokazuje cały rzut.</li>
     <li>Zmiany zapisują się na tym urządzeniu same. Do oferty i wspólnika trafiają po „Zapisz”.</li></ul>`;
 }
@@ -831,7 +855,68 @@ AKCJE['dodaj-el'] = (b) => { S.arkusz = null; dodajMebel(b.dataset.v); };
 AKCJE['zamien-na'] = (b) => { const k = b.dataset.v; zmien((f) => { f.amRodzaj = k; f.catalogId = 'imported_object'; f.sourceCategory = k; f.width = MEBLE[k].w; f.depth = MEBLE[k].d; f.scale = { x: Math.sign(f.scale?.x ?? 1) || 1, y: 1, z: 1 }; }); S.arkusz = null; interfejs(); };
 AKCJE.szer = (b) => zmien((o) => { ustawSzerokosc(o, Number(b.dataset.v)); });
 AKCJE['typ-drzwi'] = (b) => zmien((o) => { o.type = b.dataset.v; });
-AKCJE.grubosc = (b) => zmien((w) => { w.thickness = Number(b.dataset.v); }, true);
+AKCJE.grubosc = (b) => zmien((w) => { // ściana zewnętrzna rośnie na zewnątrz — wymiar pomieszczenia w świetle się nie zmienia
+  const t1 = Number(b.dataset.v), t0 = w.thickness || 10; if (t1 === t0) return;
+  const linia = liniaSciany(w), u = kierunek(w), nx = -u.y, ny = u.x, mx = (w.start.x + w.end.x) / 2, my = (w.start.y + w.end.y) / 2, o = t0 / 2 + 8;
+  const jest = (sg) => S.sc.pokoje.some((p) => !p.otwor && wPokoju(p, mx + nx * o * sg, my + ny * o * sg));
+  const l = jest(1), pr = jest(-1);
+  for (const q of linia) q.thickness = t1;
+  if (l !== pr) { const v = ((t1 - t0) / 2) * (l ? -1 : 1); przesunLinie(linia, nx * v, ny * v); }
+}, true);
+// ---------- dopasowanie rzutu do pomiarów z karty (dalmierz) ----------
+function pomiaryKarty() { return (S.sc?.pokoje || []).filter((p) => !p.otwor && p.wym).map((p) => ({ pokoj: p, a: p.wym.a * 100, b: p.wym.b * 100, pary: p.room.amPary })); }
+AKCJE.kalibruj = () => {
+  if (!S.sc) return;
+  podpowiedz('');
+  const pom = pomiaryKarty();
+  if (!pom.length) { toast('W karcie oferty nie ma pomieszczeń z długością i szerokością (albo nazwy nie pasują do rzutu).', 4200); return; }
+  const przed = migawka(), przedM = new Map(S.sc.pokoje.map((p) => [p.room.id, p.m]));
+  const raport = dopasujDoPomiarow(fl(), S.sc.pokoje, pom);
+  for (const w of raport) { const r = pokojMeta(w.pokoj); if (w.osie.every((o) => !o.brak && !o.sprzeczny)) r.amDopasowanie = { a: w.pokoj.wym.a, b: w.pokoj.wym.b }; else delete r.amDopasowanie; }
+  S.raport = raport.map((w) => ({ id: w.pokoj.room.id, nazwa: w.pokoj.nazwa, karta: w.pokoj.karta?.nazwa, przybl: w.pokoj.kartaPrzybl, przedM: przedM.get(w.pokoj.room.id),
+    osie: w.osie.map((o) => ({ klucz: o.klucz, m: o.m, brak: !!o.brak, przed: o.przed, po: o.po, sprzeczny: !!o.sprzeczny })) }));
+  zapamietaj(przed); poScianach();
+  S.zazn = null; S.arkusz = { typ: 'kalibracja' }; interfejs(); odswiez();
+};
+AKCJE['wskaz-pare'] = (b) => {
+  S.para = { id: b.dataset.id, klucz: b.dataset.k, m: Number(b.dataset.m), sciany: [] };
+  narzedzie('para'); podpowiedz(`Stuknij dwie ściany, między którymi mierzyłeś ${(S.para.m / 100).toFixed(2).replace('.', ',')} m`);
+};
+function stuknijPare(p, tol) {
+  let best = null;
+  for (const w of fl().walls) { if (w.curvePoint) continue; const r = rzutNaOdcinek(p, w.start, w.end); if (r.d < (w.thickness || 10) / 2 + tol && (!best || r.d < best.d)) best = { w, d: r.d }; }
+  if (!best) { toast('Stuknij w ścianę'); return; }
+  if (!S.para.sciany.includes(best.w.id)) S.para.sciany.push(best.w.id);
+  odswiez();
+  if (S.para.sciany.length < 2) { podpowiedz('Teraz druga ściana'); return; }
+  const pk = S.sc.pokoje.find((q) => q.room.id === S.para.id), sc = S.para.sciany, kl = S.para.klucz;
+  S.para = null; narzedzie('widok');
+  if (!pk) return;
+  const r = pokojMeta(pk); r.amPary = { ...(r.amPary || {}), [kl]: sc }; pk.room.amPary = r.amPary;
+  AKCJE.kalibruj();
+}
+// po wczytaniu rzutu: propozycja dopasowania, gdy karta ma pomiary, a rzut jeszcze do nich nie dopasowany
+function propozycjaDopasowania() {
+  const nie = (S.sc?.pokoje || []).filter((p) => !p.otwor && p.wym && !p.dop);
+  const el = $('#podpowiedz');
+  if (!nie.length || S.narzedzie !== 'widok') return;
+  el.innerHTML = `<span>Twoje pomiary z karty: ${nie.length} ${nie.length === 1 ? 'pomieszczenie' : nie.length < 5 ? 'pomieszczenia' : 'pomieszczeń'}. Dopasować do nich rzut?</span><span class="pp-przyciski"><button data-a="kalibruj">Dopasuj</button><button data-a="propozycja-nie">Nie teraz</button></span>`;
+  el.hidden = false; el.classList.add('z-przyciskami');
+}
+AKCJE['propozycja-nie'] = () => podpowiedz('');
+AKCJE['wym-pokoi'] = () => { const przed = migawka(), wl = !wymiaryPokoi(); for (const f of S.projekt.floors) { if (wl) delete f.amBezWymiarowPokoi; else f.amBezWymiarowPokoi = true; } zapamietaj(przed); interfejs(); odswiez(); };
+const wymiaryPokoi = () => !!S.projekt && S.projekt.floors.every((f) => !f.amBezWymiarowPokoi);
+function htmlKalibracji() {
+  const R = S.raport || [], cm = (v) => `${(Math.round(v * 10) / 10).toFixed(1).replace('.', ',')} cm`, mm = (v) => (v / 100).toFixed(3).replace('.', ',');
+  const teraz = new Map((S.sc?.pokoje || []).map((p) => [p.room.id, p]));
+  return `<p class="info" style="margin-top:0">Ściany przesunięte tak, żeby zgadzały się z Twoimi pomiarami z karty. Kształt — wnęki, załomy, ścianki — zostaje ze skanu. „Cofnij” u góry przywraca poprzedni rzut.</p>
+    <ul class="kalibracja">${R.map((w) => { const p = teraz.get(w.id); return `<li><div class="k-gl"><b>${esc(w.nazwa || 'Pomieszczenie')}</b>${w.przybl ? `<small>w karcie: ${esc(w.karta)}</small>` : ''}<span>${w.przedM != null ? m2(w.przedM) : '—'} → <b>${p?.m != null ? m2(p.m) : '—'}</b></span></div>
+      ${w.osie.map((o) => o.brak ? `<div class="k-os zle">${mm(o.m)} m — nie znalazłem pary ścian z taką odległością ${btn('wskaz-pare', 'linijka', 'Wskaż ściany', 'maly', `data-id="${esc(w.id)}" data-k="${o.klucz}" data-m="${o.m}"`)}</div>`
+        : `<div class="k-os ${o.sprzeczny ? 'zle' : ''}">${mm(o.m)} m: skan ${cm(o.przed)} → ${cm(o.po)} ${o.sprzeczny ? `— kłóci się z innym pomiarem o ${cm(Math.abs(o.po - o.m))}` : `<span class="ok">✓ ${o.po - o.przed >= 0 ? '+' : '−'}${cm(Math.abs(o.po - o.przed))}</span>`} ${btn('wskaz-pare', 'linijka', 'Inne ściany', 'maly', `data-id="${esc(w.id)}" data-k="${o.klucz}" data-m="${o.m}"`)}</div>`).join('')}</li>`; }).join('')}</ul>
+    <p class="info">Metraż każdego pomieszczenia liczy się teraz z dopasowanego kształtu — razem z wnękami i załamaniami — i po „Zapisz” trafi do karty.</p>
+    <div class="przyciski">${btn('zamknij', 'zakoncz', 'Gotowe')}</div>`;
+}
+AKCJE['dl-koniec'] = (b) => { const w = element(); if (!w) return; S.dlKoniec = { id: w.id, k: b.dataset.v }; interfejs(); odswiez(); };
 AKCJE['nazwa-pok'] = (b) => nazwijPokoj(b.dataset.v);
 AKCJE.podloga = (b) => { const p = element(); if (!p) return; const przed = migawka(); pokojMeta(p).amPodloga = b.dataset.v; zapamietaj(przed); przebuduj(); interfejs(); };
 function ustawSzerokosc(o, v) {
@@ -861,6 +946,7 @@ function podlaczPola(ark) {
       if (pole === 'nazwa') return nazwijPokoj(v);
       if (pole === 'nazwa-pietra') { const f = pietro(S.projekt), przed = migawka(); f.name = String(v).trim() || f.name; if (przed !== migawka()) { zapamietaj(przed); interfejs(); } return; }
       if (pole === 'granica') return AKCJE.granica();
+      if (pole === 'wym-pok') { const pk = element(); if (!pk) return; const przed = migawka(); const r = pokojMeta(pk); if (v) delete r.amBezWymiarow; else r.amBezWymiarow = true; zapamietaj(przed); przebuduj(); interfejs(); return; }
       if (pole === 'w' || pole === 'd') return zmien((f) => {
         const { w, d } = wymiaryMebla(f), sxx = Math.abs(f.scale?.x ?? 1) || 1, syy = Math.abs(f.scale?.y ?? 1) || 1, nv = Math.max(5, v);
         if (proporcjonalny(f)) { const k = nv / (pole === 'w' ? w : d); f.width = (w * k) / sxx; f.depth = (d * k) / syy; return; }
@@ -876,11 +962,60 @@ function podlaczPola(ark) {
   for (const c of ark.querySelectorAll('canvas[data-mebel]')) miniatura(c, c.dataset.mebel);
   for (const c of ark.querySelectorAll('canvas[data-probka]')) probkaPodlogi(c, c.dataset.probka);
 }
+// ---------- geometria ścian: linie, końce, przesunięcia równoległe ----------
+const kierunek = (q) => { const dx = q.end.x - q.start.x, dy = q.end.y - q.start.y, l = Math.hypot(dx, dy) || 1; return { x: dx / l, y: dy / l, l }; };
+function wspolliniowe(q, w) { // ta sama prosta
+  const u = kierunek(w), v = kierunek(q);
+  if (Math.abs(u.x * v.y - u.y * v.x) > 0.02) return false;
+  return Math.abs((q.start.x - w.start.x) * -u.y + (q.start.y - w.start.y) * u.x) < 1.5;
+}
+// linia ściany: ściana i jej współliniowe przedłużenia (połączone końcami) — przesuwają się razem
+function liniaSciany(w) {
+  const L = [w];
+  for (let i = 0; i < L.length; i++) for (const q of fl().walls) {
+    if (L.includes(q) || q.curvePoint || !!q.granica !== !!w.granica || !wspolliniowe(q, w)) continue;
+    if (['start', 'end'].some((k) => ['start', 'end'].some((kk) => rownoPunkt(q[k], L[i][kk])))) L.push(q);
+  }
+  return L;
+}
+const zaokr1 = (v) => Math.round(v * 10) / 10;
+// przesunięcie linii ściany o wektor; końce ścian dochodzących do niej idą za nią (te ściany się wydłużają/skracają, kąty zostają)
+function przesunLinie(linia, vx, vy) {
+  const odc = linia.map((q) => ({ a: { ...q.start }, b: { ...q.end } }));
+  for (const q of fl().walls) if (!linia.includes(q)) for (const k of ['start', 'end']) {
+    if (odc.some((o) => rzutNaOdcinek(q[k], o.a, o.b).d < 2)) q[k] = { x: zaokr1(q[k].x + vx), y: zaokr1(q[k].y + vy) };
+  }
+  for (const q of linia) { q.start = { x: zaokr1(q.start.x + vx), y: zaokr1(q.start.y + vy) }; q.end = { x: zaokr1(q.end.x + vx), y: zaokr1(q.end.y + vy) }; }
+}
+// ściany, na których kończy się ściana w (narożnik albo „T”), bez jej przedłużeń
+function naKoncu(w, k) {
+  return fl().walls.filter((q) => q !== w && !q.curvePoint && !wspolliniowe(q, w) && (rownoPunkt(q.start, w[k]) || rownoPunkt(q.end, w[k]) || rzutNaOdcinek(w[k], q.start, q.end).d < 2));
+}
+// wydłużenie / skrócenie ściany o d na końcu k: ściana, na której się kończy, przesuwa się równolegle
+function przesunKoniec(w, k, d) {
+  const drugi = k === 'start' ? 'end' : 'start', L = Math.hypot(w[k].x - w[drugi].x, w[k].y - w[drugi].y) || 1;
+  const ux = (w[k].x - w[drugi].x) / L, uy = (w[k].y - w[drugi].y) / L;
+  const linie = []; for (const q of naKoncu(w, k)) if (!linie.some((l) => l.includes(q))) linie.push(liniaSciany(q));
+  if (linie.length) { for (const l of linie) przesunLinie(l, ux * d, uy * d); return; }
+  const stary = { ...w[k] }; // wolny koniec
+  w[k] = { x: zaokr1(w[k].x + ux * d), y: zaokr1(w[k].y + uy * d) };
+  for (const q of fl().walls) if (q !== w && wspolliniowe(q, w)) for (const kk of ['start', 'end']) if (rownoPunkt(q[kk], stary)) q[kk] = { ...w[k] };
+}
+// który koniec ma się przesuwać: wolny, a jeśli oba gdzieś dochodzą — ten, przy którym przesuwa się krótsza ściana (np. tył wnęki, nie długa ściana korytarza)
+function domyslnyKoniec(w) {
+  const waga = (k) => { const l = []; for (const q of naKoncu(w, k)) if (!l.some((x) => x.includes(q))) l.push(liniaSciany(q)); return l.flat().reduce((a, q) => a + kierunek(q).l, 0); };
+  return waga('start') < waga('end') ? 'start' : 'end';
+}
+const koniecSciany = (w) => (S.dlKoniec?.id === w.id ? S.dlKoniec.k : domyslnyKoniec(w));
+function nazwaKonca(w, k) {
+  const drugi = k === 'start' ? 'end' : 'start', dx = w[k].x - w[drugi].x, dy = w[k].y - w[drugi].y;
+  return Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 'prawy koniec →' : '← lewy koniec') : (dy > 0 ? 'dolny koniec ↓' : '↑ górny koniec');
+}
+const czysta = (w) => { const g = S.sc?.sciany.find((q) => q.w.id === w.id); return g ? dlugoscCzysta(g, S.sc.sciany) : kierunek(w).l; };
+// długość w świetle (jak na rzucie i jak mierzy dalmierz / miarka)
 function ustawDlugosc(w, v) {
-  const L = Math.hypot(w.end.x - w.start.x, w.end.y - w.start.y); if (!(v > 5) || !L) return;
-  const ux = (w.end.x - w.start.x) / L, uy = (w.end.y - w.start.y) / L, stary = { ...w.end };
-  w.end = { x: Math.round((w.start.x + ux * v) * 10) / 10, y: Math.round((w.start.y + uy * v) * 10) / 10 };
-  for (const q of fl().walls) if (q !== w) for (const k of ['start', 'end']) if (rownoPunkt(q[k], stary)) q[k] = { ...w.end };
+  if (!(v > 5)) return;
+  przesunKoniec(w, koniecSciany(w), v - czysta(w));
 }
 // miniatury w katalogu: ten sam rysunek co na rzucie
 function miniatura(c, k) {
@@ -994,6 +1129,7 @@ function ustawProjekt(p, nowy = false) {
   $('#pusto').hidden = true;
   przebuduj(); dopasuj(); interfejs();
   if (nowy) zmieniono();
+  setTimeout(propozycjaDopasowania, 400);
 }
 async function z3dBiblioteki(oid) { // plan z edytora zaawansowanego zapisany na tym urządzeniu
   try {
@@ -1052,8 +1188,9 @@ async function wczytajBiblioteke() {
 function pokojeDoKarty() {
   const L = [];
   for (const f of S.projekt.floors) {
-    const sc = scena({ ...S.projekt, activeFloorId: f.id }, []);
-    for (const p of sc.pokoje) if (!p.otwor) L.push({ nazwa: (p.nazwa || '').trim(), m: p.m, kond: S.projekt.floors.length > 1 ? f.name : '' });
+    const sc = scena({ ...S.projekt, activeFloorId: f.id }, S.pomKarty);
+    // karta: nazwa pomieszczenia z karty, z którym rzut je połączył; dop: rzut dopasowany do pomiaru z tej karty
+    for (const p of sc.pokoje) if (!p.otwor) L.push({ nazwa: (p.nazwa || '').trim(), m: p.m, kond: S.projekt.floors.length > 1 ? f.name : '', karta: p.karta?.nazwa || '', dop: p.dop });
   }
   return L;
 }
@@ -1087,7 +1224,7 @@ async function zaawansowany() {
   location.href = `rzut/editor?am=${encodeURIComponent(S.oid)}`;
 }
 async function obrazRzutu(w3d = S.tryb3d) {
-  const op = { meble: S.meble, wymiary: S.wymiary, obrazy: S.obrazy };
+  const op = { meble: S.meble, wymiary: false, wymiaryPokoi: wymiaryPokoi(), obrazy: S.obrazy }; // wymiary ścian tylko w edytorze
   const eksport = w3d ? eksport3DPNG : eksportPNG, skalaE = w3d ? skalaEksportu3D : skalaEksportu;
   if (S.projekt.floors.length < 2) return eksport(S.sc, op);
   const sceny = S.projekt.floors.filter((f) => f.walls.length).map((f) => ({ f, sc: scena({ ...S.projekt, activeFloorId: f.id }, S.pomKarty) }));

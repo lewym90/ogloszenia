@@ -38,7 +38,7 @@ function kawalki(sc) {
     if (t < g.L) lista.push({ g, a0: t, a1: g.L, z: WYS, typ: 'sciana' });
     for (const o of otw) lista.push({ g, a0: Math.max(0, o.t0), a1: Math.min(g.L, o.t1), z: PARAPET, typ: 'parapet' });
     for (const k of lista) if (k.g === g) {
-      k.e0 = k.a0 <= 0.01 ? -g.th / 2 : k.a0; k.e1 = k.a1 >= g.L - 0.01 ? g.L + g.th / 2 : k.a1;
+      k.e0 = k.a0 <= 0.01 ? -(g.p0 ?? g.th / 2) : k.a0; k.e1 = k.a1 >= g.L - 0.01 ? g.L + (g.p1 ?? g.th / 2) : k.a1;
       k.czolo0 = k.a0 > 0.01 || wolnyPocz; k.czolo1 = k.a1 < g.L - 0.01 || wolnyKon; // czoło schowane w innej ścianie — nie rysujemy
     }
   }

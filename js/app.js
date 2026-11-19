@@ -5,7 +5,7 @@ import { zrobZip } from './zip.js';
 import * as K from './kopia.js';
 import * as R from './rzut.js';
 
-export const WERSJA = '1.7.3';
+export const WERSJA = '1.8.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -467,9 +467,9 @@ function poleHTML(p, o, calaSzerokosc = false) {
 }
 function sekcjaPom(o) {
   const pom = o.pom || [];
-  const suma = pom.reduce((s, p) => s + (Number(p.m) || 0), 0);
+  const suma = pom.reduce((s, p) => s + (Number(p.mRzut ?? p.m) || 0), 0);
   const num = (v) => (puste(v) ? '' : String(v).replace('.', ','));
-  return `${panelRzutu(o)}<p class="sek-opis">Wpisz długość i szerokość — metraż policzy się sam. Pomieszczenie nieregularne? Zostaw wymiary puste i wpisz metraż ręcznie. Suma: <b style="color:var(--gold-l)">${M.m2(Math.round(suma * 100) / 100)}</b>${o.pow ? ` z ${M.m2(o.pow)}` : ''}.</p>
+  return `${panelRzutu(o)}<p class="sek-opis">Wpisz długość i szerokość z dalmierza — od ściany do ściany przez całe pomieszczenie. Wnęki i załamania policzy rzut dopasowany do tych pomiarów. Bez rzutu, przy nieregularnym pomieszczeniu, zostaw wymiary puste i wpisz metraż ręcznie. Suma: <b style="color:var(--gold-l)">${M.m2(Math.round(suma * 100) / 100)}</b>${o.pow ? ` z ${M.m2(o.pow)}` : ''}.</p>
     <datalist id="dl-pom">${M.TYPY_POM.map((x) => `<option value="${x}">`).join('')}</datalist>
     ${pom.map((p, i) => grupa(p.nazwa || `Pomieszczenie ${i + 1}`, `<div class="siatka">
       <div class="pole pelna"><span class="et">Nazwa</span><div class="wejscie"><input data-l="pom" data-i="${i}" data-p="nazwa" data-t="t" list="dl-pom" placeholder="np. Sypialnia" value="${esc(p.nazwa || '')}" aria-label="Nazwa pomieszczenia"></div></div>
@@ -479,7 +479,7 @@ function sekcjaPom(o) {
         <div class="wejscie"><input data-l="pom" data-i="${i}" data-p="b" data-t="n" inputmode="decimal" placeholder="szerokość" value="${esc(num(p.b))}" aria-label="Szerokość w metrach"><span class="jedn">m</span></div>
         <span class="razy">=</span>
         <div class="wejscie ${p.a && p.b ? 'wyliczone' : ''}"><input data-l="pom" data-i="${i}" data-p="m" data-t="n" inputmode="decimal" placeholder="m²" value="${esc(num(p.m))}" aria-label="Metraż" ${p.a && p.b ? 'readonly' : ''}><span class="jedn">m²</span></div>
-      </div></div>
+      </div>${p.mRzut != null && p.a && p.b && Math.abs(p.mRzut - (Number(p.m) || 0)) >= 0.05 ? `<p class="info-pola" style="margin:6px 0 0">Z rzutu dopasowanego do tego pomiaru (cały kształt, z wnękami i załamaniami): <b style="color:var(--gold-l)">${esc(M.m2(p.mRzut))}</b> — ten metraż trafia do ogłoszenia.</p>` : ''}</div>
       <div class="pole pelna"><span class="et">Opis</span><div class="wejscie"><input data-l="pom" data-i="${i}" data-p="opis" data-t="t" placeholder="Krótko, faktami: okno na zachód, zabudowa 2021" value="${esc(p.opis || '')}" aria-label="Opis"></div></div>
       <div class="pole pelna"><button class="btn zly maly" data-a="usun-wiersz" data-l="pom" data-i="${i}">${ik('kosz')}Usuń pomieszczenie</button></div>
     </div>`)).join('')}
@@ -713,11 +713,13 @@ function zaproponujPomieszczenia(oid, pokoje) {
   const nazwane = pokoje.filter((r) => r.nazwa);
   const sk = R.scalPomieszczenia(o.pom || [], pokoje, M.noweId);
   const suma = nazwane.reduce((a, r) => a + r.m, 0);
-  const zm = new Map(sk.porownanie.map((x) => [x.nazwa.toLowerCase(), x]));
-  const w = okno('Pomieszczenia z rzutu', `<p class="sek-opis" style="margin-top:0">Rzut zapisany. Edytor policzył metraż wewnętrzny (podłoga między ścianami). Twoje pomiary dalmierzem zostają bez zmian — rzut uzupełni tylko resztę.</p>
-    <ul class="pom-rzut">${nazwane.map((r) => { const n = r.kond ? `${r.nazwa} (${r.kond})` : r.nazwa; const p = zm.get(n.toLowerCase()); return `<li><span>${esc(n)}${p ? `<small>Twój pomiar ${esc(M.m2(p.pomiar))} — zostaje${Math.abs(p.pomiar - p.rzut) >= 0.3 ? ` · różnica ${esc(M.liczba(Math.round((p.rzut - p.pomiar) * 100) / 100))} m²` : ''}</small>` : ''}</span><b>${esc(M.m2(r.m))}</b></li>`; }).join('')}<li class="suma"><span>Razem wg rzutu</span><b>${esc(M.m2(Math.round(suma * 100) / 100))}</b></li></ul>
+  const zm = new Map(sk.porownanie.map((x) => [x.nazwaRzutu.toLowerCase(), x]));
+  const wym = (p) => `${M.liczba(p.a)} × ${M.liczba(p.b)} m`;
+  const w = okno('Pomieszczenia z rzutu', `<p class="sek-opis" style="margin-top:0">Rzut zapisany. Edytor policzył metraż wewnętrzny (podłoga między ścianami). Twoje pomiary dalmierzem zostają bez zmian.</p>
+    <ul class="pom-rzut">${nazwane.map((r) => { const n = r.kond ? `${r.nazwa} (${r.kond})` : r.nazwa; const p = zm.get(n.toLowerCase()); const inna = p && p.nazwa.toLowerCase() !== n.toLowerCase() ? ` → w karcie „${esc(p.nazwa)}”` : '';
+      return `<li><span>${esc(n)}${p ? `<small>${p.dop ? `Rzut dopasowany do Twojego pomiaru ${esc(wym(p))} — metraż z całego kształtu, z wnękami${inna}` : `Twój pomiar ${esc(M.m2(p.pomiar))} — zostaje${inna}${Math.abs(p.pomiar - p.rzut) >= 0.3 ? ` · rzut niedopasowany, różnica ${esc(M.liczba(Math.round((p.rzut - p.pomiar) * 100) / 100))} m²` : ''}`}</small>` : ''}</span><b>${esc(M.m2(r.m))}</b></li>`; }).join('')}<li class="suma"><span>Razem wg rzutu</span><b>${esc(M.m2(Math.round(suma * 100) / 100))}</b></li></ul>
     ${sk.bezNazwy ? `<p class="info-pola">${sk.bezNazwy} ${sk.bezNazwy === 1 ? 'pomieszczenie nie ma' : 'pomieszczenia nie mają'} nazwy — nadaj je w edytorze, żeby też trafiły do karty.</p>` : ''}
-    <p class="info-pola">Pomieszczenia bez pomiaru o tej samej nazwie dostaną metraż z rzutu, nowe zostaną dopisane.</p>
+    <p class="info-pola">Pomieszczenia bez pomiaru dostaną metraż z rzutu, nowe zostaną dopisane.${sk.porownanie.some((p) => p.dop) ? ' Przy zmierzonych i dopasowanych metraż z rzutu zapisze się obok pomiaru i to on trafi do ogłoszenia (wymiary zostają Twoje).' : ''}</p>
     <div class="rzad" style="justify-content:flex-end;margin-top:14px"><button class="btn" data-n>Nie teraz</button><button class="btn zloty" data-t ${nazwane.length && (sk.zmienione || sk.dodane) ? '' : 'disabled'}>${sk.zmienione || sk.dodane ? 'Uzupełnij kartę' : 'Karta jest aktualna'}</button></div>`);
   w.addEventListener('click', async (e) => {
     if (e.target.closest('[data-n]')) { w.remove(); toast('Rzut zapisany w ofercie', 2500); }
@@ -929,7 +931,7 @@ function zapisz(el) {
     if (!arr[i]) return;
     const v = wartosc(el);
     if (v === null) delete arr[i][p]; else arr[i][p] = v;
-    if (l === 'pom' && (p === 'a' || p === 'b')) { const m = M.metrazZWymiarow(arr[i].a, arr[i].b); if (m !== null) arr[i].m = m; }
+    if (l === 'pom' && (p === 'a' || p === 'b')) { const m = M.metrazZWymiarow(arr[i].a, arr[i].b); if (m !== null) arr[i].m = m; delete arr[i].mRzut; } // nowy pomiar — rzut trzeba dopasować od nowa
     D.zmien(S.id, { [l]: arr });
   } else if (el.dataset.e) {
     // wpis: klient / prezentacja / dokument — osobne pole oferty

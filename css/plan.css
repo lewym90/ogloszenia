@@ -41,7 +41,7 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .pasek-akcji button svg { width: 21px; height: 21px; }
 .pasek-akcji button:active { background: rgba(255,255,255,0.08); }
 .pasek-akcji button.zly { color: #F0A49A; }
-.podpowiedz { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(11,11,13,0.88); color: var(--bone); font-size: 13.5px; padding: 8px 14px; border-radius: 12px; z-index: 2; white-space: nowrap; }
+.podpowiedz { position: absolute; top: 62px; left: 50%; transform: translateX(-50%); background: rgba(11,11,13,0.88); color: var(--bone); font-size: 13.5px; padding: 8px 14px; border-radius: 12px; z-index: 2; white-space: nowrap; }
 
 /* arkusz z ustawieniami zaznaczonego elementu */
 .arkusz { position: fixed; left: 0; right: 0; bottom: 0; max-height: 46vh; overflow-y: auto; background: #141416; border-top: 1px solid var(--linia); border-radius: 18px 18px 0 0; padding: 8px 16px calc(var(--sb) + 16px); z-index: 5; box-shadow: 0 -10px 30px rgba(0,0,0,0.35); }
@@ -120,3 +120,18 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .okno-tlo .rzad.pion { flex-direction: column; align-items: stretch; }
 .okno-tlo .rzad.pion button { min-height: 46px; }
 .arkusz .dwa button.maly { min-height: 46px; border-radius: 12px; border: 1px solid rgba(240,164,154,0.35); color: #F0A49A; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; }
+
+.podpowiedz.z-przyciskami { white-space: normal; width: min(92%, 440px); display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; font-size: 14px; line-height: 1.35; }
+.podpowiedz .pp-przyciski { display: flex; gap: 8px; }
+.podpowiedz .pp-przyciski button { flex: 1; min-height: 40px; border-radius: 10px; font: 600 14px Archivo, system-ui, sans-serif; background: rgba(255,255,255,0.1); color: var(--bone); }
+.podpowiedz .pp-przyciski button[data-a=kalibruj] { background: linear-gradient(180deg, #E2C77E, #C8A44D); color: #1c1b19; }
+.arkusz .kalibracja { list-style: none; margin: 4px 0 8px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.arkusz .kalibracja li { border: 1px solid var(--linia); border-radius: 12px; padding: 10px 12px; }
+.arkusz .kalibracja .k-gl { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 4px; }
+.arkusz .kalibracja .k-gl span { margin-left: auto; font-size: 14px; }
+.arkusz .kalibracja .k-gl small { color: var(--ash); font-size: 12.5px; }
+.arkusz .kalibracja .k-os { font-size: 13.5px; color: var(--ash); padding: 4px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.arkusz .kalibracja .k-os.zle { color: #F0A49A; }
+.arkusz .kalibracja .k-os .ok { color: #9FD3A6; }
+.arkusz .kalibracja .k-os button.maly { min-height: 34px; padding: 4px 10px; font-size: 12.5px; border-radius: 9px; border: 1px solid var(--linia); color: var(--gold-l); display: inline-flex; align-items: center; gap: 4px; }
+.arkusz .kalibracja .k-os button.maly svg { width: 15px; height: 15px; }

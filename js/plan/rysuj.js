@@ -3,6 +3,7 @@
 // Ten sam kod rysuje ekran edytora i obraz do ogłoszenia (eksportPNG).
 import * as G from './geom.js';
 import { MEBLE, PODLOGI, rodzajMebla, podlogaDla } from './biblioteka.js';
+import { dopasujNazwy } from './dopasuj.js';
 
 const SCIANA = '#1c1b19';
 const TEKST = '#24221f';
@@ -17,20 +18,39 @@ export function scena(projekt, pomKarty = []) {
   let twarze = [];
   try { twarze = G.resolveRoomGeometry(fl, fl.rooms || []); } catch { twarze = []; }
   const dziury = G.roomHoles(twarze.map((t) => t.polygon));
-  const karta = new Map((pomKarty || []).filter((p) => p.nazwa).map((p) => [klucz(p.nazwa), p]));
+  const nazwyT = twarze.map((t) => (/^(Room|Pomieszczenie) \d+$/.test((t.room.name || '').trim()) ? '' : (t.room.name || '').trim()));
+  const wKarcie = new Map(dopasujNazwy(nazwyT, (pomKarty || []).filter((p) => p.nazwa)).map((x) => [x.i, x]));
   const pokoje = twarze.map((t, i) => {
     let m = null;
     try { m = G.interiorRoomArea(t.polygon, dziury[i], fl.walls); } catch { /* */ }
     const nazwa = /^(Room|Pomieszczenie) \d+$/.test((t.room.name || '').trim()) ? '' : (t.room.name || '').trim(); // nazwy nadane automatycznie = bez nazwy
-    const k = karta.get(klucz(nazwa));
+    const x = wKarcie.get(i), k = x?.k, zm = k && k.a && k.b ? k : null;
+    // dopasowany do pomiarów z karty: metraż z rzutu (pełny kształt w skali dalmierza); inaczej przy zmierzonym pokoju — pomiar
+    const dop = !!(zm && t.room.amDopasowanie && Math.abs(t.room.amDopasowanie.a - zm.a) < 0.0005 && Math.abs(t.room.amDopasowanie.b - zm.b) < 0.0005);
     return { room: t.room, poly: t.polygon, dziury: dziury[i], m: m == null ? null : Math.round(m * 100) / 100,
-      mKarta: k && k.a && k.b ? k.m : null, nazwa, podloga: t.room.amPodloga || podlogaDla(nazwa), otwor: !!t.room.floorOpening };
+      mKarta: zm && !dop ? zm.m : null, karta: k || null, kartaPrzybl: !!x?.przyblizone, wym: zm ? { a: zm.a, b: zm.b } : null, dop,
+      nazwa, podloga: t.room.amPodloga || podlogaDla(nazwa), otwor: !!t.room.floorOpening };
   });
-  const sciany = fl.walls.map((w) => geomSciany(w, fl));
+  const sciany = przedluzenia(fl.walls.map((w) => geomSciany(w, fl)));
   return { fl, pokoje, sciany, granice: bounds(fl) };
 }
-export function przeliczSciany(sc) { sc.sciany = sc.fl.walls.map((w) => geomSciany(w, sc.fl)); sc.granice = bounds(sc.fl); }
-const klucz = (s) => String(s || '').trim().toLowerCase().replace(/\s+\d+$/, (m) => m);
+export function przeliczSciany(sc) { sc.sciany = przedluzenia(sc.fl.walls.map((w) => geomSciany(w, sc.fl))); sc.granice = bounds(sc.fl); }
+// o ile ściana wchodzi za swój koniec: w narożniku — do zewnętrznego lica ściany, na której się kończy (inna grubość nie wystaje za narożnik)
+function przedluzenia(sciany) {
+  for (const g of sciany) {
+    g.p0 = g.p1 = g.th / 2;
+    if (g.granica || g.luk) continue;
+    for (const [pt, k] of [[g.w.start, 'p0'], [g.w.end, 'p1']]) {
+      let m = null;
+      for (const h of sciany) {
+        if (h === g || h.granica || h.luk || Math.abs(h.ux * g.ux + h.uy * g.uy) > 0.95) continue;
+        if (odlOdcinka(pt.x, pt.y, h.w.start, h.w.end) < 3) m = Math.max(m ?? 0, h.th / 2);
+      }
+      if (m != null) g[k] = m;
+    }
+  }
+  return sciany;
+}
 
 function geomSciany(w, fl) {
   const dx = w.end.x - w.start.x, dy = w.end.y - w.start.y, L = Math.hypot(dx, dy) || 1;
@@ -170,7 +190,7 @@ function miejsceNapisu(p, meble) {
   const stale = meble.filter((f) => !naPodlodze(f));
   let best = null;
   for (const u of uklady) {
-    const hw = Math.min((x1 - x0) * 0.45, (u.linia * 11.5) / 2 + 6), hh = u.dwie ? 34 : 22;
+    const hw = Math.min((x1 - x0) * 0.45, (u.linia * 11.5) / 2 + 6), hh = (u.dwie ? 34 : 22) + (p.wym ? 9 : 0);
     const ocena = (x, y) => {
       if (!wPokoju(p, x, y)) return -1;
       let d = Infinity, kolizje = 0;
@@ -399,7 +419,7 @@ export function rysuj(ctx, sc, widok, op = {}) {
     for (const o of g.otwory) { if (o.t0 > t) kawalki.push([t, o.t0]); t = Math.max(t, o.t1); }
     if (t < g.L) kawalki.push([t, g.L]);
     for (const [a0, a1] of kawalki) {
-      const e0 = a0 <= 0.01 ? -g.th / 2 : a0, e1 = a1 >= g.L - 0.01 ? g.L + g.th / 2 : a1;
+      const e0 = a0 <= 0.01 ? -g.p0 : a0, e1 = a1 >= g.L - 0.01 ? g.L + g.p1 : a1;
       const x = g.w.start.x, y = g.w.start.y, h = g.th / 2;
       ctx.beginPath();
       ctx.moveTo(x + g.ux * e0 + g.nx * h, y + g.uy * e0 + g.ny * h); ctx.lineTo(x + g.ux * e1 + g.nx * h, y + g.uy * e1 + g.ny * h);
@@ -481,11 +501,13 @@ export function rysuj(ctx, sc, widok, op = {}) {
     }
     const maxW = Math.max(...linie.map((l) => ctx.measureText(l).width));
     if (maxW > szer * 1.25) { const k = Math.max(0.62, (szer * 1.25) / maxW); f1 *= k; f2 *= k; }
-    const cx = sx(pos.x), cy = sy(pos.y), lh = f1 * 1.18, h = linie.length * lh + (m != null ? f2 * 1.3 : 0);
+    const wym = op.wymiaryPokoi !== false && !p.room.amBezWymiarow && p.wym ? `${p.wym.a.toFixed(2).replace('.', ',')} × ${p.wym.b.toFixed(2).replace('.', ',')} m` : ''; // główne wymiary z dalmierza
+    const cx = sx(pos.x), cy = sy(pos.y), lh = f1 * 1.18, h = linie.length * lh + (m != null ? f2 * 1.3 : 0) + (wym ? f2 * 1.2 : 0);
     let y = cy - h / 2 + lh / 2;
     ctx.lineJoin = 'round';
     for (const l of linie) { napis(ctx, l, cx, y, `600 ${f1}px Archivo, system-ui, sans-serif`, TEKST, f1); y += lh; }
-    if (m != null) napis(ctx, `${(Math.round(m * 10) / 10).toFixed(1).replace('.', ',')} m²`, cx, y + f2 * 0.15, `400 ${f2}px Archivo, system-ui, sans-serif`, '#4a463f', f2);
+    if (m != null) { napis(ctx, `${(Math.round(m * 10) / 10).toFixed(1).replace('.', ',')} m²`, cx, y + f2 * 0.15, `400 ${f2}px Archivo, system-ui, sans-serif`, '#4a463f', f2); y += f2 * 1.25; }
+    if (wym) napis(ctx, wym, cx, y + f2 * 0.05, `400 ${f2 * 0.88}px Archivo, system-ui, sans-serif`, '#5e594f', f2 * 0.88);
     zajete.push({ x0: cx - maxW / 2 - 4, x1: cx + maxW / 2 + 4, y0: cy - h / 2 - 2, y1: cy + h / 2 + 2 });
   }
   for (const t of op.bezNapisow ? [] : fl.textAnnotations || []) {
@@ -531,7 +553,7 @@ function napis(ctx, t, x, y, font, kolor, f) {
   ctx.fillStyle = kolor; ctx.fillText(t, x, y);
 }
 // długość ściany w świetle (bez połówek ścian dochodzących na końcach)
-function dlugoscCzysta(g, sciany) {
+export function dlugoscCzysta(g, sciany) {
   let L = g.L;
   for (const [pt, ] of [[g.w.start], [g.w.end]]) {
     let m = 0;
