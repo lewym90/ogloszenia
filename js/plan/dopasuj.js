@@ -360,6 +360,7 @@ export function dopasujDoPomiarow(fl, pokoje, pomiary) {
     nowe[g.os][g.n] = { c: (l.L + l.R) / 2, t: g.gr || g.zewn ? null : t };
   }
   zastosuj(fl, U, nowe);
+  przyklejDrzwi(fl);
   return { raport, grubosci };
 }
 
@@ -368,6 +369,44 @@ export function dopasujDoPomiarow(fl, pokoje, pomiary) {
 //   skrzydło jako otwór) → drzwi pojedyncze; szersze przejścia zostają otworami. Szerokość skrzydła → najbliższa typowa.
 // • meble wykryte podwójnie (szafka pod zlewem, lodówka w zabudowie, szafki wiszące nad blatem) → zostaje jeden.
 const SKRZYDLA = [60, 70, 80, 90, 100];
+// ---------- drzwi przy narożniku: co w skanie dolega do ściany, dolega zawsze ----------
+// lica ścian poprzecznych, na których kończy się / które przecinają tę ścianę (s — cm wzdłuż osi od początku ściany)
+function licaPoprzeczne(fl, w) {
+  const L = Math.hypot(w.end.x - w.start.x, w.end.y - w.start.y) || 1, ux = (w.end.x - w.start.x) / L, uy = (w.end.y - w.start.y) / L, t = w.thickness || 10;
+  const lok = (p) => ({ s: (p.x - w.start.x) * ux + (p.y - w.start.y) * uy, o: (p.x - w.start.x) * -uy + (p.y - w.start.y) * ux });
+  const out = [];
+  for (const q of fl.walls) {
+    if (q === w || q.granica) continue;
+    const lq = Math.hypot(q.end.x - q.start.x, q.end.y - q.start.y) || 1;
+    if (Math.abs(((q.end.x - q.start.x) / lq) * ux + ((q.end.y - q.start.y) / lq) * uy) > 0.05) continue;
+    const a = lok(q.start), b = lok(q.end), tq = q.thickness || 10;
+    if (Math.max(a.o, b.o) < -t / 2 - 3 || Math.min(a.o, b.o) > t / 2 + 3) continue; // nie dochodzi do tej ściany
+    const sq = (a.s + b.s) / 2; if (sq < -tq || sq > L + tq) continue;
+    out.push({ lo: sq + tq / 2, hi: sq - tq / 2 }); // lo: lico patrzące w stronę rosnącego s, hi: w stronę malejącego
+  }
+  return { L, out };
+}
+const PRZY_NAROZNIKU = 12; // cm między krawędzią drzwi a licem ściany — w skanie to „dolega”
+export function naroznikDrzwi(fl, d) {
+  const w = fl.walls.find((q) => q.id === d.wallId); if (!w) return null;
+  const { L, out } = licaPoprzeczne(fl, w), c = d.position * L, e0 = c - d.width / 2, e1 = c + d.width / 2;
+  let best = null;
+  for (const l of out) {
+    if (l.lo <= e0 + 5 && e0 - l.lo <= PRZY_NAROZNIKU && (!best || e0 - l.lo < best.g)) best = { k: 'a', g: e0 - l.lo };
+    if (l.hi >= e1 - 5 && l.hi - e1 <= PRZY_NAROZNIKU && (!best || l.hi - e1 < best.g)) best = { k: 'b', g: l.hi - e1 };
+  }
+  return best ? best.k : null;
+}
+// ustawia drzwi oznaczone amNaroznik równo z licem ściany poprzecznej (po zmianie szerokości, dopasowaniu, przesunięciu ścian)
+export function przyklejDrzwi(fl) {
+  for (const d of fl.doors || []) {
+    if (!d.amNaroznik) continue;
+    const w = fl.walls.find((q) => q.id === d.wallId); if (!w) continue;
+    const { L, out } = licaPoprzeczne(fl, w), c = d.position * L;
+    if (d.amNaroznik === 'a') { const l = out.map((x) => x.lo).filter((v) => v <= c).sort((x, y) => y - x)[0]; if (l != null && c - d.width / 2 - l < 40) d.position = Math.min(1 - d.width / 2 / L, (l + d.width / 2) / L); }
+    else { const l = out.map((x) => x.hi).filter((v) => v >= c).sort((x, y) => x - y)[0]; if (l != null && l - (c + d.width / 2) < 40) d.position = Math.max(d.width / 2 / L, (l - d.width / 2) / L); }
+  }
+}
 export function porzadkujSkan(fl, pokoje) {
   const polys = pokoje.filter((p) => !p.otwor).map((p) => p.poly);
   const ilePokoi = (x, y) => polys.filter((q) => wWielokacie(q, x, y)).length;
@@ -378,13 +417,16 @@ export function porzadkujSkan(fl, pokoje) {
     const cx = w.start.x + ux * d.position * L, cy = w.start.y + uy * d.position * L, o = (w.thickness || 10) / 2 + 12;
     const obie = ilePokoi(cx - uy * o, cy + ux * o) > 0 && ilePokoi(cx + uy * o, cy - ux * o) > 0;
     if (d.type === 'opening' && obie && d.width >= 55 && d.width <= 125) { d.type = 'single'; d.amZOtworu = true; drzwi++; }
+    const naroznik = naroznikDrzwi(fl, d); if (naroznik) d.amNaroznik = naroznik;
     if (d.type === 'single' && d.width > 135) d.type = 'double';
     if (d.type === 'single' || d.type === 'double') {
       const n = d.type === 'double' ? 2 : 1, skrz = (d.width - 7) / n;
       const typowe = SKRZYDLA.reduce((a, s) => (Math.abs(s - skrz) < Math.abs(a - skrz) ? s : a), SKRZYDLA[0]);
+      if (d.amSzerSkanu === undefined) d.amSzerSkanu = Math.round(d.width * 10) / 10; // surowa szerokość ze skanu (np. front szafy wzięty za drzwi)
       d.width = typowe * n;
     }
   }
+  przyklejDrzwi(fl);
   const F = fl.furniture || [], usun = new Set();
   const prost = (f) => ({ x0: f.position.x - (f.width || 50) / 2, x1: f.position.x + (f.width || 50) / 2, y0: f.position.y - (f.depth || 50) / 2, y1: f.position.y + (f.depth || 50) / 2 });
   const nakladanie = (a, b) => { // przybliżenie: prostokąty bez obrotu (skan i tak jest pod kątem prostym), obrócone o 90° — zamiana boków
@@ -401,4 +443,97 @@ export function porzadkujSkan(fl, pokoje) {
   }
   if (usun.size) { fl.furniture = F.filter((f) => !usun.has(f)); meble = usun.size; }
   return { drzwi, meble };
+}
+
+// ---------- szafa we wnęce ----------
+// Skaner bierze front szafy wnękowej za ścianę (z „drzwiami” albo cienkim obiektem przy niej). Prawdziwy tył szafy to najbliższa
+// ściana za frontem, którą skaner widział: ściana zewnętrzna / klatki tego samego pomieszczenia (linia obrysu mieszkania)
+// albo inna równoległa ściana. Szerokość = front ze skanu, dociągnięty do narożnika, gdy brakuje < 20 cm.
+// Istniejące ściany zostają bokami wnęki (żadnej nowej ścianki obok istniejącej). Bez pól do wpisywania.
+// zakres: { scianaId, s0, s1 } — front w cm wzdłuż osi ściany od jej początku; strona: ±1 tylko gdy po obu stronach są pomieszczenia.
+export function frontSzafy(fl, scianaId, drzwiId) {
+  const w = fl.walls.find((q) => q.id === scianaId); if (!w) return null;
+  const L = Math.hypot(w.end.x - w.start.x, w.end.y - w.start.y) || 1, ux = (w.end.x - w.start.x) / L, uy = (w.end.y - w.start.y) / L, t = w.thickness || 10;
+  const lok = (x, y) => ({ s: (x - w.start.x) * ux + (y - w.start.y) * uy, o: (x - w.start.x) * -uy + (y - w.start.y) * ux });
+  let s0 = Infinity, s1 = -Infinity; const fronty = [];
+  const d = drzwiId && (fl.doors || []).find((q) => q.id === drzwiId);
+  if (d) { const sz = d.amSzerSkanu || d.width, c = d.position * L; s0 = c - sz / 2; s1 = c + sz / 2; }
+  for (const m of fl.furniture || []) { // cienki obiekt równoległy do ściany, tuż przy niej (front szafy ze skanu)
+    const r = (((m.rotation || 0) % 180) + 180) % 180, katSc = (((Math.atan2(uy, ux) * 180) / Math.PI) % 180 + 180) % 180;
+    const dk = Math.min(Math.abs(r - katSc), 180 - Math.abs(r - katSc)), wzdl = dk < 10 ? m.width : Math.abs(dk - 90) < 10 ? m.depth : null, w2 = dk < 10 ? m.depth : m.width;
+    if (wzdl == null || !(w2 <= 20) || wzdl < 40) continue;
+    const q = lok(m.position.x, m.position.y); if (Math.abs(q.o) > t / 2 + w2 / 2 + 12) continue;
+    const a = q.s - wzdl / 2, b = q.s + wzdl / 2;
+    if (d && (b < s0 - 5 || a > s1 + 5)) continue; // przy drzwiach bierzemy tylko front, który na nie zachodzi
+    fronty.push(m.id); s0 = Math.min(s0, a); s1 = Math.max(s1, b);
+  }
+  if (!(s1 > s0)) return null;
+  return { scianaId, s0: Math.max(0, s0), s1: Math.min(L, s1), fronty, drzwiId: d ? d.id : null };
+}
+export function szafaWeWnece(fl, pokoje, zakres, noweId, strona = 0) {
+  const w = fl.walls.find((q) => q.id === zakres.scianaId); if (!w) return { blad: 'brak ściany' };
+  const L = Math.hypot(w.end.x - w.start.x, w.end.y - w.start.y) || 1, ux = (w.end.x - w.start.x) / L, uy = (w.end.y - w.start.y) / L, nx = -uy, ny = ux, t = w.thickness || 10;
+  const P = (s, o) => ({ x: Math.round((w.start.x + ux * s + nx * o) * 10) / 10, y: Math.round((w.start.y + uy * s + ny * o) * 10) / 10 });
+  const lok = (p) => ({ s: (p.x - w.start.x) * ux + (p.y - w.start.y) * uy, o: (p.x - w.start.x) * nx + (p.y - w.start.y) * ny });
+  const polys = pokoje.filter((p) => !p.otwor);
+  const pokojW = (s, o) => { const q = P(s, o); return polys.find((p) => wWielokacie(p.poly, q.x, q.y)) || null; };
+  const sm = (zakres.s0 + zakres.s1) / 2, plus = pokojW(sm, t / 2 + 12), minus = pokojW(sm, -t / 2 - 12);
+  if (!plus && !minus) return { blad: 'Po żadnej stronie tej ściany nie ma pomieszczenia.' };
+  let sg = !plus ? 1 : !minus ? -1 : strona; // sg: strona, w którą wchodzi wnęka
+  if (!sg) return { potrzebnaStrona: true, plus: plus.room?.name || '', minus: minus.room?.name || '' };
+  const wlasciciel = sg === 1 ? minus : plus, tyl0 = sg * t / 2; // lico ściany od strony szafy (front) = -sg·t/2; tył zaczyna się za ścianą
+  const kier = (q) => { const l = Math.hypot(q.end.x - q.start.x, q.end.y - q.start.y) || 1; return { x: (q.end.x - q.start.x) / l, y: (q.end.y - q.start.y) / l }; };
+  const rownolegle = (q) => { const d = kier(q); return Math.abs(d.x * nx + d.y * ny) < 0.05; };
+  const prostopadle = (q) => { const d = kier(q); return Math.abs(d.x * ux + d.y * uy) < 0.05; };
+  // tył: równoległa ściana za frontem (oś 15–130 cm dalej niż lico ściany), najpierw ściany tego samego pomieszczenia (obrys)
+  const kand = fl.walls.filter((q) => q !== w && !q.granica && rownolegle(q)).map((q) => ({ q, o: lok(q.start).o, t: q.thickness || 10 }))
+    .filter((k) => k.o * sg - k.t / 2 > t / 2 + 15 && k.o * sg - k.t / 2 < t / 2 + 130)
+    .map((k) => { const a = lok(k.q.start).s, b = lok(k.q.end).s; return { ...k, s0: Math.min(a, b), s1: Math.max(a, b), swoja: !!wlasciciel.room?.walls?.includes(k.q.id), d: k.o * sg }; })
+    // za frontem (zachodzi na niego) albo obrys tego samego pomieszczenia połączony z tą ścianą jedną ścianką poprzeczną (jak ścianka przy drzwiach wejściowych)
+    .filter((k) => (k.s1 > zakres.s0 + 5 && k.s0 < zakres.s1 - 5) || (k.swoja && fl.walls.some((r) => {
+      if (r === w || r === k.q || !prostopadle(r)) return false;
+      const e = [lok(r.start), lok(r.end)], naW = (p) => Math.abs(p.o) <= t / 2 + 3 && p.s > -5 && p.s < L + 5, naK = (p) => Math.abs(p.o - k.o) <= k.t / 2 + 3 && p.s > k.s0 - 5 && p.s < k.s1 + 5;
+      return (naW(e[0]) && naK(e[1])) || (naW(e[1]) && naK(e[0]));
+    })));
+  kand.sort((a, b) => (b.swoja - a.swoja) || (a.d - b.d));
+  const tylna = kand[0] || null, tb = tylna ? tylna.t : t;
+  const licoTylu = tylna ? tylna.o - sg * tylna.t / 2 : -sg * t / 2 + sg * 60; // brak ściany za frontem: typowa szafa 60 cm
+  const oT = licoTylu + sg * tb / 2; // oś ściany tylnej
+  const gleb = Math.abs(licoTylu - -sg * t / 2);
+  // narożniki: ściany prostopadłe dochodzące do tej ściany
+  const prost = fl.walls.filter((q) => q !== w && !q.granica && prostopadle(q)).flatMap((q) => {
+    const a = lok(q.start), b = lok(q.end), tq = q.thickness || 10;
+    return [[a, b, 'start'], [b, a, 'end']].filter(([p]) => Math.abs(p.o) <= t / 2 + 3 && p.s > -tq && p.s < L + tq).map(([p, inny, k]) => ({ q, k, s: p.s, t: tq, poStronie: inny.o * sg > t / 2 }));
+  });
+  let s0 = zakres.s0, s1 = zakres.s1, bokA = null, bokB = null;
+  const naRogu = (s, kr) => prost.filter((r) => (kr < 0 ? r.s < s + 10 : r.s > s - 10) && Math.abs(s - (r.s - kr * r.t / 2)) < 20).sort((a, b) => b.poStronie - a.poStronie || Math.abs(s - a.s) - Math.abs(s - b.s))[0];
+  const rA = naRogu(s0, -1), rB = naRogu(s1, 1);
+  if (rA) { s0 = rA.s + rA.t / 2; if (rA.poStronie) bokA = rA; }
+  if (rB) { s1 = rB.s - rB.t / 2; if (rB.poStronie) bokB = rB; }
+  const tw = 12, A = bokA ? bokA.s : s0 - tw / 2, B = bokB ? bokB.s : s1 + tw / 2;
+  const szer = s1 - s0;
+  // budowa: ściana rozcięta, boki (istniejące wydłużone do tyłu albo nowe), tył
+  const nowe = [], kopia = (o) => ({ ...JSON.parse(JSON.stringify(o)), id: noweId() });
+  const koniec = { ...w.end };
+  const kawA = A > 2, kawB = L - B > 2;
+  const w2 = kawB ? { ...kopia(w), start: P(B, 0), end: koniec } : null;
+  if (kawA) w.end = P(A, 0);
+  const wydluz = (r) => { const p = lok(r.q[r.k === 'start' ? 'end' : 'start']); if (p.o * sg < oT * sg) r.q[r.k === 'start' ? 'end' : 'start'] = P(r.s, oT); };
+  if (bokA) wydluz(bokA); else nowe.push({ ...kopia(w), start: P(A, 0), end: P(A, oT), thickness: tw });
+  if (bokB) wydluz(bokB); else nowe.push({ ...kopia(w), start: P(B, oT), end: P(B, 0), thickness: tw });
+  nowe.push({ ...kopia(w), start: P(A, oT), end: P(B, oT), thickness: tb });
+  if (w2) nowe.push(w2);
+  for (const q of nowe) delete q.granica;
+  fl.walls.push(...nowe);
+  if (!kawA) fl.walls = fl.walls.filter((q) => q !== w);
+  for (const kol of ['doors', 'windows']) fl[kol] = (fl[kol] || []).filter((o) => {
+    if (o.wallId !== w.id) return true; if (o.id === zakres.drzwiId) return false;
+    const s = o.position * L;
+    if (kawA && s + o.width / 2 <= A) { o.position = s / A; return true; }
+    if (w2 && s - o.width / 2 >= B) { o.wallId = w2.id; o.position = (s - B) / (L - B); return true; }
+    return false;
+  });
+  przyklejDrzwi(fl);
+  if (zakres.fronty?.length) fl.furniture = (fl.furniture || []).filter((m) => !zakres.fronty.includes(m.id));
+  return { szer, gleb, tylna: tylna ? tylna.q.id : null, wlasciciel: wlasciciel.room?.name || '' };
 }

@@ -525,7 +525,7 @@ export function rysuj(ctx, sc, widok, op = {}) {
     }
     const f3 = 11.5 * F;
     ctx.font = `500 ${f3}px Archivo, system-ui, sans-serif`;
-    const lista = sciany.filter((g) => !g.granica && !g.luk).map((g) => ({ g, L: dlugoscCzysta(g, sciany) })).filter((q) => q.L >= 35).sort((a, b) => b.L - a.L);
+    const lista = sciany.filter((g) => !g.granica && !g.luk).map((g) => ({ g, L: dlugoscCzysta(g, sciany, pokoje) })).filter((q) => q.L >= 35).sort((a, b) => b.L - a.L);
     for (const { g, L } of lista) {
       const tekst = `${Math.round(L)} cm`, tw = ctx.measureText(tekst).width, th = f3;
       if (tw > g.L * s * 1.6) continue; // za mało miejsca przy tym powiększeniu
@@ -553,18 +553,28 @@ function napis(ctx, t, x, y, font, kolor, f) {
   ctx.fillStyle = kolor; ctx.fillText(t, x, y);
 }
 // długość ściany w świetle (bez połówek ścian dochodzących na końcach)
-export function dlugoscCzysta(g, sciany) {
-  let L = g.L;
-  for (const [pt, ] of [[g.w.start], [g.w.end]]) {
-    let m = 0;
+// długość w świetle — po stronie pomieszczenia: w narożniku wklęsłym do lica ściany poprzecznej, w wypukłym (ścianka wystająca w głąb
+// pokoju, np. obudowa pionów) — do jej zewnętrznego lica, bo tyle widać i tyle mierzy taśma
+export function dlugoscCzysta(g, sciany, pokoje = null) {
+  let L = g.L, sigma = 0;
+  if (pokoje) {
+    const mx = g.w.start.x + g.ux * g.L / 2, my = g.w.start.y + g.uy * g.L / 2, o = g.th / 2 + 6;
+    const plus = pokoje.some((p) => !p.otwor && wPokoju(p, mx + g.nx * o, my + g.ny * o)), minus = pokoje.some((p) => !p.otwor && wPokoju(p, mx - g.nx * o, my - g.ny * o));
+    sigma = plus && !minus ? 1 : minus && !plus ? -1 : 0;
+  }
+  for (const pt of [g.w.start, g.w.end]) {
+    let m = 0, wyp = 0;
     for (const h of sciany) {
       if (h === g || h.granica) continue;
       if (odlOdcinka(pt.x, pt.y, h.w.start, h.w.end) < 3) {
-        const rown = Math.abs(h.ux * g.ux + h.uy * g.uy) > 0.95; // współliniowa — przedłużenie, nie narożnik
-        if (!rown) m = Math.max(m, h.th / 2);
+        if (Math.abs(h.ux * g.ux + h.uy * g.uy) > 0.95) continue; // współliniowa — przedłużenie, nie narożnik
+        const ds = Math.hypot(h.w.start.x - pt.x, h.w.start.y - pt.y), de = Math.hypot(h.w.end.x - pt.x, h.w.end.y - pt.y);
+        const inny = ds < 3 ? h.w.end : de < 3 ? h.w.start : null; // null: ściana kończy się w środku poprzecznej („T”)
+        const strona = inny ? Math.sign((inny.x - pt.x) * g.nx + (inny.y - pt.y) * g.ny) : 0;
+        if (sigma && inny && strona === -sigma) wyp = Math.max(wyp, h.th / 2); else m = Math.max(m, h.th / 2);
       }
     }
-    L -= m;
+    L -= m || -wyp;
   }
   return L;
 }

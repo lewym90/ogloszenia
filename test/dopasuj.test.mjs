@@ -89,3 +89,52 @@ test('porządki po skanie: otwór między pokojami → drzwi, typowe skrzydła, 
   assert.deepEqual(f.furniture.map((x) => x.id).sort(), ['a', 'c']);
   assert.equal(r.meble, 2);
 });
+
+// klatka schodowa za ścianą z drzwiami wejściowymi; między łazienką a ścianką przy wejściu skaner widzi front szafy jako ścianę
+function zSzafa() {
+  const p = G.createDefaultProject('t'), f = p.floors[0];
+  const W = (id, a, b, t) => f.walls.push({ id, start: { x: a[0], y: a[1] }, end: { x: b[0], y: b[1] }, thickness: t, height: 260 });
+  W('gora', [0, 0], [500, 0], 25); W('prawa1', [500, 0], [500, 100], 25); W('lazD1', [300, 100], [440, 100], 10); W('lazD2', [440, 100], [500, 100], 10);
+  W('front', [440, 100], [440, 300], 25); W('stopka', [440, 300], [500, 300], 25); W('wejscie', [500, 300], [500, 600], 25);
+  W('dol', [500, 600], [0, 600], 25); W('lewa', [0, 600], [0, 0], 25); W('lazL', [300, 0], [300, 100], 10); W('kor', [300, 100], [300, 600], 12);
+  f.doors = [{ id: 'sz', wallId: 'front', position: 0.25, width: 70, amSzerSkanu: 80, height: 205, type: 'single' }];
+  f.rooms = G.resolveRooms(f, []);
+  return f;
+}
+test('szafa we wnęce: tył na linii obrysu, bok = istniejąca ściana łazienki, szerokość z frontu, bez pytań', async () => {
+  const { frontSzafy, szafaWeWnece } = await import('../js/plan/dopasuj.js');
+  const f = zSzafa(), przed = pokoje(f), kor0 = nr(przed, 400, 400).m;
+  let n = 0; const r = szafaWeWnece(f, przed, frontSzafy(f, 'front', 'sz'), () => 'n' + n++);
+  f.rooms = G.resolveRooms(f, f.rooms); const po = pokoje(f), kor1 = nr(po, 400, 400);
+  assert.ok(!r.blad && !r.potrzebnaStrona, JSON.stringify(r));
+  assert.equal(Math.round(r.gleb), 60, 'głębokość = ścianka przy wejściu (do lica ściany klatki)');
+  assert.equal(Math.round(r.szer), 85, 'szerokość: front 80 dociągnięty do ściany łazienki');
+  assert.equal(r.tylna, 'wejscie');
+  assert.equal(po.length, przed.length, 'ta sama liczba pomieszczeń');
+  assert.ok(Math.abs(kor1.m - kor0 - 0.85 * 0.6) < 0.03, `korytarz ${kor0} → ${kor1.m}`);
+  assert.ok(nr(po, 470, 130) === kor1, 'wnęka należy do korytarza');
+  assert.ok(!nr(po, 470, 250), 'pion za frontem (poza wnęką) zostaje poza mieszkaniem');
+  const poziome = f.walls.filter((w) => Math.abs(w.start.y - w.end.y) < 0.5 && Math.abs(w.start.y - 100) < 20 && Math.max(w.start.x, w.end.x) > 440);
+  assert.equal(poziome.length, 1, 'bok wnęki to ściana łazienki — żadnej drugiej ścianki obok');
+  assert.ok(!f.doors.some((d) => d.id === 'sz'), 'drzwi szafy usunięte');
+  const xs = f.walls.flatMap((w) => [w.start.x, w.end.x]); assert.ok(Math.max(...xs) <= 500.01, 'nic nie wychodzi poza obrys (na klatkę)');
+});
+test('szafa we wnęce: ściana między dwoma pokojami — pyta tylko, do którego należy', async () => {
+  const { frontSzafy, szafaWeWnece } = await import('../js/plan/dopasuj.js');
+  const f = zSzafa(); f.doors = [{ id: 'sz', wallId: 'kor', position: 0.5, width: 90, height: 205, type: 'single' }];
+  const r = szafaWeWnece(f, pokoje(f), frontSzafy(f, 'kor', 'sz'), () => 'x');
+  assert.ok(r.potrzebnaStrona);
+  let n = 0; const r2 = szafaWeWnece(f, pokoje(f), frontSzafy(f, 'kor', 'sz'), () => 'n' + n++, 1);
+  assert.ok(!r2.blad && Math.round(r2.gleb) === 60);
+  f.rooms = G.resolveRooms(f, f.rooms); assert.equal(pokoje(f).length, 3);
+});
+test('drzwi dolegające w skanie do ściany zostają przy niej (po zmianie szerokości i dopasowaniu)', async () => {
+  const { porzadkujSkan } = await import('../js/plan/dopasuj.js');
+  const f = zSzafa(); // drzwi szafy: surowo 80 cm, krawędź 5 cm od lica ściany łazienki; zwykłe drzwi 40 cm od narożnika
+  f.doors = [{ id: 'a', wallId: 'front', position: 50 / 200, width: 80, type: 'single' }, { id: 'b', wallId: 'kor', position: 0.5, width: 92, type: 'single' }];
+  porzadkujSkan(f, pokoje(f));
+  const a = f.doors.find((d) => d.id === 'a'), b = f.doors.find((d) => d.id === 'b');
+  assert.equal(a.amNaroznik, 'a'); assert.equal(a.width, 70);
+  assert.ok(Math.abs(a.position * 200 - a.width / 2 - 5) < 0.01, `krawędź równo z licem ściany łazienki (${a.position * 200 - a.width / 2})`);
+  assert.ok(!b.amNaroznik && Math.abs(b.position - 0.5) < 1e-9, 'drzwi daleko od narożnika — bez zmian położenia');
+});
