@@ -60,7 +60,7 @@ const BRYLY = {
   regal: 195, regal_szeroki: 195, witryna: 190, regal_pralnia: 180, regal_metalowy: 190, regal_magazynowy: 190, regal_sklepowy: 170,
   lodowka: 200, lodowka_zabudowa: 210, slupek_piekarnik: 210, szafka_wysoka: 210, zamrazarka: 180, pralka_suszarka: 170,
   komoda: 85, kredens: 90, szafka_nocna: 55, szafka_nocna2: 55, szafka_rtv: 50, szafka_niska: 55, szafka_waska: 90, szafka_buty: 95,
-  blat: 90, blat_120: 90, blat_40: 90, zmywarka: 88, kuchenka: 88, szafka_kuchenna: 90, zlew: 90, zlew_podwojny: 90, plyta_indukcyjna: 90, plyta_gazowa: 90,
+  blat: 90, blat_120: 90, blat_40: 90, ciag_kuchenny_180: 90, ciag_kuchenny_240: 90, ciag_kuchenny_300: 90, zmywarka: 88, kuchenka: 88, szafka_kuchenna: 90, zlew: 90, zlew_podwojny: 90, plyta_indukcyjna: 90, plyta_gazowa: 90,
   wyspa: 92, wyspa_zlew: 92, wyspa_plyta: 92, polwysep: 92, pralka: 88, suszarka: 88, winiarka: 88,
   umywalka_szafka: 85, umywalka_podwojna: 85, szafka_lazienkowa: 85, kontener: 60, szafka_drukarka: 70, szafka_narzedziowa: 100,
   lada_kasowa: 100, recepcja: 110, bar: 110, kominek: 100,

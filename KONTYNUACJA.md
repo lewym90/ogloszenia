@@ -157,3 +157,12 @@ Testy: test/ui_plan_test.py, ui_rzut_test.py, ui_granica_test.py, ui_plan_pietra
 - Drzwi przy narożniku: krawędź ≤ 12 cm od lica ściany poprzecznej w skanie → `door.amNaroznik = 'a'|'b'`; `przyklejDrzwi` trzyma je równo z licem po zmianie szerokości (typowe skrzydła), dopasowaniu, przesuwaniu ścian (wywoływane w `przebuduj`). Ręczne przesunięcie drzwi zdejmuje znacznik.
 - `dlugoscCzysta(g, sciany, pokoje)`: długość w świetle od strony pomieszczenia — w narożniku wypukłym (ścianka wystająca w głąb pokoju) do zewnętrznego lica poprzecznej, czyli tyle, ile mierzy taśma (np. ścianka przy wejściu 61 cm, nie 35).
 - Skan właściciela: szafa 84 × 61 cm przy ścianie łazienki, Przedpokój 8,86 m², 0 wolnych końców; drzwi wejściowe, do Pokoju, do Sypialni i front szafy przyklejone do narożników jak w skanie.
+
+## 1.9.3 (19.11.2026) — nowe elementy biblioteki (złożone z istniejących grafik)
+- Właściciel: to ogólny rzut mieszkania, nie projektowanie wnętrz — bez konfigurowania elementów (szkło, odpływ, wkładki w blacie). Tylko uzupełnić bibliotekę; brakowało owalnego stołu.
+- `narzedzia/plan/zloz.py` składa nowe grafiki z tych, które są (ten sam styl, bez nowego arkusza), potem `tnij.py --spis`:
+  stół owalny (sam blat) i z 4 / 6 / 8 krzesłami (drewno stołu prostokątnego, „Krzesło”, kwiaty ze stołu okrągłego);
+  ciąg kuchenny 180 / 240 / 300 cm — jeden ciągły blat z wpuszczonym zlewem i płytą (nie rozciągać, wybrać długość);
+  prysznic walk-in z jedną szybą, deszczownica i odpływ liniowy przy ścianie (górna krawędź; drugi bok — lustro);
+  łóżko 140×200 (grafika 160) — skaner: łóżko 133–152 cm → 140.
+- W bibliotece `a: null` (nie z arkusza). 3D: ciąg kuchenny = bryła 90 cm.

@@ -16,6 +16,7 @@ export const MEBLE = {
   lozko_180: E('Łóżko 180×200', 185, 210, 'Sypialnia', 'lozko2', [1, 2]),
   lozko_90: E('Łóżko 90×200', 95, 205, 'Sypialnia', 'lozko1', [1, 3]),
   lozko_120: E('Łóżko 120×200', 125, 205, 'Sypialnia', 'lozko1', [1, 4]),
+  lozko_140: E('Łóżko 140×200', 145, 210, 'Sypialnia', 'lozko2', null), // grafika łóżka 160 (narzedzia/plan/zloz.py)
   szafka_nocna: E('Szafka nocna z lampką', 45, 40, 'Sypialnia', 'szafka_nocna', [1, 5]),
   szafka_nocna2: E('Szafka nocna z szufladą', 50, 40, 'Sypialnia', 'szafka_nocna', [1, 6]),
   szafa_2: E('Szafa dwudrzwiowa', 100, 60, 'Sypialnia', 'szafa', [1, 7]),
@@ -68,6 +69,11 @@ export const MEBLE = {
   stol_6: E('Stół z 6 krzesłami', 200, 190, 'Jadalnia', 'stol6', [5, 2]),
   stol_8: E('Stół z 8 krzesłami', 260, 190, 'Jadalnia', 'stol8', [5, 3]),
   stol_okragly_4: E('Stół okrągły z 4 krzesłami', 200, 200, 'Jadalnia', 'stolokr', [5, 4], 'p'),
+  // złożone z grafik biblioteki (narzedzia/plan/zloz.py) — bez nowego arkusza
+  stol_owalny: E('Stół owalny', 180, 100, 'Jadalnia', 'stol', null),
+  stol_owalny_4: E('Stół owalny z 4 krzesłami', 170, 175, 'Jadalnia', 'stol4', null),
+  stol_owalny_6: E('Stół owalny z 6 krzesłami', 280, 185, 'Jadalnia', 'stol6', null),
+  stol_owalny_8: E('Stół owalny z 8 krzesłami', 330, 190, 'Jadalnia', 'stol8', null),
   stol_2: E('Stolik z 2 krzesłami', 180, 80, 'Jadalnia', 'stol2', [5, 5]),
   krzeslo: E('Krzesło', 48, 55, 'Jadalnia', 'krzeslo', [5, 6], 'p'),
   hoker: E('Hoker', 40, 40, 'Jadalnia', 'kolo', [5, 7], 'p'),
@@ -83,6 +89,9 @@ export const MEBLE = {
   plyta_gazowa: E('Płyta gazowa', 60, 60, 'Kuchnia', 'plyta', [6, 4]),
   blat: E('Blat kuchenny', 60, 60, 'Kuchnia', 'blat', [6, 5], 'pow'),
   blat_120: E('Blat kuchenny 120 cm', 120, 60, 'Kuchnia', 'blat', [6, 6]),
+  ciag_kuchenny_180: E('Ciąg kuchenny 180 cm (zlew i płyta)', 180, 60, 'Kuchnia', 'blat', null), // jeden blat (zloz.py)
+  ciag_kuchenny_240: E('Ciąg kuchenny 240 cm (zlew i płyta)', 240, 60, 'Kuchnia', 'blat', null),
+  ciag_kuchenny_300: E('Ciąg kuchenny 300 cm (zlew i płyta)', 300, 60, 'Kuchnia', 'blat', null),
   blat_narozny: E('Blat narożny', 100, 100, 'Kuchnia', 'blat_l', [6, 7]),
   zmywarka: E('Zmywarka', 60, 60, 'Kuchnia', 'blat', [6, 8]),
   slupek_piekarnik: E('Słupek z piekarnikiem', 60, 60, 'Kuchnia', 'piekarnik', [6, 9]),
@@ -114,6 +123,7 @@ export const MEBLE = {
   wanna_narozna: E('Wanna narożna', 140, 140, 'Łazienka', 'wanna', [8, 9]),
   prysznic: E('Kabina prysznicowa', 90, 90, 'Łazienka', 'prysznic', [8, 10]),
   prysznic_walkin: E('Prysznic walk-in', 120, 90, 'Łazienka', 'prysznic', [8, 11]),
+  prysznic_walkin_szyba: E('Prysznic walk-in (jedna szyba)', 120, 90, 'Łazienka', 'prysznic', null), // deszczownica i odpływ przy ścianie (zloz.py)
   prysznic_polokragly: E('Kabina półokrągła', 90, 90, 'Łazienka', 'prysznic', [8, 12]),
   // 9 — pralnia i technika
   pralka: E('Pralka', 60, 60, 'Pralnia i technika', 'pralka', [9, 1], 'p'),
@@ -240,7 +250,7 @@ export function rodzajMebla(f) {
   const k = f.catalogId === 'imported_object' ? String(f.sourceCategory || '').toLowerCase() : String(f.catalogId || '');
   const w = f.width || 0, d = f.depth || 0, dl = Math.max(w, d), kr = Math.min(w, d);
   switch (k) {
-    case 'bed_queen': case 'bed_king': case 'bed_double': case 'bed': return w > 172 ? 'lozko_180' : w > 110 ? (w > 140 ? 'lozko_160' : 'lozko_120') : 'lozko_90';
+    case 'bed_queen': case 'bed_king': case 'bed_double': case 'bed': return w > 172 ? 'lozko_180' : w > 152 ? 'lozko_160' : w > 132 ? 'lozko_140' : w > 110 ? 'lozko_120' : 'lozko_90';
     case 'bed_twin': case 'bed_single': return w > 105 ? 'lozko_120' : 'lozko_90';
     case 'sofa': case 'sectional': return kr > 140 ? 'naroznik' : w < 180 ? 'sofa_2' : 'sofa_3';
     case 'loveseat': return 'sofa_2';
