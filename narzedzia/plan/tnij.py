@@ -31,7 +31,15 @@ def mapa():
         m[(int(a), int(b))] = ('mebel', k)
     for k, a, b in re.findall(r"^\s*(\w+): P\('[^']*', \[(\d+), (\d+)\]", s, re.M):
         m[(int(a), int(b))] = ('podloga', k)
+    for (a, b), klucze in POPRAWKI.items():  # arkusze z poprawkami: jedno pole może zastąpić kilka elementów
+        m[(a, b)] = ('mebel', klucze)
     return m
+
+
+# Arkusz 21 (19.11.2026): przedmioty, które w arkuszach 1–20 wyszły od frontu zamiast z góry
+POPRAWKI = {(21, 1): ['wieszak_ubrania'], (21, 2): ['pralka'], (21, 3): ['suszarka'], (21, 4): ['pralka_suszarka'], (21, 5): ['piec_gazowy'],
+            (21, 6): ['regal_metalowy', 'regal_magazynowy'], (21, 7): ['regal_sklepowy'], (21, 8): ['hustawka'], (21, 9): ['szafka_narzedziowa'],
+            (21, 10): ['pompa_ciepla', 'klimatyzator'], (21, 11): ['winiarka'], (21, 12): ['grzejnik', 'grzejnik_lazienkowy']}
 
 
 def maska_tla(rgba):
@@ -81,40 +89,64 @@ def podzialy(profil, n):
     return cięcia
 
 
+# kwiaty i rośliny z prawdziwym różem/fioletem — bez zbijania różowego nalotu w całym obrazie
+NATURALNY_ROZ = {'rabata', 'donica_mala', 'drzewo_male', 'oczko_wodne', 'skrzynka_kwiaty', 'roslina_mala'}
 POLA = None  # --pola 1,2,5 — tnie tylko wybrane pola (reszta arkusza do ponownego wygenerowania)
 
 
 def tnij_meble(nr, img, podglad):
+    """Elementy = spójne kawałki obrazu (po lekkim pogrubieniu, żeby stół i krzesła były jednym). Kawałek należy do pola,
+    w którym leży jego środek — szerokie przedmioty mogą wychodzić poza „swoją” kolumnę i nie zostaną przecięte."""
+    from scipy import ndimage
     M = mapa()
     rgba = np.array(img.convert('RGBA'))
+    H, W = rgba.shape[:2]
     fg = ~maska_tla(rgba)
-    xs = podzialy(fg.sum(axis=0).astype(np.float32), 4)
-    ys = podzialy(fg.sum(axis=1).astype(np.float32), 3)
+    fg = ndimage.binary_opening(fg, iterations=1)  # szum JPEG
+    zl = ndimage.binary_dilation(fg, iterations=max(4, W // 140))  # łączy części jednego przedmiotu
+    etyk, n = ndimage.label(zl)
+    obiekty = ndimage.find_objects(etyk)
+    pola = {}
+    for k, sl in enumerate(obiekty, 1):
+        maska = (etyk[sl] == k) & fg[sl]
+        if maska.sum() < (W * H) * 0.0004:
+            continue
+        cy = (sl[0].start + sl[0].stop) / 2; cx = (sl[1].start + sl[1].stop) / 2
+        pole = int(cy // (H / 3)) * 4 + int(cx // (W / 4)) + 1
+        pola.setdefault(pole, []).append(sl)
     os.makedirs(MEBLE_DIR, exist_ok=True)
     zapisane, kafle = [], []
-    for j in range(3):
-        for i in range(4):
-            pole = j * 4 + i + 1
-            if (nr, pole) not in M or (POLA and pole not in POLA):
-                continue
-            _, klucz = M[(nr, pole)]
-            x0, x1, y0, y1 = xs[i], xs[i + 1], ys[j], ys[j + 1]
-            komorka = rgba[y0:y1, x0:x1]
-            f = ~maska_tla(komorka)
-            # odrzuć drobny szum przy krawędzi komórki
-            f = np.array(Image.fromarray((f * 255).astype(np.uint8)).filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(3))) > 0
-            if f.sum() < 200:
-                print(f'  pole {pole} ({klucz}): pusto — pomijam'); continue
-            yy, xx = np.where(f)
-            pad = 3
-            a0, a1 = max(0, yy.min() - pad), min(komorka.shape[0], yy.max() + pad + 1)
-            b0, b1 = max(0, xx.min() - pad), min(komorka.shape[1], xx.max() + pad + 1)
-            wyc = alfa_i_odmagentowanie(komorka[a0:a1, b0:b1])
-            im = Image.fromarray(wyc, 'RGBA')
-            im.thumbnail((900, 900), Image.LANCZOS)
-            im.save(os.path.join(MEBLE_DIR, f'{klucz}.webp'), 'WEBP', quality=88, method=6)
-            zapisane.append(klucz); kafle.append((klucz, im))
-            print(f'  pole {pole:2d} → {klucz:22s} {im.size[0]}×{im.size[1]}')
+    for pole in range(1, 13):
+        if (nr, pole) not in M or (POLA and pole not in POLA):
+            continue
+        _, klucz = M[(nr, pole)]
+        klucze = klucz if isinstance(klucz, list) else [klucz]; klucz = klucze[0]
+        if pole not in pola:
+            print(f'  pole {pole} ({klucz}): pusto — pomijam'); continue
+        y0 = min(s_[0].start for s_ in pola[pole]); y1 = max(s_[0].stop for s_ in pola[pole])
+        x0 = min(s_[1].start for s_ in pola[pole]); x1 = max(s_[1].stop for s_ in pola[pole])
+        # dokładny obrys z maski bez pogrubienia
+        f = fg[y0:y1, x0:x1]
+        yy, xx = np.where(f)
+        pad = 2
+        a0, a1 = max(0, y0 + yy.min() - pad), min(H, y0 + yy.max() + pad + 1)
+        b0, b1 = max(0, x0 + xx.min() - pad), min(W, x0 + xx.max() + pad + 1)
+        # tylko piksele należące do kawałków tego pola (sąsiad wchodzący w prostokąt zostaje przezroczysty)
+        ids = set()
+        for s_ in pola[pole]:
+            w_ = etyk[s_]; ids.update(np.unique(w_[w_ > 0]).tolist())
+        wyc = alfa_i_odmagentowanie(rgba[a0:a1, b0:b1])
+        if klucz not in NATURALNY_ROZ:  # magenta odbita w wiklinie, drewnie, frędzlach — zbij w całym przedmiocie
+            f_ = wyc[..., :3].astype(np.float32); nad = np.clip(np.minimum(f_[..., 0], f_[..., 2]) - f_[..., 1] - 4, 0, None)
+            f_[..., 0] -= nad * 1.0; f_[..., 2] -= nad * 1.0; wyc[..., :3] = np.clip(f_, 0, 255).astype(np.uint8)
+        swoje = np.isin(etyk[a0:a1, b0:b1], list(ids))
+        wyc[..., 3] = np.where(swoje, wyc[..., 3], 0)
+        im = Image.fromarray(wyc, 'RGBA')
+        im.thumbnail((900, 900), Image.LANCZOS)
+        for k_ in klucze:
+            im.save(os.path.join(MEBLE_DIR, f'{k_}.webp'), 'WEBP', quality=88, method=6)
+        zapisane.extend(klucze); kafle.append((klucz, im))
+        print(f'  pole {pole:2d} → {", ".join(klucze):22s} {im.size[0]}×{im.size[1]}')
     if podglad:
         zapisz_podglad(nr, kafle)
     return zapisane
