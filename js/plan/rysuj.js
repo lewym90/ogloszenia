@@ -18,7 +18,7 @@ export function scena(projekt, pomKarty = []) {
   let twarze = [];
   try { twarze = G.resolveRoomGeometry(fl, fl.rooms || []); } catch { twarze = []; }
   const dziury = G.roomHoles(twarze.map((t) => t.polygon));
-  const nazwyT = twarze.map((t) => (/^(Room|Pomieszczenie) \d+$/.test((t.room.name || '').trim()) ? '' : (t.room.name || '').trim()));
+  const nazwyT = twarze.map((t) => (t.room.amNazwaSkan || /^(Room|Pomieszczenie) \d+$/.test((t.room.name || '').trim()) ? '' : (t.room.name || '').trim())); // nazwy zgadnięte przez skaner nie łączą się z kartą
   const wKarcie = new Map(dopasujNazwy(nazwyT, (pomKarty || []).filter((p) => p.nazwa)).map((x) => [x.i, x]));
   const pokoje = twarze.map((t, i) => {
     let m = null;

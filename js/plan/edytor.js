@@ -4,7 +4,7 @@
 import * as G from './geom.js';
 import { rysuj3D, eksport3DPNG, skalaEksportu3D } from './rysuj3d.js';
 import { scena, rysuj, trafienie, eksportPNG, skalaEksportu, wMeblu, wymiaryMebla, pietro, przeliczSciany, warstwaPodlog, dlugoscCzysta, wPokoju } from './rysuj.js';
-import { dopasujDoPomiarow, nazwyPoWymiarach } from './dopasuj.js';
+import { dopasujDoPomiarow, nazwyPoWymiarach, poprawImport } from './dopasuj.js';
 import { MEBLE, GRUPY, PODLOGI, GRUPY_PODLOG, rodzajMebla, nazwaMebla, NAZWY_POMIESZCZEN } from './biblioteka.js';
 import * as R from '../rzut.js';
 
@@ -898,32 +898,57 @@ AKCJE.grubosc = (b) => zmien((w) => { // ściana zewnętrzna rośnie na zewnątr
   if (l !== pr) { const v = ((t1 - t0) / 2) * (l ? -1 : 1); przesunLinie(linia, nx * v, ny * v); }
 }, true);
 // ---------- dopasowanie rzutu do pomiarów z karty (dalmierz) ----------
-function pomiaryKarty() { return (S.sc?.pokoje || []).filter((p) => !p.otwor && p.wym).map((p) => ({ pokoj: p, a: p.wym.a * 100, b: p.wym.b * 100, pary: p.room.amPary })); }
+function pomiaryKarty() { return (S.sc?.pokoje || []).filter((p) => !p.otwor && p.wym).map((p) => ({ pokoj: p, a: p.wym.a * 100, b: p.wym.b * 100, pary: p.room.amPary, osA: p.room.amOsA })); }
 // nazwy z karty są ważniejsze niż nazwy ze skanu: „Pokój 2” → „Pokój”, a pomieszczenie bez nazwy dostaje nazwę z karty,
 // jeśli pasuje do niego dokładnie jedno zmierzone pomieszczenie z karty (po wymiarach)
+// Nazwy: karta jest prawdą. Nazwy nadane przez skaner (amNazwaSkan — zgadywane: „bedroom”, „kitchen”) nie łączą się z kartą
+// po nazwie, tylko po wymiarach; nazwy wpisane ręcznie — po nazwie („Pokój 2” → „Pokój”).
 function nazwyZKarty() {
   if (!S.sc || !S.pomKarty?.length) return [];
-  const zm = [];
-  for (const p of S.sc.pokoje) if (!p.otwor && p.kartaPrzybl && p.karta?.nazwa && p.nazwa !== p.karta.nazwa) { zm.push(`${p.nazwa} → ${p.karta.nazwa}`); pokojMeta(p).name = p.karta.nazwa; }
-  const uzyte = new Set(S.sc.pokoje.map((p) => p.karta?.nazwa).filter(Boolean).map((n) => n.toLowerCase()));
+  const zm = [], pok = S.sc.pokoje.filter((p) => !p.otwor), zeSkanu = (p) => !p.nazwa || p.room.amNazwaSkan;
+  for (const p of pok) if (!zeSkanu(p) && p.kartaPrzybl && p.karta?.nazwa && p.nazwa !== p.karta.nazwa) { zm.push(`${p.nazwa} → ${p.karta.nazwa}`); pokojMeta(p).name = p.karta.nazwa; }
+  const uzyte = new Set(pok.filter((p) => !zeSkanu(p)).map((p) => (p.karta?.nazwa || p.nazwa || '').trim().toLowerCase()).filter(Boolean));
   const wolne = S.pomKarty.filter((k) => k.nazwa && k.a && k.b && !uzyte.has(k.nazwa.trim().toLowerCase()));
-  const bez = S.sc.pokoje.filter((p) => !p.otwor && !p.nazwa);
-  if (wolne.length && bez.length) for (const { pokoj, k } of nazwyPoWymiarach(fl(), bez, wolne)) { zm.push(`${k.nazwa} (po wymiarach)`); pokojMeta(pokoj).name = k.nazwa; }
+  const kand = pok.filter(zeSkanu);
+  const nadane = new Set();
+  if (wolne.length && kand.length) for (const { pokoj, k } of nazwyPoWymiarach(fl(), kand, wolne)) {
+    const r = pokojMeta(pokoj); if (r.name !== k.nazwa) zm.push(`${k.nazwa} (po wymiarach)`); r.name = k.nazwa; delete r.amNazwaSkan; nadane.add(k.nazwa.toLowerCase()); nadane.add(pokoj);
+  }
+  // nazwa ze skanu, która nie pasuje wymiarami, a w karcie jest już przy innym pomieszczeniu — usuwamy (żeby nie dublowała)
+  const wKarcie = new Set(S.pomKarty.map((k) => (k.nazwa || '').trim().toLowerCase()));
+  for (const p of kand) if (!nadane.has(p) && p.nazwa && nadane.has(p.nazwa.toLowerCase())) { const r = pokojMeta(p); r.name = ''; delete r.amNazwaSkan; }
+  for (const p of kand) if (!nadane.has(p) && p.nazwa && wKarcie.has(p.nazwa.toLowerCase()) && !pok.some((q) => q !== p && q.nazwa === p.nazwa)) delete pokojMeta(p).amNazwaSkan;
   return zm;
 }
-function zastosujNazwyZKarty(cicho = false) {
+function zastosujNazwyZKarty(cicho = false, naStarcie = false) {
   const przed = migawka(), zm = nazwyZKarty();
-  if (!zm.length) return;
+  if (przed === migawka()) return;
+  if (naStarcie && !zm.length) { przebuduj(); interfejs(); return; } // tylko porządki w danych — nie liczymy jako zmianę
   zapamietaj(przed); przebuduj(); interfejs();
-  if (!cicho) toast(`Nazwy z karty: ${zm.join(', ')}`, 4500);
+  if (!cicho && zm.length) toast(`Nazwy z karty: ${zm.join(', ')}`, 4500);
 }
 // końce ścian, które się z niczym nie stykają, a są blisko innej ściany — przez nie pomieszczenie nie jest zamknięte
 function wolneKonce() {
+  // tylko końce, które „nie dochodzą”: przedłużenie ściany o ≤ 40 cm trafia w inną ścianę, albo przed nią (≤ 60 cm) zaczyna się
+  // dalszy ciąg tej samej prostej. Ściana kończąca się swobodnie w pomieszczeniu (np. ścianka przy aneksie) nie jest błędem.
   const W = fl().walls.filter((w) => !w.curvePoint), L = [];
   for (const w of W) for (const k of ['start', 'end']) {
-    const p = w[k]; let styk = false, najbl = Infinity;
-    for (const q of W) { if (q === w) continue; const d = rzutNaOdcinek(p, q.start, q.end).d; if (d < 2) { styk = true; break; } najbl = Math.min(najbl, d); }
-    if (!styk && najbl < 40) L.push(p);
+    const p = w[k], drugi = w[k === 'start' ? 'end' : 'start'];
+    if (W.some((q) => q !== w && rzutNaOdcinek(p, q.start, q.end).d < 2)) continue;
+    const l = Math.hypot(p.x - drugi.x, p.y - drugi.y) || 1, u = { x: (p.x - drugi.x) / l, y: (p.y - drugi.y) / l };
+    let luka = false;
+    for (const q of W) {
+      if (q === w) continue;
+      const v = kierunek(q), sin = u.x * v.y - u.y * v.x;
+      if (Math.abs(sin) < 0.05) { // ta sama prosta: dalszy ciąg przed końcem
+        if (Math.abs((q.start.x - p.x) * -u.y + (q.start.y - p.y) * u.x) > 3) continue;
+        if (['start', 'end'].some((kk) => { const t = (q[kk].x - p.x) * u.x + (q[kk].y - p.y) * u.y; return t > 0 && t <= 60; })) { luka = true; break; }
+        continue;
+      }
+      const t = ((q.start.x - p.x) * v.y - (q.start.y - p.y) * v.x) / sin;
+      if (t > 0 && t <= 40 && rzutNaOdcinek({ x: p.x + u.x * t, y: p.y + u.y * t }, q.start, q.end).d <= 2) { luka = true; break; }
+    }
+    if (luka) L.push(p);
   }
   return L;
 }
@@ -938,7 +963,7 @@ AKCJE.kalibruj = () => {
   const przed = migawka(), przedM = new Map(S.sc.pokoje.map((p) => [p.room.id, p.m]));
   const nazwy = (sc) => sc.pokoje.filter((p) => !p.otwor).map((p) => p.nazwa).sort().join('|');
   const ilePrzed = S.sc.pokoje.filter((p) => !p.otwor).length, nazwyPrzed = nazwy(S.sc);
-  const raport = dopasujDoPomiarow(fl(), S.sc.pokoje, pom);
+  const { raport, grubosci } = dopasujDoPomiarow(fl(), S.sc.pokoje, pom);
   for (const w of raport) { const r = pokojMeta(w.pokoj); if (w.osie.every((o) => !o.brak && !o.sprzeczny)) r.amDopasowanie = { a: w.pokoj.wym.a, b: w.pokoj.wym.b }; else delete r.amDopasowanie; }
   poScianach();
   // bezpiecznik: dopasowanie nie może rozdzielić ani połączyć pomieszczeń
@@ -948,9 +973,18 @@ AKCJE.kalibruj = () => {
     return;
   }
   S.raport = raport.map((w) => ({ id: w.pokoj.room.id, nazwa: w.pokoj.nazwa, karta: w.pokoj.karta?.nazwa, przybl: w.pokoj.kartaPrzybl, przedM: przedM.get(w.pokoj.room.id),
+    osA: w.osA, niepewny: w.niepewny, reczny: w.reczny,
     osie: w.osie.map((o) => ({ klucz: o.klucz, m: o.m, brak: !!o.brak, przed: o.przed, po: o.po, sprzeczny: !!o.sprzeczny })) }));
+  S.raportGrubosci = grubosci;
   zapamietaj(przed);
   S.zazn = null; S.arkusz = { typ: 'kalibracja' }; interfejs(); odswiez();
+};
+AKCJE['zamien-os'] = (b) => { // cofnij ostatnie dopasowanie, ustaw kierunek długości w tym pomieszczeniu i dopasuj od nowa
+  const id = b.dataset.id, os = b.dataset.os;
+  if (S.arkusz?.typ === 'kalibracja' && S.historia.length) cofnij();
+  const pk = S.sc.pokoje.find((q) => q.room.id === id); if (!pk) return;
+  pokojMeta(pk).amOsA = os; przebuduj();
+  AKCJE.kalibruj();
 };
 AKCJE['wskaz-pare'] = (b) => {
   S.para = { id: b.dataset.id, klucz: b.dataset.k, m: Number(b.dataset.m), sciany: [] };
@@ -1039,8 +1073,10 @@ function htmlKalibracji() {
   const teraz = new Map((S.sc?.pokoje || []).map((p) => [p.room.id, p]));
   return `<p class="info" style="margin-top:0">Ściany przesunięte tak, żeby zgadzały się z Twoimi pomiarami z karty. Kształt — wnęki, załomy, ścianki — zostaje ze skanu. „Cofnij” u góry przywraca poprzedni rzut.</p>
     <ul class="kalibracja">${R.map((w) => { const p = teraz.get(w.id); return `<li><div class="k-gl"><b>${esc(w.nazwa || 'Pomieszczenie')}</b>${w.przybl ? `<small>w karcie: ${esc(w.karta)}</small>` : ''}<span>${w.przedM != null ? m2(w.przedM) : '—'} → <b>${p?.m != null ? m2(p.m) : '—'}</b></span></div>
+      ${w.niepewny || w.reczny ? `<div class="k-os">${w.reczny ? 'Kierunek długości ustawiony ręcznie.' : 'Pomieszczenie prawie kwadratowe — długość i szerokość ułożone tak, jak lepiej pasuje do skanu i sąsiednich pomiarów.'} ${btn('zamien-os', 'obroc', 'Zamień długość z szerokością', 'maly', `data-id="${esc(w.id)}" data-os="${w.osA === 'x' ? 'y' : 'x'}"`)}</div>` : ''}
       ${w.osie.map((o) => o.brak ? `<div class="k-os zle">${mm(o.m)} m — nie znalazłem pary ścian z taką odległością ${btn('wskaz-pare', 'linijka', 'Wskaż ściany', 'maly', `data-id="${esc(w.id)}" data-k="${o.klucz}" data-m="${o.m}"`)}</div>`
         : `<div class="k-os ${o.sprzeczny ? 'zle' : ''}">${mm(o.m)} m: skan ${cm(o.przed)} → ${cm(o.po)} ${o.sprzeczny ? `— kłóci się z innym pomiarem o ${cm(Math.abs(o.po - o.m))}` : `<span class="ok">✓ ${o.po - o.przed >= 0 ? '+' : '−'}${cm(Math.abs(o.po - o.przed))}</span>`} ${btn('wskaz-pare', 'linijka', 'Inne ściany', 'maly', `data-id="${esc(w.id)}" data-k="${o.klucz}" data-m="${o.m}"`)}</div>`).join('')}</li>`; }).join('')}</ul>
+    ${(S.raportGrubosci || []).length ? `<p class="info">Grubości ścian działowych wyliczone z pomiarów: ${S.raportGrubosci.map((g) => `${String(Math.round(g.przed * 10) / 10).replace('.', ',')} → <b>${String(Math.round(g.po * 10) / 10).replace('.', ',')} cm</b>${g.podejrzana ? ' (nietypowa — sprawdź pomiary obok)' : ''}`).join(', ')}.</p>` : ''}
     <p class="info">Metraż każdego pomieszczenia liczy się teraz z dopasowanego kształtu — razem z wnękami i załamaniami — i po „Zapisz” trafi do karty.</p>
     <div class="przyciski">${btn('zamknij', 'zakoncz', 'Gotowe')}</div>`;
 }
@@ -1061,7 +1097,7 @@ function pokojMeta(p) {
 }
 function nazwijPokoj(n) {
   const p = element(); if (!p) return;
-  const przed = migawka(); pokojMeta(p).name = String(n).trim();
+  const przed = migawka(); const r = pokojMeta(p); r.name = String(n).trim(); delete r.amNazwaSkan;
   if (przed !== migawka()) { zapamietaj(przed); przebuduj(); interfejs(); }
 }
 function podlaczPola(ark) {
@@ -1219,7 +1255,16 @@ $('#plik-skanu').addEventListener('change', async (e) => {
     if (/\.zip$/i.test(plik.name) || plik.type.includes('zip')) dane = await G.extractRoomJsonFromZip(plik);
     else dane = JSON.parse(await plik.text());
     let p;
-    if (G.isRoomPlanJson(dane)) p = G.createProjectFromRoomPlan(dane, S.nazwa);
+    if (G.isRoomPlanJson(dane)) {
+      p = G.createProjectFromRoomPlan(dane, S.nazwa);
+      for (const f of p.floors) for (const r of f.rooms || []) if (r.name) r.amNazwaSkan = true; // nazwy zgadnięte przez skaner
+      for (const f of p.floors) { // ściana zewnętrzna: płaszczyzna skanu = lico od środka; działowa: środek
+        try {
+          const przelicz = () => { f.rooms = G.resolveRooms(f, f.rooms || []); return G.resolveRoomGeometry(f, f.rooms).map((t) => ({ room: t.room, poly: t.polygon })); };
+          poprawImport(f, przelicz(), undefined, undefined, przelicz); f.rooms = G.resolveRooms(f, f.rooms);
+        } catch { /* */ }
+      }
+    }
     else if (dane?.floors) p = G.readProject(dane);
     else throw new Error('To nie jest skan ani plan rzutu.');
     p = polskiProjekt(p);
@@ -1257,7 +1302,7 @@ function ustawProjekt(p, nowy = false) {
   $('#pusto').hidden = true;
   przebuduj(); dopasuj(); interfejs();
   if (nowy) zmieniono();
-  setTimeout(() => { zastosujNazwyZKarty(); propozycjaDopasowania(); }, 400);
+  setTimeout(() => { zastosujNazwyZKarty(false, true); propozycjaDopasowania(); }, 400);
 }
 async function z3dBiblioteki(oid) { // plan z edytora zaawansowanego zapisany na tym urządzeniu
   try {
@@ -1397,5 +1442,5 @@ if (window.visualViewport) {
   const dopasujArkusz = () => { const v = window.visualViewport, d = Math.max(0, window.innerHeight - v.height - v.offsetTop); $('#arkusz').style.bottom = d > 60 ? `${d}px` : ''; };
   window.visualViewport.addEventListener('resize', dopasujArkusz); window.visualViewport.addEventListener('scroll', dopasujArkusz);
 }
-window.__plan = S; window.__planUI = { interfejs, odswiez, dopasuj, przebuduj: () => poScianach(), wolneKonce, propozycja: propozycjaDopasowania }; // do testów
+window.__plan = S; window.__planUI = { interfejs, odswiez, dopasuj, przebuduj: () => poScianach(), wolneKonce, propozycja: propozycjaDopasowania, nazwyZKarty: () => zastosujNazwyZKarty() }; // do testów
 start();

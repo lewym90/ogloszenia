@@ -31,7 +31,7 @@ for (const obrot of [0, 17]) test(`skan 3% za mały, obrót ${obrot}° — po do
     { pokoj: nr(L, ...R(200, 150)), a: 384, b: 284 },
     { pokoj: nr(L, ...R(500, 350)), a: 284, b: 184 }, // korytarz: od łazienki do ściany zewn. (200..500 → 300-6-10), szerokość z wnęką 400..660 → 260-6-6? — tu: szerokość w wąskiej części 600-400-6-10
   ];
-  const raport = dopasujDoPomiarow(f, L, pom);
+  const { raport } = dopasujDoPomiarow(f, L, pom);
   for (const w of raport) for (const o of w.osie) assert.ok(!o.brak, 'pomiar przypisany'), assert.ok(Math.abs(o.po - o.m) < 0.6, `po dopasowaniu ${o.po} ≈ ${o.m}`);
   const po = pokoje(f);
   const pokojPo = nr(po, ...R(200, 150).map((v) => v / 0.97)), pokojPrawda = nr(prawda, ...R(200, 150).map((v) => v / 0.97));
@@ -65,4 +65,13 @@ test('karta: dopasowany rzut zapisuje mRzut obok pomiaru, „Pokój 2” nie dub
   // bez karty w wyniku i z niejednoznacznym numerem — nowe pomieszczenie
   const r3 = scalPomieszczenia([{ id: 'a', nazwa: 'Pokój', a: 3, b: 3, m: 9 }], [{ nazwa: 'Pokój 1', m: 9 }, { nazwa: 'Pokój 2', m: 8 }], id);
   assert.equal(r3.pom.length, 3);
+});
+
+test('symulacja: 60 losowych mieszkań — zmierzone pomieszczenia średnio < 0,5%, nic nie pęka', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const out = execFileSync(process.execPath, [new URL('./symulacja.mjs', import.meta.url).pathname, '60', '3'], { encoding: 'utf8' });
+  const zm = out.match(/zmierzone dalmierzem:\s+średnio ([\d.]+)%\s+· 95% przypadków ≤ ([\d.]+)%/);
+  assert.ok(zm, out);
+  assert.ok(Number(zm[1]) < 0.5 && Number(zm[2]) < 2, out);
+  assert.match(out, /pęknięcia\): 0/);
 });
