@@ -32,7 +32,7 @@ with sync_playwright() as p:
     pg.click('.am-zapisz'); pg.wait_for_url('**/plan.html**', timeout=30000); pg.wait_for_timeout(1500)
     n = pg.evaluate("window.__plan.sc.pokoje.length"); print('Rzut AM pomieszczeń:', n); assert n == 2
     pg.screenshot(path=f'/tmp/amshots/g-{silnik}-2-rzutam.png')
-    pg.click('[data-a=zapisz]'); pg.wait_for_url('**/ogloszenia/#/o/**', timeout=30000); pg.wait_for_selector('.okno', timeout=20000); pg.wait_for_timeout(500)
+    pg.click('[data-a=zapisz]'); pg.click('.okno-tlo [data-w=oba]'); pg.wait_for_url('**/ogloszenia/#/o/**', timeout=30000); pg.wait_for_selector('.okno', timeout=20000); pg.wait_for_timeout(500)
     t = pg.inner_text('.okno-tresc'); print('okno:', t[:200].replace(chr(10), ' | '))
     assert 'nie mają nazw' in t, t
     print('BLEDY', bl[:6]); assert not bl

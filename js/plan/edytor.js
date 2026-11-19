@@ -2,6 +2,7 @@
 // Zasady: jeden palec / przeciągnięcie myszą = tylko przesuwanie widoku; dwa palce / kółko = tylko powiększanie.
 // Stuknięcie zaznacza. Zmienić można wyłącznie zaznaczony element i tylko gestem zaczętym na nim (albo na jego uchwycie).
 import * as G from './geom.js';
+import { rysuj3D, eksport3DPNG, skalaEksportu3D } from './rysuj3d.js';
 import { scena, rysuj, trafienie, eksportPNG, skalaEksportu, wMeblu, wymiaryMebla, pietro, przeliczSciany, warstwaPodlog } from './rysuj.js';
 import { MEBLE, GRUPY, PODLOGI, GRUPY_PODLOG, rodzajMebla, nazwaMebla, NAZWY_POMIESZCZEN } from './biblioteka.js';
 import * as R from '../rzut.js';
@@ -33,7 +34,7 @@ const adres = new URL(location.href);
 const S = {
   oid: (adres.searchParams.get('am') || '').replace(/[^A-Za-z0-9_-]/g, '') || null,
   projekt: null, sc: null, widok: { s: 1, ox: 0, oy: 0 }, dpr: Math.min(window.devicePixelRatio || 1, 3),
-  zazn: null, narzedzie: 'widok', meble: true, wymiary: true,
+  zazn: null, narzedzie: 'widok', meble: true, wymiary: true, tryb3d: false,
   historia: [], przyszlosc: [], zmienione: false, pomKarty: [], nazwa: 'Rzut', bazaT: null,
   obrazy: new Map(), rys: null, akcja: null, podglad: null, arkusz: null,
 };
@@ -64,7 +65,8 @@ function rysujTeraz() {
     if (!A.podlogi) A.podlogi = warstwaPodlog(S.sc, { ...S.widok, dpr: S.dpr }, op, plotno.width, plotno.height);
     op.podlogi = A.podlogi;
   } else if (edycja) op.bezCienia = true; // ściany i otwory: szybki podgląd, pełne cienie po puszczeniu
-  rysuj(ctx, S.sc, { ...S.widok, dpr: S.dpr }, op);
+  if (S.tryb3d) rysuj3D(ctx, S.sc, { ...S.widok, dpr: S.dpr }, { meble: S.meble, obrazy: S.obrazy, tlo: '#F3F0EA' }); // podgląd 3D: bez edycji
+  else rysuj(ctx, S.sc, { ...S.widok, dpr: S.dpr }, op);
   if (bufor.c.width !== plotno.width || bufor.c.height !== plotno.height) { bufor.c.width = plotno.width; bufor.c.height = plotno.height; }
   bufor.c.getContext('2d').drawImage(plotno, 0, 0); bufor.widok = { ...S.widok };
   nakladka();
@@ -469,6 +471,7 @@ function stukniecie(x, y, typ = 'touch') {
   const p = doSwiata(x, y), tol = (typ === 'mouse' ? 10 : 20) / S.widok.s; // palec jest mniej dokładny niż kursor
   if (S.narzedzie === 'sciana' || S.narzedzie === 'granica') return punktSciany(p);
   if (S.narzedzie === 'drzwi' || S.narzedzie === 'okno') return wstawOtwor(p);
+  if (S.tryb3d) { if (trafienie(S.sc, p.x, p.y, tol, { meble: S.meble })) toast('W 3D tylko oglądasz — edycja w 2D', 2600); return; }
   const h = trafienie(S.sc, p.x, p.y, tol, { meble: S.meble });
   // ponowne stuknięcie w zaznaczony pokój — wybierz to, co pod spodem? zostaw zaznaczenie
   S.zazn = h; S.arkusz = null;
@@ -593,6 +596,12 @@ const AKCJE = {
   // menu
   wyprostuj: () => wyprostuj(),
   obraz: () => pobierzObraz(),
+  tryb: (b) => {
+    const t = b.dataset.t === '3d'; if (t === S.tryb3d) return;
+    if (t) { if (S.narzedzie !== 'widok') narzedzie('widok'); S.zazn = null; if (S.arkusz && S.arkusz.typ !== 'menu') S.arkusz = null; }
+    S.tryb3d = t; interfejs(); odswiez();
+    if (t) toast('Widok 3D — edycja w 2D', 2200);
+  },
   pietro: (b) => { S.projekt.activeFloorId = b.dataset.id; S.zazn = null; przebuduj(); dopasuj(); interfejs(); },
   pomoc: () => { S.arkusz = { typ: 'pomoc' }; interfejs(); },
 };
@@ -639,6 +648,8 @@ function interfejs() {
   const pasek = $('#pasek-akcji'), ark = $('#arkusz'), z = S.zazn, el = element();
   const szeroki = matchMedia('(min-width: 900px)').matches;
   przyciskiHistorii();
+  const tr = $('.pl-tryb'); tr.hidden = !S.projekt; for (const b of tr.querySelectorAll('button')) b.setAttribute('aria-pressed', String((b.dataset.t === '3d') === S.tryb3d));
+  document.body.classList.toggle('tryb-3d', S.tryb3d);
   // pasek akcji
   let h = '';
   if (S.rys) h = btn('cofnij-punkt', 'cofnij', 'Cofnij punkt', '', S.rys.punkty.length ? '' : 'disabled') + (S.rys.ostatnia ? btn('dl-ostatniej', 'linijka', 'Długość') : '') + btn('gotowe', 'zakoncz', 'Gotowe');
@@ -755,7 +766,7 @@ function htmlMenu() {
     ${btn('skan', 'podloga', 'Wczytaj skan z iPhone\'a')}
     ${S.projekt ? btn('wyprostuj', 'linijka', 'Wyprostuj skan (kąty proste, meble do ścian)') : ''}
     ${S.projekt ? btn('obraz', 'duplikuj', 'Pobierz obraz rzutu') : ''}
-    ${btn('zaawansowany', 'strona', 'Widok 3D i edytor zaawansowany')}
+    ${btn('zaawansowany', 'strona', 'Edytor zaawansowany')}
     ${btn('pomoc', 'wiecej', 'Jak to działa')}</div>`;
 }
 function htmlPomoc() {
@@ -807,7 +818,7 @@ AKCJE['pietro-usun'] = async () => {
   if (!(await potwierdz(`Usunąć „${f.name}”?`, 'Całe piętro zniknie z rzutu. Możesz to cofnąć przyciskiem Cofnij.', 'Usuń'))) return;
   zapamietaj(); S.projekt.floors = S.projekt.floors.filter((q) => q.id !== f.id); S.projekt.activeFloorId = S.projekt.floors[0].id; S.zazn = null; przebuduj(); dopasuj(); interfejs();
 };
-AKCJE['wybierz-pok'] = (b) => { S.zazn = { rodzaj: 'pokoj', id: b.dataset.id }; S.arkusz = matchMedia('(min-width: 900px)').matches ? null : { typ: 'element' }; interfejs(); odswiez(); };
+AKCJE['wybierz-pok'] = (b) => { S.tryb3d = false; S.zazn = { rodzaj: 'pokoj', id: b.dataset.id }; S.arkusz = matchMedia('(min-width: 900px)').matches ? null : { typ: 'element' }; interfejs(); odswiez(); };
 AKCJE.grupa = (b) => { S.arkusz.grupa = b.dataset.v; interfejs(); $('#arkusz').scrollTop = 0; };
 AKCJE['dodaj-el'] = (b) => { S.arkusz = null; dodajMebel(b.dataset.v); };
 AKCJE['zamien-na'] = (b) => { const k = b.dataset.v; zmien((f) => { f.amRodzaj = k; f.catalogId = 'imported_object'; f.sourceCategory = k; f.width = MEBLE[k].w; f.depth = MEBLE[k].d; f.scale = { x: Math.sign(f.scale?.x ?? 1) || 1, y: 1, z: 1 }; }); S.arkusz = null; interfejs(); };
@@ -1038,13 +1049,17 @@ function pokojeDoKarty() {
 async function zapiszWOfercie() {
   if (!S.projekt) { toast('Najpierw wczytaj skan albo narysuj ściany.'); return; }
   if (!S.oid) { toast('Otwórz rzut z karty oferty, żeby zapisać go w ofercie.'); return; }
+  const co = await wybor('Co zapisać w ofercie?', 'Każdy widok trafi do zdjęć oferty jako osobne zdjęcie. 2D ma wymiary ścian, 3D to wizualizacja z nazwami i metrażem.',
+    [['oba', 'Oba widoki — 2D i 3D'], ['2d', 'Tylko 2D (z wymiarami)'], ['3d', 'Tylko 3D']]);
+  if (!co) return;
   const b = $('[data-a=zapisz]'); b.disabled = true; b.textContent = 'Zapisuję…';
   try {
     const pierwotne = S.projekt.activeFloorId;
-    // obraz rzutu: piętro, które jest na ekranie (przy kilku piętrach — każde trafia jako osobne zdjęcie w kolejnych wersjach)
-    const png = await obrazRzutu();
+    // przy kilku piętrach wszystkie piętra na jednym obrazie (osobno 2D i 3D)
+    const png = co !== '3d' ? await obrazRzutu(false) : null;
+    const png3d = co !== '2d' ? await obrazRzutu(true) : null;
     S.projekt.activeFloorId = pierwotne;
-    await R.wloz(`wynik:${S.oid}`, { plan: migawka(), png, pokoje: pokojeDoKarty(), t: Date.now() });
+    await R.wloz(`wynik:${S.oid}`, { plan: migawka(), png, png3d, pokoje: pokojeDoKarty(), t: Date.now() });
     await R.usun(`szkic:${S.oid}`).catch(() => {});
     try { localStorage.removeItem(`am-plan-wejscie:${S.oid}`); } catch { /* */ }
     S.zmienione = false;
@@ -1060,14 +1075,15 @@ async function zaawansowany() {
   if (S.projekt) { await R.wloz(`wejscie:${S.oid}`, { plan: migawka(), nazwa: S.nazwa }); await R.wloz(`szkic:${S.oid}`, { plan: migawka(), t: Date.now(), bazaT: S.bazaT }); }
   location.href = `rzut/editor?am=${encodeURIComponent(S.oid)}`;
 }
-async function obrazRzutu() {
+async function obrazRzutu(w3d = S.tryb3d) {
   const op = { meble: S.meble, wymiary: S.wymiary, obrazy: S.obrazy };
-  if (S.projekt.floors.length < 2) return eksportPNG(S.sc, op);
+  const eksport = w3d ? eksport3DPNG : eksportPNG, skalaE = w3d ? skalaEksportu3D : skalaEksportu;
+  if (S.projekt.floors.length < 2) return eksport(S.sc, op);
   const sceny = S.projekt.floors.filter((f) => f.walls.length).map((f) => ({ f, sc: scena({ ...S.projekt, activeFloorId: f.id }, S.pomKarty) }));
-  const skala = Math.min(...sceny.map((x) => skalaEksportu(x.sc)));
+  const skala = Math.min(...sceny.map((x) => skalaE(x.sc)));
   const kawalki = [];
-  for (const [i, { f, sc }] of sceny.entries()) kawalki.push(await createImageBitmap(await eksportPNG(sc, { ...op, tytul: f.name, skala, bezStopki: i < sceny.length - 1 })));
-  if (kawalki.length < 2) return eksportPNG(S.sc, op);
+  for (const [i, { f, sc }] of sceny.entries()) kawalki.push(await createImageBitmap(await eksport(sc, { ...op, tytul: f.name, skala, bezStopki: i < sceny.length - 1 })));
+  if (kawalki.length < 2) return eksport(S.sc, op);
   const W = Math.max(...kawalki.map((k) => k.width)), H = kawalki.reduce((a, k) => a + k.height, 0);
   const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
   g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
@@ -1076,7 +1092,7 @@ async function obrazRzutu() {
 }
 async function pobierzObraz() {
   const png = await obrazRzutu();
-  const a = document.createElement('a'); a.href = URL.createObjectURL(png); a.download = `rzut-${(S.nazwa || 'oferta').replace(/[^\p{L}\p{N}]+/gu, '-')}.png`;
+  const a = document.createElement('a'); a.href = URL.createObjectURL(png); a.download = `rzut${S.tryb3d ? '-3d' : ''}-${(S.nazwa || 'oferta').replace(/[^\p{L}\p{N}]+/gu, '-')}.png`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 window.addEventListener('beforeunload', () => { if (S.projekt && S.oid) R.wloz(`szkic:${S.oid}`, { plan: migawka(), t: Date.now(), bazaT: S.bazaT }).catch(() => {}); });

@@ -184,6 +184,7 @@ export function rysuj3D(ctx, sc, widok, op = {}) {
   if (!op.bezNapisow) rysuj(ctx, sc, widok, { ...op, tylkoNapisy: true, wymiary: false });
 }
 
+export function skalaEksportu3D(sc, op = {}) { const b = granice3D(sc, op); return (2400 * (1 - 2 * 0.08)) / Math.max(b.x1 - b.x0, b.y1 - b.y0); }
 export async function eksport3DPNG(sc, op = {}) {
   const b = granice3D(sc, op), dlugi = 2400, margines = 0.08;
   const szer = b.x1 - b.x0, wys = b.y1 - b.y0;
@@ -193,6 +194,7 @@ export async function eksport3DPNG(sc, op = {}) {
   const c = document.createElement('canvas'); c.width = W; c.height = Hplan + stopka;
   const ctx = c.getContext('2d');
   rysuj3D(ctx, sc, { s, ox: (W - szer * s) / 2 - b.x0 * s, oy: (Hplan - wys * s) / 2 - b.y0 * s, dpr: 1 }, { ...op, eksport: true, czcionka: dlugi / 900, zaznaczone: null });
+  if (op.tytul) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.font = '600 54px Archivo, system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillStyle = '#24221f'; ctx.fillText(op.tytul, Math.round(W * 0.05), 60); }
   if (!op.bezStopki) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#ffffff'; ctx.fillRect(0, Hplan, W, stopka);

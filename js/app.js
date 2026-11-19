@@ -5,7 +5,7 @@ import { zrobZip } from './zip.js';
 import * as K from './kopia.js';
 import * as R from './rzut.js';
 
-export const WERSJA = '1.6.1';
+export const WERSJA = '1.7.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -656,7 +656,7 @@ const mozeBycGlowne = (z) => !z.wiz && z.pom !== 'rzut';
 // ----- rzut z edytora -----
 function panelRzutu(o) {
   const jest = !!o.rzutPlan;
-  const zdj = (o.zdj || []).find((z) => z.rzutAuto);
+  const zdj = (o.zdj || []).find((z) => z.rzutAuto) || (o.zdj || []).find((z) => z.rzutAuto3d);
   return `<div class="panel-rzut szklo">
     ${zdj ? `<div class="rzut-mini">${imgMini(zdj.id, 'Rzut')}</div>` : `<img class="rzut-ik" src="img/ikony/pom.png" alt="">`}
     <div class="rzut-tx"><b>${jest ? 'Rzut narysowany' : 'Rzut z wymiarami'}</b><span>${jest ? `zapisany ${kiedy(o.rzutPlan.t)}${o.rzutPlan.kto ? ` · ${esc(o.rzutPlan.kto)}` : ''}` : 'Narysuj ściany albo wczytaj skan z iPhone\'a — obraz trafi do zdjęć, a metraże do pomieszczeń.'}</span></div>
@@ -680,22 +680,26 @@ async function odbierzRzuty() {
   try {
     for (const w of await R.wyniki()) {
       const o = D.oferta(w.oid);
-      if (!o || !w.png) { await R.usun(`wynik:${w.oid}`); continue; }
+      if (!o || !(w.png || w.png3d)) { await R.usun(`wynik:${w.oid}`); continue; }
       toast('Zapisuję rzut w ofercie…', 4000);
-      const plik = new File([w.png], 'rzut.png', { type: w.png.type || 'image/png' });
-      const [nowe] = await D.przygotujZdjecia(w.oid, [plik]);
-      nowe.pom = 'rzut'; nowe.rzutAuto = true;
+      // 2D (rzutAuto) i 3D (rzutAuto3d) — każdy podmienia tylko swoje poprzednie zdjęcie
+      const widoki = [[w.png, 'rzutAuto', 'rzut.png'], [w.png3d, 'rzutAuto3d', 'rzut-3d.png']].filter(([b]) => b);
+      const nowe = await D.przygotujZdjecia(w.oid, widoki.map(([b, , n]) => new File([b], n, { type: b.type || 'image/png' })));
       const plan = await D.przygotujPlanRzutu(w.oid, w.plan);
       const o2 = D.oferta(w.oid);
       const zdj = [...(o2.zdj || [])];
-      const i = zdj.findIndex((z) => z.rzutAuto);
-      const stare = i >= 0 ? zdj[i] : null;
-      if (i >= 0) zdj.splice(i, 1, nowe); else zdj.push(nowe);
+      const stareL = [];
+      widoki.forEach(([, flaga], k) => {
+        const n = nowe[k]; n.pom = 'rzut'; n[flaga] = true;
+        const i = zdj.findIndex((z) => z[flaga]);
+        if (i >= 0) { stareL.push(zdj[i]); zdj.splice(i, 1, n); }
+        else { const j = zdj.findIndex((z) => z.rzutAuto || z.rzutAuto3d); if (j >= 0) zdj.splice(flaga === 'rzutAuto' ? j : j + 1, 0, n); else zdj.push(n); }
+      });
       if (!zdj.some((z) => z.glowne)) { const p = zdj.find(mozeBycGlowne); if (p) p.glowne = true; }
       const staryPlan = o2.rzutPlan?.id;
       await D.zmien(w.oid, { zdj: zdj.map((z) => JSON.parse(JSON.stringify(z))), rzutPlan: { id: plan.id, t: plan.t, kto: D.stan.konto?.nazwa || '' } });
       await R.usun(`wynik:${w.oid}`);
-      if (stare) D.usunZdjeciePlik(stare.id);
+      for (const st of stareL) D.usunZdjeciePlik(st.id);
       if (staryPlan) D.usunPlik(staryPlan);
       const pokoje = R.nazwyPomieszczen((w.pokoje || []).filter((r) => r.m != null));
       if (pokoje.length) zaproponujPomieszczenia(w.oid, pokoje);

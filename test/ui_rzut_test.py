@@ -34,13 +34,13 @@ with sync_playwright() as p:
     ok('Pobierz kopię JSON' not in J("document.body.innerText"), 'bez komunikatu o konflikcie')
     pg.click('.am-zapisz'); pg.wait_for_url('**/plan.html**', timeout=30000); pg.wait_for_timeout(1500)
     ok(J("window.__plan.projekt.floors[0].walls.length") == 20 and J("window.__plan.zmienione"), 'Gotowe wraca do Rzut AM z planem')
-    pg.click('[data-a=zapisz]'); pg.wait_for_url('**/ogloszenia/#/o/**', timeout=30000); pg.wait_for_selector('.okno', timeout=20000); pg.wait_for_timeout(500)
+    pg.click('[data-a=zapisz]'); pg.click('.okno-tlo [data-w=oba]'); pg.wait_for_url('**/ogloszenia/#/o/**', timeout=30000); pg.wait_for_selector('.okno', timeout=20000); pg.wait_for_timeout(500)
     tx = pg.inner_text('.okno-tresc'); ok('Twój pomiar 14,35' in tx, 'okno pokazuje, że pomiar zostaje')
     pg.click('.okno [data-t]'); pg.wait_for_timeout(1500)
     o = J(f"(async()=>{{const D=await import('./js/dane.js'); return D.oferta('{oid}')}})()")
     s1 = [x for x in o['pom'] if x['nazwa'] == 'Sypialnia 1'][0]
     ok((s1.get('a'), s1.get('b'), s1.get('m')) == (4.1, 3.5, 14.35), 'wymiary z dalmierza nietknięte')
-    ok([z.get('pom') for z in o['zdj']] == ['rzut'] and not o['zdj'][0].get('glowne'), 'obraz rzutu w zdjęciach, nie jako główne')
+    ok([z.get('pom') for z in o['zdj']] == ['rzut', 'rzut'] and not any(z.get('glowne') for z in o['zdj']), 'obraz rzutu w zdjęciach, nie jako główne')
     pg.wait_for_function("!document.querySelector('.stan-sync')", timeout=30000); pg.wait_for_timeout(800)
     # odzyskanie wymiarów skasowanych przez wersję 1.5.0
     J(f"(async()=>{{const D=await import('./js/dane.js'); const o=D.oferta('{oid}'); await D.zmien('{oid}', {{pom: o.pom.map(({{a,b,...r}})=>({{...r, m: 14.26}}))}});}})()")

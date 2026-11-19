@@ -107,10 +107,12 @@ with sync_playwright() as p:
     ok(any(w.get('granica') for w in fl()['walls']), 'granica narysowana'); ok(len(J("window.__plan.sc.pokoje")) == nP + 1, 'granica dzieli pomieszczenie na dwa')
     shot('06-granica')
     pg.click('.plan-dol [data-n=sciana]'); pg.wait_for_timeout(150)
+    # oddal widok, żeby miejsce pod rzutem było na ekranie także na niskich ekranach
+    J("(()=>{const S=window.__plan, c=document.querySelector('#plotno').getBoundingClientRect(), k=0.62, cx=c.width/2, cy=c.height/2; S.widok.ox=cx-(cx-S.widok.ox)*k; S.widok.oy=cy-(cy-S.widok.oy)*k; S.widok.s*=k; window.__planUI.odswiez()})()")
     b = J("window.__plan.sc.granice"); y = b['y1'] + 80
     pg.mouse.click(*ekr(b['x0'], y)); pg.mouse.click(*ekr(b['x0'] + 300, y + 4)); pg.wait_for_timeout(200)
     pg.click('#pasek-akcji [data-a=gotowe]'); pg.wait_for_timeout(150)
-    nw = fl()['walls'][-1]; ok(abs(nw['start']['y'] - nw['end']['y']) < 0.01, 'nowa ściana prosta (kąt prosty przyciągnięty)')
+    nw = fl()['walls'][-1]; ok(not nw.get('granica') and abs(nw['start']['y'] - nw['end']['y']) < 0.01, 'nowa ściana prosta (kąt prosty przyciągnięty)')
     # 10) drzwi i okno w nowej ścianie
     pg.click('.plan-dol [data-n=drzwi]'); pg.wait_for_timeout(100)
     nD = len(fl()['doors']); pg.mouse.click(*ekr(b['x0'] + 150, y)); pg.wait_for_timeout(250)
@@ -133,18 +135,37 @@ with sync_playwright() as p:
     if krzywe: print('   krzywe:', J("(()=>{const S=window.__plan, f=S.projekt.floors.find(x=>x.id===S.projekt.activeFloorId)||S.projekt.floors[0]; return JSON.stringify(f.walls.filter(w=>{const a=Math.atan2(w.end.y-w.start.y,w.end.x-w.start.x)*180/Math.PI; const r=((a%90)+90)%90; return Math.min(r,90-r)>0.6}).map(w=>[w.start,w.end,w.granica]))})()"))
     ok(krzywe == 0, f'wyprostowane: krzywych ścian {krzywe}')
     shot('08-wyprostowany')
+    # 12b) widok 3D: podgląd bez edycji, przesuwanie działa
+    pg.click('.pl-tryb [data-t="3d"]'); pg.wait_for_timeout(400)
+    ok(J("window.__plan.tryb3d") and J("document.body.classList.contains('tryb-3d')"), 'przełącznik 3D włącza widok 3D')
+    przed = stan(); sp2 = J("window.__plan.sc.pokoje.filter(p=>!p.otwor)[0].poly[0]")
+    pg.mouse.click(*ekr(sp2['x'] + 60, sp2['y'] + 60)); pg.wait_for_timeout(250)
+    ok(J("window.__plan.zazn") is None and stan() == przed, 'stuknięcie w 3D niczego nie zaznacza ani nie zmienia')
+    ox0 = J("window.__plan.widok.ox"); r0 = J("(()=>{const r=document.querySelector('#plotno').getBoundingClientRect(); return [r.left+r.width/2, r.top+r.height/2]})()")
+    pg.mouse.move(r0[0], r0[1]); pg.mouse.down(); pg.mouse.move(r0[0] + 50, r0[1] + 20, steps=6); pg.mouse.up(); pg.wait_for_timeout(200)
+    ok(J("window.__plan.widok.ox") != ox0 and stan() == przed, 'przeciąganie w 3D przesuwa widok')
+    shot('08b-widok-3d')
     # 13) zapis do oferty
-    pg.click('[data-a=zapisz]'); pg.wait_for_url('**/ogloszenia/#/o/**', timeout=30000); pg.wait_for_selector('.okno', timeout=20000); pg.wait_for_timeout(400)
+    pg.click('[data-a=zapisz]'); pg.click('.okno-tlo [data-w=oba]'); pg.wait_for_url('**/ogloszenia/#/o/**', timeout=30000); pg.wait_for_selector('.okno', timeout=20000); pg.wait_for_timeout(400)
     shot('09-okno-oferty'); tx = pg.inner_text('.okno-tresc'); print('   okno:', tx.replace('\n', ' | ')[:200])
     ok('WC' in tx, 'pomieszczenia z rzutu przekazane do karty')
     pg.click('.okno [data-t]'); pg.wait_for_timeout(1500)
     pg.wait_for_function("!document.querySelector('.stan-sync')", timeout=30000); pg.wait_for_timeout(800)
     o = J(f"(async()=>{{const D=await import('./js/dane.js'); return D.oferta('{oid}')}})()")
     ok(o.get('rzutPlan') and any(z.get('pom') == 'rzut' for z in o['zdj']), 'rzut zapisany w ofercie (plan + obraz)')
+    ok(sum(1 for z in o['zdj'] if z.get('rzutAuto')) == 1 and sum(1 for z in o['zdj'] if z.get('rzutAuto3d')) == 1, 'w ofercie są dwa zdjęcia: rzut 2D i 3D')
     # 14) ponowne otwarcie: plan z serwera, nazwy zachowane
     pg.evaluate(f"location.hash='#/o/{oid}/zdjecia'"); pg.wait_for_selector('[data-a=rzut-otworz]'); pg.click('[data-a=rzut-otworz]')
     pg.wait_for_url('**/plan.html**'); pg.wait_for_timeout(1500)
     ok(any(q == 'WC' for q in J("window.__plan.sc ? window.__plan.sc.pokoje.map(p=>p.nazwa) : []")), 'po ponownym otwarciu nazwy pomieszczeń są')
     ok(any(w.get('granica') for w in fl()['walls']), 'granica zapisana w planie')
     shot('10-ponownie')
+    ok(not J("window.__plan.tryb3d"), 'edytor otwiera się w 2D')
+    # 15) drugi zapis: tylko 3D — podmienia tylko zdjęcie 3D
+    st = {z['id'] for z in o['zdj']}
+    pg.click('[data-a=zapisz]'); pg.click('.okno-tlo [data-w="3d"]'); pg.wait_for_url('**/ogloszenia/#/o/**', timeout=30000); pg.wait_for_selector('.okno', timeout=20000); pg.wait_for_timeout(400)
+    pg.click('.okno [data-n]'); pg.wait_for_timeout(1200); pg.wait_for_function("!document.querySelector('.stan-sync')", timeout=30000); pg.wait_for_timeout(500)
+    o2 = J(f"(async()=>{{const D=await import('./js/dane.js'); return D.oferta('{oid}')}})()")
+    z2 = [z for z in o2['zdj'] if z.get('rzutAuto')][0]['id'], [z for z in o2['zdj'] if z.get('rzutAuto3d')][0]['id']
+    ok(len(o2['zdj']) == len(o['zdj']) and z2[0] in st and z2[1] not in st, 'zapis „tylko 3D” podmienia tylko zdjęcie 3D')
     print('BLEDY', bl[:8]); assert not bl

@@ -31,7 +31,7 @@ with sync_playwright() as p:
     ok(J("window.__plan.projekt.floors.some(f=>f.name==='Poddasze')"), 'nazwa piętra zmieniona')
     pg.screenshot(path=f'/tmp/amshots/pp-{silnik}-2-menu.png')
     pg.click('#arkusz [data-a=zamknij]')
-    pg.click('[data-a=zapisz]'); pg.wait_for_url('**/ogloszenia/#/o/**', timeout=30000); pg.wait_for_selector('.okno', timeout=20000); pg.wait_for_timeout(400)
+    pg.click('[data-a=zapisz]'); pg.click('.okno-tlo [data-w=oba]'); pg.wait_for_url('**/ogloszenia/#/o/**', timeout=30000); pg.wait_for_selector('.okno', timeout=20000); pg.wait_for_timeout(400)
     tx = pg.inner_text('.okno-tresc'); print('   okno:', tx.replace('\n', ' | ')[:240])
     ok('Salon' in tx and 'Poddasze' in tx, 'pomieszczenia z obu pięter z kondygnacją')
     pg.click('.okno [data-t]'); pg.wait_for_timeout(1200)
