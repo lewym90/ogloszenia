@@ -39,7 +39,13 @@ def mapa():
 # Arkusz 21 (19.11.2026): przedmioty, które w arkuszach 1–20 wyszły od frontu zamiast z góry
 POPRAWKI = {(21, 1): ['wieszak_ubrania'], (21, 2): ['pralka'], (21, 3): ['suszarka'], (21, 4): ['pralka_suszarka'], (21, 5): ['piec_gazowy'],
             (21, 6): ['regal_metalowy', 'regal_magazynowy'], (21, 7): ['regal_sklepowy'], (21, 8): ['hustawka'], (21, 9): ['szafka_narzedziowa'],
-            (21, 10): ['pompa_ciepla', 'klimatyzator'], (21, 11): ['winiarka'], (21, 12): ['grzejnik', 'grzejnik_lazienkowy']}
+            (21, 10): ['pompa_ciepla', 'klimatyzator'], (21, 11): ['winiarka'], (21, 12): ['grzejnik', 'grzejnik_lazienkowy'],
+            # arkusz 22: wyraźne fronty z arkuszy 1–21
+            (22, 1): ['piec_gazowy'], (22, 2): ['hustawka'], (22, 3): ['kominek'], (22, 4): ['pianino'], (22, 5): ['szafka_lazienkowa'], (22, 6): ['bojler'],
+            (22, 7): ['wieszak_lawka'], (22, 8): ['grill'], (22, 9): ['piec_co'], (22, 10): ['kartony'], (22, 11): ['szafka_niska'], (22, 12): ['skrzynia_lawka'],
+            # arkusz 23: widoczne paski frontów i boki
+            (23, 1): ['szafka_kuchenna'], (23, 2): ['slup_okragly'], (23, 3): ['slup_kwadratowy'], (23, 4): ['regal_garderoba'], (23, 5): ['toaletka'], (23, 6): ['kontener'],
+            (23, 7): ['recepcja'], (23, 8): ['kuchenka'], (23, 9): ['zmywarka'], (23, 10): ['koza'], (23, 11): ['sauna'], (23, 12): ['lodowka']}
 
 
 def maska_tla(rgba):
