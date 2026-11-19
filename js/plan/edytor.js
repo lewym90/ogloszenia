@@ -82,11 +82,12 @@ function uchwyty() {
     const f = fl.furniture.find((q) => q.id === z.id); if (!f) return [];
     const { w, d } = wymiaryMebla(f), a = ((f.rotation || 0) * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
     const P = (lx, ly) => doEkranu(f.position.x + lx * c - ly * s, f.position.y + lx * s + ly * c);
-    const gora = P(0, -d / 2), odst = 34 / S.widok.s;
-    const L = [{ typ: 'obrot', ...P(0, -d / 2 - odst), od: gora }];
-    if (w * S.widok.s >= 46) L.push({ typ: 'kraw', kraw: 'p', ...P(w / 2, 0) }, { typ: 'kraw', kraw: 'l', ...P(-w / 2, 0) });
-    if (d * S.widok.s >= 46) L.push({ typ: 'kraw', kraw: 'd', ...P(0, d / 2) }, { typ: 'kraw', kraw: 'g', ...P(0, -d / 2) });
-    return L;
+    // uchwyty rozmiaru są zawsze; przy małym elemencie (albo dużym oddaleniu) odsunięte poza obrys, żeby dało się je złapać
+    const min = 24 / S.widok.s, hw = Math.max(w / 2, min), hd = Math.max(d / 2, min);
+    const gora = P(0, -d / 2), odst = (d / 2 < min ? hd - d / 2 + 36 : 34) / S.widok.s;
+    return [{ typ: 'obrot', ...P(0, -d / 2 - odst), od: gora },
+      { typ: 'kraw', kraw: 'p', ...P(hw, 0) }, { typ: 'kraw', kraw: 'l', ...P(-hw, 0) },
+      { typ: 'kraw', kraw: 'd', ...P(0, hd) }, { typ: 'kraw', kraw: 'g', ...P(0, -hd) }];
   }
   if (z.rodzaj === 'sciana') {
     const w = fl.walls.find((q) => q.id === z.id); if (!w) return [];
@@ -328,7 +329,7 @@ function wybierzAkcje(x, y, e) {
   if (!S.projekt) return pan;
   for (const u of uchwyty()) if (Math.hypot(u.x - x, u.y - y) < (e.pointerType === 'mouse' ? 14 : 24)) {
     if (u.typ === 'obrot') return akcjaObrotu();
-    if (u.typ === 'kraw') return akcjaRozmiaru(u.kraw);
+    if (u.typ === 'kraw') return akcjaRozmiaru(u.kraw, x, y);
     if (u.typ === 'koniec') return akcjaKonca(u.koniec);
   }
   const p = doSwiata(x, y), tol = 12 / S.widok.s;
@@ -369,19 +370,25 @@ function akcjaObrotu() {
     },
   };
 }
-function akcjaRozmiaru(kraw) {
+const proporcjonalny = (f) => MEBLE[rodzajMebla(f)].skala === 'p'; // grafika „w proporcjach” (rośliny, okrągłe stoły, fotele…) — rozmiar zmienia się w obu kierunkach naraz
+function akcjaRozmiaru(kraw, x0, y0) {
   const f = element(), { w: w0, d: d0 } = wymiaryMebla(f), a = ((f.rotation || 0) * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
-  const sx = Math.abs(f.scale?.x ?? 1) || 1, sy = Math.abs(f.scale?.y ?? 1) || 1, p0 = { ...f.position };
+  const sx = Math.abs(f.scale?.x ?? 1) || 1, sy = Math.abs(f.scale?.y ?? 1) || 1, p0 = { ...f.position }, prop = proporcjonalny(f);
+  const lok = (x, y) => { const p = doSwiata(x, y), dx = p.x - p0.x, dy = p.y - p0.y; return { lx: dx * c + dy * s, ly: -dx * s + dy * c }; }; // w układzie mebla
+  const st = lok(x0 ?? 0, y0 ?? 0);
   return {
     zmiana: true, mebel: true,
     ruch: (x, y) => {
-      const p = doSwiata(x, y), dx = p.x - p0.x, dy = p.y - p0.y;
-      const lx = dx * c + dy * s, ly = -dx * s + dy * c; // w układzie mebla
+      const { lx, ly } = lok(x, y), mx = lx - st.lx, my = ly - st.ly; // przesunięcie palca od chwycenia uchwytu
       let w = w0, d = d0, cx = 0, cy = 0;
-      if (kraw === 'p') { w = Math.max(10, Math.round(lx + w0 / 2)); cx = (w - w0) / 2; }
-      if (kraw === 'l') { w = Math.max(10, Math.round(w0 / 2 - lx)); cx = -(w - w0) / 2; }
-      if (kraw === 'd') { d = Math.max(10, Math.round(ly + d0 / 2)); cy = (d - d0) / 2; }
-      if (kraw === 'g') { d = Math.max(10, Math.round(d0 / 2 - ly)); cy = -(d - d0) / 2; }
+      if (kraw === 'p') { w = Math.max(10, Math.round(w0 + mx)); cx = (w - w0) / 2; }
+      if (kraw === 'l') { w = Math.max(10, Math.round(w0 - mx)); cx = -(w - w0) / 2; }
+      if (kraw === 'd') { d = Math.max(10, Math.round(d0 + my)); cy = (d - d0) / 2; }
+      if (kraw === 'g') { d = Math.max(10, Math.round(d0 - my)); cy = -(d - d0) / 2; }
+      if (prop) { // obie strony w tej samej proporcji, środek zostaje
+        const k = kraw === 'p' || kraw === 'l' ? w / w0 : d / d0;
+        w = Math.max(10, Math.round(w0 * k)); d = Math.max(10, Math.round(d0 * k)); cx = 0; cy = 0;
+      }
       f.width = w / sx; f.depth = d / sy;
       f.position = { x: p0.x + cx * c - cy * s, y: p0.y + cx * s + cy * c };
       const q = doEkranu(f.position.x, f.position.y);
@@ -854,7 +861,11 @@ function podlaczPola(ark) {
       if (pole === 'nazwa') return nazwijPokoj(v);
       if (pole === 'nazwa-pietra') { const f = pietro(S.projekt), przed = migawka(); f.name = String(v).trim() || f.name; if (przed !== migawka()) { zapamietaj(przed); interfejs(); } return; }
       if (pole === 'granica') return AKCJE.granica();
-      if (pole === 'w' || pole === 'd') return zmien((f) => { const s = Math.abs((pole === 'w' ? f.scale?.x : f.scale?.y) ?? 1) || 1; f[pole === 'w' ? 'width' : 'depth'] = Math.max(5, v) / s; });
+      if (pole === 'w' || pole === 'd') return zmien((f) => {
+        const { w, d } = wymiaryMebla(f), sxx = Math.abs(f.scale?.x ?? 1) || 1, syy = Math.abs(f.scale?.y ?? 1) || 1, nv = Math.max(5, v);
+        if (proporcjonalny(f)) { const k = nv / (pole === 'w' ? w : d); f.width = (w * k) / sxx; f.depth = (d * k) / syy; return; }
+        f[pole === 'w' ? 'width' : 'depth'] = nv / (pole === 'w' ? sxx : syy);
+      });
       if (pole === 'r') return zmien((f) => { f.rotation = ((v % 360) + 360) % 360; });
       if (pole === 'szer') return zmien((o) => ustawSzerokosc(o, v));
       if (pole === 'dl') return zmien((w) => ustawDlugosc(w, v), true);

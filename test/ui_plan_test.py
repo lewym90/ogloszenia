@@ -66,6 +66,19 @@ with sync_playwright() as p:
     mysz_przeciagnij((kr[0], kr[1]), (kr[0] + kr[2] * 30, kr[1] + kr[3] * 30))
     w1 = [f for f in fl()['furniture'] if f['id'] == J("window.__plan.zazn.id")][0]['width']
     ok(abs(w1 - w0) > 5, f'krawędź zmienia szerokość ({w0:.0f} → {w1:.0f} cm)')
+    # 5b) małe elementy przy zwykłym powiększeniu: uchwyt rozmiaru jest (odsunięty), roślina rośnie w obu kierunkach
+    def maly(klucz, w, d):
+        J(f"""(()=>{{const S=window.__plan, f=(S.projekt.floors.find(x=>x.id===S.projekt.activeFloorId)||S.projekt.floors[0]); const p=S.sc.pokoje.filter(q=>!q.otwor)[0].poly; const cx=p.reduce((a,q)=>a+q.x,0)/p.length, cy=p.reduce((a,q)=>a+q.y,0)/p.length;
+          f.furniture.push({{id:'t-{klucz}', catalogId:'imported_object', sourceCategory:'{klucz}', amRodzaj:'{klucz}', position:{{x:cx,y:cy}}, rotation:0, scale:{{x:1,y:1,z:1}}, width:{w}, depth:{d}, height:80}});
+          S.zazn={{rodzaj:'mebel', id:'t-{klucz}'}}; window.__planUI.interfejs(); window.__planUI.odswiez();}})()"""); pg.wait_for_timeout(200)
+        kr = J("""(()=>{const S=window.__plan, r=document.querySelector('#plotno').getBoundingClientRect(); const f=(S.projekt.floors.find(x=>x.id===S.projekt.activeFloorId)||S.projekt.floors[0]).furniture.find(q=>q.id===S.zazn.id);
+          const hw=Math.max(f.width/2, 24/S.widok.s); return [(f.position.x+hw)*S.widok.s+S.widok.ox+r.left, f.position.y*S.widok.s+S.widok.oy+r.top]})()""")
+        shot(f'05b-{klucz}'); mysz_przeciagnij((kr[0], kr[1]), (kr[0] + 25, kr[1]))
+        return [f for f in fl()['furniture'] if f['id'] == f't-{klucz}'][0]
+    f2 = maly('roslina_mala', 35, 35); ok(f2['width'] > 40 and f2['depth'] > 40, f"mała roślina powiększona w obu kierunkach ({f2['width']:.0f} × {f2['depth']:.0f})")
+    f3 = maly('szafka_nocna', 45, 40); ok(f3['width'] > 50 and abs(f3['depth'] - 40) < 1, f"mała szafka poszerzona uchwytem ({f3['width']:.0f} × {f3['depth']:.0f})")
+    akcja('usun'); J("(()=>{const S=window.__plan; S.zazn={rodzaj:'mebel', id:'t-roslina_mala'}; window.__planUI.interfejs()})()"); akcja('usun')
+    J("(()=>{const S=window.__plan; const f=S.projekt.floors.find(x=>x.id===S.projekt.activeFloorId)||S.projekt.floors[0]; S.zazn={rodzaj:'mebel', id:f.furniture[0].id}; window.__planUI.interfejs()})()")
     # 6) do ściany, obrót 90°, odbij, duplikuj, usuń
     akcja('wyrownaj')
     akcja('obroc')
