@@ -1,1 +1,13 @@
-{"wersja": 1, "meble": [], "podlogi": []}
+{
+ "wersja": 3,
+ "meble": [
+  "lozeczko",
+  "lozko_120",
+  "lozko_160",
+  "lozko_180",
+  "lozko_90",
+  "lozko_dzieciece",
+  "puf"
+ ],
+ "podlogi": []
+}

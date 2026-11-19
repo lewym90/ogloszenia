@@ -2,7 +2,7 @@
 """Tnie arkusz grafik właściciela na elementy biblioteki rzutu (Rzut AM).
 
 Użycie:
-  python3 narzedzia/plan/tnij.py <numer_arkusza> <plik_obrazu> [--podglad]
+  python3 narzedzia/plan/tnij.py <numer_arkusza> <plik_obrazu> [--podglad] [--pola 1,2,5]
   python3 narzedzia/plan/tnij.py --spis            # odbudowuje img/plan/biblioteka.json z plików
 
 Arkusze 1–16 i 20: siatka 4×3 przedmiotów na magentowym (#FF00FF) albo przezroczystym tle.
@@ -81,6 +81,9 @@ def podzialy(profil, n):
     return cięcia
 
 
+POLA = None  # --pola 1,2,5 — tnie tylko wybrane pola (reszta arkusza do ponownego wygenerowania)
+
+
 def tnij_meble(nr, img, podglad):
     M = mapa()
     rgba = np.array(img.convert('RGBA'))
@@ -92,7 +95,7 @@ def tnij_meble(nr, img, podglad):
     for j in range(3):
         for i in range(4):
             pole = j * 4 + i + 1
-            if (nr, pole) not in M:
+            if (nr, pole) not in M or (POLA and pole not in POLA):
                 continue
             _, klucz = M[(nr, pole)]
             x0, x1, y0, y1 = xs[i], xs[i + 1], ys[j], ys[j + 1]
@@ -199,6 +202,8 @@ if __name__ == '__main__':
     if len(sys.argv) < 3:
         print(__doc__); sys.exit(1)
     nr, plik = int(sys.argv[1]), sys.argv[2]
+    if '--pola' in sys.argv:
+        POLA = {int(x) for x in sys.argv[sys.argv.index('--pola') + 1].split(',')}
     img = Image.open(plik)
     print(f'Arkusz {nr}: {img.size[0]}×{img.size[1]}')
     (tnij_podlogi if nr in ARKUSZE_PODLOG else tnij_meble)(nr, img, '--podglad' in sys.argv)

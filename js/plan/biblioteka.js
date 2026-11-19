@@ -25,7 +25,7 @@ export const MEBLE = {
   lawka: E('Ławka', 120, 40, 'Sypialnia', 'komoda', [1, 11]),
   fotel_sypialnia: E('Fotel do sypialni', 70, 75, 'Sypialnia', 'fotel', [1, 12], 'p'),
   // 2 — pokój dziecięcy i garderoba
-  lozeczko: E('Łóżeczko dziecięce', 66, 126, 'Pokój dziecięcy', 'lozko1', [2, 1]),
+  lozeczko: E('Łóżeczko dziecięce', 126, 66, 'Pokój dziecięcy', 'lozko1', [2, 1]),
   lozko_dzieciece: E('Łóżko dziecięce 80×160', 88, 168, 'Pokój dziecięcy', 'lozko1', [2, 2]),
   lozko_pietrowe: E('Łóżko piętrowe', 98, 208, 'Pokój dziecięcy', 'lozko1', [2, 3]),
   skrzynia_zabawki: E('Skrzynia na zabawki', 80, 45, 'Pokój dziecięcy', 'komoda', [2, 4]),
