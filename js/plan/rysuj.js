@@ -166,7 +166,7 @@ function miejsceNapisu(p, meble) {
   // długą nazwę można złamać na dwie linie, jeśli wtedy zmieści się w wolnym miejscu
   const nazwa = p.nazwa || 'Pomieszczenie', slowa = nazwa.split(' ');
   const uklady = [{ linia: nazwa.length, dwie: false }];
-  if (slowa.length > 1) { let m = Infinity; for (let i = 1; i < slowa.length; i++) m = Math.min(m, Math.max(slowa.slice(0, i).join(' ').length, slowa.slice(i).join(' ').length)); uklady.push({ linia: m, dwie: true }); }
+  { let m = Infinity; for (let i = 1; i < slowa.length; i++) if (!/^\d+$/.test(slowa.slice(i).join(' '))) m = Math.min(m, Math.max(slowa.slice(0, i).join(' ').length, slowa.slice(i).join(' ').length)); if (m < Infinity) uklady.push({ linia: m, dwie: true }); } // „Pokój 2” nie łamiemy przed numerem
   const stale = meble.filter((f) => !naPodlodze(f));
   let best = null;
   for (const u of uklady) {
@@ -476,8 +476,8 @@ export function rysuj(ctx, sc, widok, op = {}) {
     let linie = [nazwa];
     if ((pos.dwie || ctx.measureText(nazwa).width > szer) && nazwa.includes(' ')) { // zawijanie na dwie linie
       const sl = nazwa.split(' '); let best = null;
-      for (let i = 1; i < sl.length; i++) { const a = sl.slice(0, i).join(' '), b = sl.slice(i).join(' '); const w = Math.max(ctx.measureText(a).width, ctx.measureText(b).width); if (!best || w < best.w) best = { w, l: [a, b] }; }
-      linie = best.l;
+      for (let i = 1; i < sl.length; i++) { const a = sl.slice(0, i).join(' '), b = sl.slice(i).join(' '); if (/^\d+$/.test(b)) continue; const w = Math.max(ctx.measureText(a).width, ctx.measureText(b).width); if (!best || w < best.w) best = { w, l: [a, b] }; }
+      if (best) linie = best.l;
     }
     const maxW = Math.max(...linie.map((l) => ctx.measureText(l).width));
     if (maxW > szer * 1.25) { const k = Math.max(0.62, (szer * 1.25) / maxW); f1 *= k; f2 *= k; }
