@@ -55,7 +55,7 @@ function bounds(fl) {
 const TEX = new Map();
 const PX_CM = 4; // gęstość tekstury: 4 px na cm
 function losowy(ziarno) { let s = ziarno >>> 0 || 1; return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return ((s >>> 0) % 100000) / 100000; }; }
-function tekstura(klucz, obrazy) {
+export function tekstura(klucz, obrazy) {
   const zBiblioteki = obrazy?.get?.(`podloga:${klucz}`);
   if (zBiblioteki) return { img: zBiblioteki, cm: obrazy.get(`podlogaCm:${klucz}`) || 200 }; // szerokość kafla w cm (z narzędzia do cięcia)
   if (TEX.has(klucz)) return TEX.get(klucz);
@@ -289,7 +289,7 @@ function lozko(ctx, w, d, lw, n) {
 }
 
 let bezCieniaMebli = false;
-function rysujMebel(ctx, f, s, dpr, obrazy, cien) {
+export function rysujMebel(ctx, f, s, dpr, obrazy, cien) {
   const r = rodzajMebla(f), { w, d } = wymiaryMebla(f);
   ctx.save();
   ctx.translate(f.position.x, f.position.y); ctx.rotate(((f.rotation || 0) * Math.PI) / 180);
@@ -330,12 +330,13 @@ export function rysuj(ctx, sc, widok, op = {}) {
   const px = (v) => v / s; // grubość linii w px ekranu → jednostki świata
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = op.tlo || '#ffffff'; ctx.fillRect(0, 0, W, H);
+  if (!op.tylkoNapisy) { ctx.fillStyle = op.tlo || '#ffffff'; ctx.fillRect(0, 0, W, H); }
   swiat();
   const { fl, pokoje, sciany } = sc;
-  const meble = op.meble === false ? [] : (fl.furniture || []);
+  const meble = op.meble === false ? [] : (fl.furniture || []).filter((f) => !op.pomin?.has(f.id)); // pomin: meble-bryły rysowane osobno w 3D
   bezCieniaMebli = !!op.bezCienia;
 
+  if (!op.tylkoNapisy) { // tylkoNapisy: sama warstwa napisów (widok 3D rysuje resztę sam)
   if (op.podlogi) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(op.podlogi, 0, 0); swiat(); } else {
   // 1) cień całego budynku pod spodem
   ctx.save();
@@ -374,9 +375,9 @@ export function rysuj(ctx, sc, widok, op = {}) {
   for (const st of fl.stairs || []) rysujMebel(ctx, { id: st.id, amRodzaj: st.stairType === 'spiral' ? 'schody_krecone' : st.stairType === 'l-shaped' ? 'schody_l' : st.stairType === 'u-shaped' ? 'schody_u' : 'schody_proste', position: st.position, rotation: st.rotation, width: st.width, depth: st.depth, scale: { x: 1, y: 1, z: 1 } }, s, dpr, op.obrazy, true);
   for (const k of fl.columns || []) rysujMebel(ctx, { id: k.id, amRodzaj: k.shape === 'round' ? 'slup_okragly' : 'slup_kwadratowy', position: k.position, rotation: k.rotation, width: k.diameter, depth: k.diameter, scale: { x: 1, y: 1, z: 1 } }, s, dpr, op.obrazy, false);
 
-  // 4) ściany z otworami
+  // 4) ściany z otworami (w widoku 3D ściany i okna rysuje rysuj3d.js)
   ctx.fillStyle = SCIANA;
-  for (const g of sciany) {
+  for (const g of op.bezScian ? [] : sciany) {
     if (g.granica) continue;
     if (g.luk) { ctx.beginPath(); ctx.moveTo(g.w.start.x, g.w.start.y); ctx.quadraticCurveTo(g.w.curvePoint.x, g.w.curvePoint.y, g.w.end.x, g.w.end.y); ctx.lineWidth = g.th; ctx.strokeStyle = SCIANA; ctx.lineCap = 'square'; ctx.stroke(); continue; }
     let t = 0;
@@ -396,6 +397,7 @@ export function rysuj(ctx, sc, widok, op = {}) {
     const x = g.w.start.x, y = g.w.start.y, h = g.th / 2;
     const P = (t, n) => [x + g.ux * t + g.nx * n, y + g.uy * t + g.ny * n];
     if (o.rodzaj === 'okno') {
+      if (op.bezScian) continue;
       ctx.beginPath(); ctx.moveTo(...P(o.t0, h)); ctx.lineTo(...P(o.t1, h)); ctx.lineTo(...P(o.t1, -h)); ctx.lineTo(...P(o.t0, -h)); ctx.closePath();
       ctx.fillStyle = '#fbfaf7'; ctx.fill(); ctx.lineWidth = px(1.1); ctx.strokeStyle = '#3b3833'; ctx.stroke();
       ctx.beginPath(); for (const n of [-h * 0.22, h * 0.22]) { ctx.moveTo(...P(o.t0, n)); ctx.lineTo(...P(o.t1, n)); } ctx.lineWidth = px(0.9); ctx.strokeStyle = '#8c8880'; ctx.stroke();
@@ -441,6 +443,7 @@ export function rysuj(ctx, sc, widok, op = {}) {
     }
   }
 
+  } // koniec !tylkoNapisy
   // 8) napisy: nazwy pomieszczeń, potem wymiary (bez nachodzenia)
   ekran();
   const F = op.czcionka || 1; // mnożnik wielkości napisów
