@@ -4,7 +4,7 @@
 import * as G from './geom.js';
 import { rysuj3D, eksport3DPNG, skalaEksportu3D } from './rysuj3d.js';
 import { scena, rysuj, trafienie, eksportPNG, skalaEksportu, wMeblu, wymiaryMebla, pietro, przeliczSciany, warstwaPodlog, dlugoscCzysta, wPokoju } from './rysuj.js';
-import { dopasujDoPomiarow } from './dopasuj.js';
+import { dopasujDoPomiarow, nazwyPoWymiarach } from './dopasuj.js';
 import { MEBLE, GRUPY, PODLOGI, GRUPY_PODLOG, rodzajMebla, nazwaMebla, NAZWY_POMIESZCZEN } from './biblioteka.js';
 import * as R from '../rzut.js';
 
@@ -114,6 +114,7 @@ function nakladka() {
     etykieta(`${Math.round(L)} cm`, (a.x + b.x) / 2, (a.y + b.y) / 2 - 18);
   }
   if (r) for (const p of r.punkty) { const q = doEkranu(p.x, p.y); ctx.beginPath(); ctx.arc(q.x, q.y, 6, 0, 7); ctx.fillStyle = '#C8A44D'; ctx.fill(); }
+  if (S.projekt && S.narzedzie === 'widok' && !S.tryb3d) for (const p of wolneKonce()) { const q = doEkranu(p.x, p.y); ctx.beginPath(); ctx.arc(q.x, q.y, 9, 0, 7); ctx.lineWidth = 3; ctx.strokeStyle = '#D9534F'; ctx.stroke(); }
   if (S.para) for (const id of S.para.sciany) { const w = fl().walls.find((q) => q.id === id); if (!w) continue; const a = doEkranu(w.start.x, w.start.y), b = doEkranu(w.end.x, w.end.y); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineWidth = 7; ctx.strokeStyle = 'rgba(200,164,77,0.85)'; ctx.stroke(); }
   if (S.podglad?.tekst) etykieta(S.podglad.tekst, S.podglad.x, S.podglad.y);
   ctx.restore();
@@ -197,6 +198,36 @@ function nazwyPoPodziale(f, stare) {
     if (r) { r.name = rodzic.room.name; if (rodzic.room.amPodloga) r.amPodloga = rodzic.room.amPodloga; }
   }
   for (const r of f.rooms) if (/^Room \d+$/.test(r.name || '')) r.name = '';
+  pamiecNazw(f, stare, wPoly);
+}
+// pamięć nazw: gdy nazwane pomieszczenie znika (np. ściany na chwilę się rozeszły i dwa pokoje zlały się w jeden),
+// jego nazwa, podłoga i dopasowanie czekają w miejscu, gdzie było — i wracają, gdy pomieszczenie znów się zamknie
+function pamiecNazw(f, stare, wPoly) {
+  let twarze = []; try { twarze = G.resolveRoomGeometry(f, f.rooms); } catch { return; }
+  const POLA = ['name', 'amPodloga', 'amDopasowanie', 'amBezWymiarow', 'amPary'];
+  const sa = new Set(twarze.map((t) => (t.room.name || '').trim()).filter(Boolean));
+  const P = (f.amZnikniete || []).filter((e) => !sa.has(e.meta.name));
+  for (const o of stare) {
+    if (sa.has(o.room.name) || P.some((e) => e.meta.name === o.room.name)) continue;
+    const c = punktWewnatrz(o.poly, wPoly); if (!c) continue;
+    const meta = {}; for (const k of POLA) if (o.room[k] !== undefined) meta[k] = JSON.parse(JSON.stringify(o.room[k]));
+    P.push({ meta, punkt: c });
+  }
+  for (const t of twarze) {
+    if (t.room.name) continue;
+    const i = P.findIndex((e) => wPoly(t.polygon, e.punkt.x, e.punkt.y)); if (i < 0) continue;
+    const r = f.rooms.find((q) => q.id === t.room.id); if (r) Object.assign(r, P[i].meta);
+    P.splice(i, 1);
+  }
+  if (P.length) f.amZnikniete = P.slice(-20); else delete f.amZnikniete;
+}
+function punktWewnatrz(poly, wPoly) {
+  const c = { x: poly.reduce((a, q) => a + q.x, 0) / poly.length, y: poly.reduce((a, q) => a + q.y, 0) / poly.length };
+  if (wPoly(poly, c.x, c.y)) return c;
+  const xs = poly.map((q) => q.x), ys = poly.map((q) => q.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  let best = null;
+  for (let i = 1; i < 12; i++) for (let j = 1; j < 12; j++) { const x = x0 + ((x1 - x0) * i) / 12, y = y0 + ((y1 - y0) * j) / 12; if (wPoly(poly, x, y)) { const d = Math.hypot(x - c.x, y - c.y); if (!best || d < best.d) best = { x, y, d }; } }
+  return best && { x: best.x, y: best.y };
 }
 function rzutNaOdcinek(p, a, b) {
   const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
@@ -752,6 +783,8 @@ function htmlElementu(z, el) {
   if (z.rodzaj === 'pokoj') {
     const p = el, k = p.karta && p.wym ? p.karta : null, wy = (v) => Number(v).toFixed(2).replace('.', ',');
     return `<label for="p-n">Nazwa</label><input id="p-n" type="text" data-pole="nazwa" value="${esc(p.nazwa)}" placeholder="np. Salon" autocomplete="off">
+      ${(() => { const zajete = new Set(S.sc.pokoje.filter((q) => q !== p && q.nazwa).map((q) => q.nazwa.toLowerCase())); const zk = [...new Set(S.pomKarty.map((k) => (k.nazwa || '').trim()).filter((n) => n && !zajete.has(n.toLowerCase())))];
+        return zk.length ? `<label>Z karty oferty</label><div class="chipy">${zk.map((n) => chip('nazwa-pok', n, n === p.nazwa, `data-v="${esc(n)}"`)).join('')}</div><label>Inne</label>` : ''; })()}
       <div class="chipy" style="margin-top:8px">${NAZWY_POMIESZCZEN.map((n) => chip('nazwa-pok', n, n === p.nazwa, `data-v="${esc(n)}"`)).join('')}</div>
       ${k ? (p.dop ? `<p class="info">Rzut dopasowany do Twojego pomiaru ${wy(k.a)} × ${wy(k.b)} m${p.kartaPrzybl ? ` (w karcie: „${esc(k.nazwa)}”)` : ''}. Metraż z całego kształtu, z wnękami: <b>${p.m != null ? m2(p.m) : '—'}</b>.</p>`
         : `<p class="info">Twój pomiar: ${wy(k.a)} × ${wy(k.b)} m = <b>${m2(k.m)}</b>${p.kartaPrzybl ? ` (w karcie: „${esc(k.nazwa)}”)` : ''}. Skan bez dopasowania: ${p.m != null ? m2(p.m) : '—'}.</p><div class="przyciski">${btn('kalibruj', 'linijka', 'Dopasuj rzut do pomiarów')}</div>`)
@@ -865,17 +898,57 @@ AKCJE.grubosc = (b) => zmien((w) => { // ściana zewnętrzna rośnie na zewnątr
 }, true);
 // ---------- dopasowanie rzutu do pomiarów z karty (dalmierz) ----------
 function pomiaryKarty() { return (S.sc?.pokoje || []).filter((p) => !p.otwor && p.wym).map((p) => ({ pokoj: p, a: p.wym.a * 100, b: p.wym.b * 100, pary: p.room.amPary })); }
+// nazwy z karty są ważniejsze niż nazwy ze skanu: „Pokój 2” → „Pokój”, a pomieszczenie bez nazwy dostaje nazwę z karty,
+// jeśli pasuje do niego dokładnie jedno zmierzone pomieszczenie z karty (po wymiarach)
+function nazwyZKarty() {
+  if (!S.sc || !S.pomKarty?.length) return [];
+  const zm = [];
+  for (const p of S.sc.pokoje) if (!p.otwor && p.kartaPrzybl && p.karta?.nazwa && p.nazwa !== p.karta.nazwa) { zm.push(`${p.nazwa} → ${p.karta.nazwa}`); pokojMeta(p).name = p.karta.nazwa; }
+  const uzyte = new Set(S.sc.pokoje.map((p) => p.karta?.nazwa).filter(Boolean).map((n) => n.toLowerCase()));
+  const wolne = S.pomKarty.filter((k) => k.nazwa && k.a && k.b && !uzyte.has(k.nazwa.trim().toLowerCase()));
+  const bez = S.sc.pokoje.filter((p) => !p.otwor && !p.nazwa);
+  if (wolne.length && bez.length) for (const { pokoj, k } of nazwyPoWymiarach(fl(), bez, wolne)) { zm.push(`${k.nazwa} (po wymiarach)`); pokojMeta(pokoj).name = k.nazwa; }
+  return zm;
+}
+function zastosujNazwyZKarty(cicho = false) {
+  const przed = migawka(), zm = nazwyZKarty();
+  if (!zm.length) return;
+  zapamietaj(przed); przebuduj(); interfejs();
+  if (!cicho) toast(`Nazwy z karty: ${zm.join(', ')}`, 4500);
+}
+// końce ścian, które się z niczym nie stykają, a są blisko innej ściany — przez nie pomieszczenie nie jest zamknięte
+function wolneKonce() {
+  const W = fl().walls.filter((w) => !w.curvePoint), L = [];
+  for (const w of W) for (const k of ['start', 'end']) {
+    const p = w[k]; let styk = false, najbl = Infinity;
+    for (const q of W) { if (q === w) continue; const d = rzutNaOdcinek(p, q.start, q.end).d; if (d < 2) { styk = true; break; } najbl = Math.min(najbl, d); }
+    if (!styk && najbl < 40) L.push(p);
+  }
+  return L;
+}
+const krzyweSciany = () => fl().walls.filter((w) => { if (w.curvePoint) return false; const a = (Math.atan2(w.end.y - w.start.y, w.end.x - w.start.x) * 180) / Math.PI, r = ((a % 90) + 90) % 90, o = Math.min(r, 90 - r); return o > 0.2 && o < 6; }).length;
 AKCJE.kalibruj = () => {
   if (!S.sc) return;
   podpowiedz('');
+  zastosujNazwyZKarty(true);
+  if (krzyweSciany()) wyprostuj(); // dopasowanie zakłada ściany pod kątem prostym (skan bywa krzywy o 1–3°)
   const pom = pomiaryKarty();
   if (!pom.length) { toast('W karcie oferty nie ma pomieszczeń z długością i szerokością (albo nazwy nie pasują do rzutu).', 4200); return; }
   const przed = migawka(), przedM = new Map(S.sc.pokoje.map((p) => [p.room.id, p.m]));
+  const nazwy = (sc) => sc.pokoje.filter((p) => !p.otwor).map((p) => p.nazwa).sort().join('|');
+  const ilePrzed = S.sc.pokoje.filter((p) => !p.otwor).length, nazwyPrzed = nazwy(S.sc);
   const raport = dopasujDoPomiarow(fl(), S.sc.pokoje, pom);
   for (const w of raport) { const r = pokojMeta(w.pokoj); if (w.osie.every((o) => !o.brak && !o.sprzeczny)) r.amDopasowanie = { a: w.pokoj.wym.a, b: w.pokoj.wym.b }; else delete r.amDopasowanie; }
+  poScianach();
+  // bezpiecznik: dopasowanie nie może rozdzielić ani połączyć pomieszczeń
+  if (S.sc.pokoje.filter((p) => !p.otwor).length !== ilePrzed || nazwy(S.sc) !== nazwyPrzed) {
+    S.projekt = JSON.parse(przed); przebuduj();
+    S.raport = null; S.zazn = null; S.arkusz = { typ: 'kalibracja', blad: true }; interfejs(); odswiez();
+    return;
+  }
   S.raport = raport.map((w) => ({ id: w.pokoj.room.id, nazwa: w.pokoj.nazwa, karta: w.pokoj.karta?.nazwa, przybl: w.pokoj.kartaPrzybl, przedM: przedM.get(w.pokoj.room.id),
     osie: w.osie.map((o) => ({ klucz: o.klucz, m: o.m, brak: !!o.brak, przed: o.przed, po: o.po, sprzeczny: !!o.sprzeczny })) }));
-  zapamietaj(przed); poScianach();
+  zapamietaj(przed);
   S.zazn = null; S.arkusz = { typ: 'kalibracja' }; interfejs(); odswiez();
 };
 AKCJE['wskaz-pare'] = (b) => {
@@ -896,17 +969,43 @@ function stuknijPare(p, tol) {
   AKCJE.kalibruj();
 }
 // po wczytaniu rzutu: propozycja dopasowania, gdy karta ma pomiary, a rzut jeszcze do nich nie dopasowany
+const kluczPropozycji = () => `am-plan-nie-teraz:${S.oid || 'bez'}`;
+function odrzucone(rodzaj, n) { try { return localStorage.getItem(kluczPropozycji()) === `${rodzaj}:${n}`; } catch { return false; } }
 function propozycjaDopasowania() {
+  const el0 = $('#podpowiedz'), wk = wolneKonce().length;
+  if (S.narzedzie === 'widok' && wk && !odrzucone('napraw', wk)) { // najpierw zamknięte pomieszczenia
+    el0.innerHTML = `<span>Czerwone kółka: tu ściany się nie stykają, więc pomieszczenie nie jest zamknięte — nie ma podłogi, nazwy ani metrażu.</span><span class="pp-przyciski"><button data-a="napraw">Napraw</button><button data-a="propozycja-nie" data-r="napraw:${wk}">Nie teraz</button></span>`;
+    el0.hidden = false; el0.classList.add('z-przyciskami'); return;
+  }
   const nie = (S.sc?.pokoje || []).filter((p) => !p.otwor && p.wym && !p.dop);
   const el = $('#podpowiedz');
-  if (!nie.length || S.narzedzie !== 'widok') return;
-  el.innerHTML = `<span>Twoje pomiary z karty: ${nie.length} ${nie.length === 1 ? 'pomieszczenie' : nie.length < 5 ? 'pomieszczenia' : 'pomieszczeń'}. Dopasować do nich rzut?</span><span class="pp-przyciski"><button data-a="kalibruj">Dopasuj</button><button data-a="propozycja-nie">Nie teraz</button></span>`;
+  if (!nie.length || S.narzedzie !== 'widok' || odrzucone('dopasuj', nie.length)) return;
+  el.innerHTML = `<span>Twoje pomiary z karty: ${nie.length} ${nie.length === 1 ? 'pomieszczenie' : nie.length < 5 ? 'pomieszczenia' : 'pomieszczeń'}. Dopasować do nich rzut?</span><span class="pp-przyciski"><button data-a="kalibruj">Dopasuj</button><button data-a="propozycja-nie" data-r="dopasuj:${nie.length}">Nie teraz</button></span>`;
   el.hidden = false; el.classList.add('z-przyciskami');
 }
-AKCJE['propozycja-nie'] = () => podpowiedz('');
+AKCJE['propozycja-nie'] = (b) => { podpowiedz(''); try { localStorage.setItem(kluczPropozycji(), b?.dataset.r || ''); } catch { /* */ } }; // nie pokazuj tej samej propozycji znowu (wróci, gdy sytuacja się zmieni)
+// dociągnięcie wolnych końców ścian do najbliższej ściany (do 40 cm): koniec ląduje na przecięciu prostych
+function polaczSciany() {
+  const W = fl().walls.filter((w) => !w.curvePoint); let n = 0;
+  for (const w of W) for (const k of ['start', 'end']) {
+    const p = w[k]; if (W.some((q) => q !== w && rzutNaOdcinek(p, q.start, q.end).d < 2)) continue;
+    const u = kierunek(w); let best = null;
+    for (const q of W) {
+      if (q === w) continue; const v = kierunek(q), sin = u.x * v.y - u.y * v.x; if (Math.abs(sin) < 0.5) continue; // tylko ściany pod kątem (≥30°)
+      const t = ((q.start.x - p.x) * v.y - (q.start.y - p.y) * v.x) / sin, X = { x: p.x + u.x * t, y: p.y + u.y * t };
+      if (Math.abs(t) > 40 || rzutNaOdcinek(X, q.start, q.end).d > 2) continue;
+      if (!best || Math.abs(t) < Math.abs(best.t)) best = { t, X };
+    }
+    if (best) { w[k] = { x: Math.round(best.X.x * 10) / 10, y: Math.round(best.X.y * 10) / 10 }; n++; }
+  }
+  return n;
+}
+AKCJE.napraw = () => { podpowiedz(''); const przed = migawka(); if (polaczSciany()) { zapamietaj(przed); poScianach(); } wyprostuj(); const zost = wolneKonce().length; zastosujNazwyZKarty(); if (zost) toast(`Zostało ${zost} miejsc, gdzie ściany się nie stykają — dociągnij je ręcznie (przeciągnij koniec ściany do drugiej).`, 5000); else setTimeout(propozycjaDopasowania, 300); };
 AKCJE['wym-pokoi'] = () => { const przed = migawka(), wl = !wymiaryPokoi(); for (const f of S.projekt.floors) { if (wl) delete f.amBezWymiarowPokoi; else f.amBezWymiarowPokoi = true; } zapamietaj(przed); interfejs(); odswiez(); };
 const wymiaryPokoi = () => !!S.projekt && S.projekt.floors.every((f) => !f.amBezWymiarowPokoi);
 function htmlKalibracji() {
+  if (S.arkusz?.blad) return `<p class="info" style="margin-top:0">Nie dopasowałem rzutu — przesunięcie ścian rozdzieliłoby albo połączyło pomieszczenia. Rzut został bez zmian.</p>
+    <p class="info">Zwykle to znak, że gdzieś ściany się nie stykają (np. po ręcznych poprawkach). Spróbuj „Więcej” → „Wyprostuj skan” i dopasuj jeszcze raz.</p><div class="przyciski">${btn('zamknij', 'zakoncz', 'Zamknij')}</div>`;
   const R = S.raport || [], cm = (v) => `${(Math.round(v * 10) / 10).toFixed(1).replace('.', ',')} cm`, mm = (v) => (v / 100).toFixed(3).replace('.', ',');
   const teraz = new Map((S.sc?.pokoje || []).map((p) => [p.room.id, p]));
   return `<p class="info" style="margin-top:0">Ściany przesunięte tak, żeby zgadzały się z Twoimi pomiarami z karty. Kształt — wnęki, załomy, ścianki — zostaje ze skanu. „Cofnij” u góry przywraca poprzedni rzut.</p>
@@ -1129,7 +1228,7 @@ function ustawProjekt(p, nowy = false) {
   $('#pusto').hidden = true;
   przebuduj(); dopasuj(); interfejs();
   if (nowy) zmieniono();
-  setTimeout(propozycjaDopasowania, 400);
+  setTimeout(() => { zastosujNazwyZKarty(); propozycjaDopasowania(); }, 400);
 }
 async function z3dBiblioteki(oid) { // plan z edytora zaawansowanego zapisany na tym urządzeniu
   try {
@@ -1269,5 +1368,5 @@ if (window.visualViewport) {
   const dopasujArkusz = () => { const v = window.visualViewport, d = Math.max(0, window.innerHeight - v.height - v.offsetTop); $('#arkusz').style.bottom = d > 60 ? `${d}px` : ''; };
   window.visualViewport.addEventListener('resize', dopasujArkusz); window.visualViewport.addEventListener('scroll', dopasujArkusz);
 }
-window.__plan = S; window.__planUI = { interfejs, odswiez, dopasuj }; // do testów
+window.__plan = S; window.__planUI = { interfejs, odswiez, dopasuj, przebuduj: () => poScianach(), wolneKonce, propozycja: propozycjaDopasowania }; // do testów
 start();

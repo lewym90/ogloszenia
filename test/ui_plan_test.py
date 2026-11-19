@@ -34,6 +34,8 @@ with sync_playwright() as p:
     def mysz_przeciagnij(a, b, kroki=8):
         pg.mouse.move(*a); pg.mouse.down(); pg.mouse.move(*b, steps=kroki); pg.mouse.up(); pg.wait_for_timeout(250)
     ok(len(fl()['walls']) == 20, 'skan wczytany (20 ścian)')
+    pg.wait_for_timeout(500)
+    if pg.is_visible('#podpowiedz [data-a=propozycja-nie]'): pg.click('#podpowiedz [data-a=propozycja-nie]'); pg.wait_for_timeout(150)
     shot('01-skan')
     # 1) przeciągnięcie po niezaznaczonym meblu = tylko widok
     f0 = [f for f in fl()['furniture'] if f['catalogId'] == 'bed_queen'][0]

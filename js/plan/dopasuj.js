@@ -55,14 +55,15 @@ function grupy(walls, kat) {
   const S = walls.filter((w) => !w.curvePoint).map((w) => ({ w, a: obroc(w.start, -kat), b: obroc(w.end, -kat), th: w.granica ? 1 : (w.thickness || 10) }));
   const V = [], H = [];
   for (const s of S) {
-    if (Math.abs(s.a.x - s.b.x) < 1.5 && Math.abs(s.a.y - s.b.y) > 1) { s.os = 'x'; s.c = (s.a.x + s.b.x) / 2; s.lo = Math.min(s.a.y, s.b.y); s.hi = Math.max(s.a.y, s.b.y); V.push(s); }
-    else if (Math.abs(s.a.y - s.b.y) < 1.5 && Math.abs(s.a.x - s.b.x) > 1) { s.os = 'y'; s.c = (s.a.y + s.b.y) / 2; s.lo = Math.min(s.a.x, s.b.x); s.hi = Math.max(s.a.x, s.b.x); H.push(s); }
+    const dx = s.b.x - s.a.x, dy = s.b.y - s.a.y, dl = Math.hypot(dx, dy), PROG = Math.sin((3 * Math.PI) / 180) * dl; // do 3° od pionu/poziomu
+    if (dl > 1 && Math.abs(dx) <= Math.max(1.5, PROG)) { s.os = 'x'; s.c = (s.a.x + s.b.x) / 2; s.lo = Math.min(s.a.y, s.b.y); s.hi = Math.max(s.a.y, s.b.y); V.push(s); }
+    else if (dl > 1 && Math.abs(dy) <= Math.max(1.5, PROG)) { s.os = 'y'; s.c = (s.a.y + s.b.y) / 2; s.lo = Math.min(s.a.x, s.b.x); s.hi = Math.max(s.a.x, s.b.x); H.push(s); }
     else s.os = null;
   }
   const zbuduj = (L) => { // union-find: odcinki na tej samej prostej (także z przerwą, np. ściana przerwana wnęką) — zostają w jednej linii
     const r = L.map((_, i) => i), f = (i) => (r[i] === i ? i : (r[i] = f(r[i])));
     for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) {
-      if (Math.abs(L[i].c - L[j].c) < 1.5 && !!L[i].w.granica === !!L[j].w.granica) r[f(i)] = f(j);
+      if (Math.abs(L[i].c - L[j].c) < 2 && !!L[i].w.granica === !!L[j].w.granica) r[f(i)] = f(j);
     }
     const G = new Map();
     L.forEach((s, i) => { const k = f(i); if (!G.has(k)) G.set(k, { sciany: [], c: 0 }); G.get(k).sciany.push(s); });
@@ -125,6 +126,20 @@ function rozwiaz(n, rown) {
   return x;
 }
 
+// największa rozpiętość pomieszczenia w świetle w obu kierunkach (do rozpoznania pomieszczenia po wymiarach z karty)
+export function glowneWymiary(fl, poly) {
+  const kat = katGlowny(fl.walls), G = grupy(fl.walls, kat), q = poly.map((p) => obroc(p, -kat));
+  const mx = (L) => L.reduce((a, p) => Math.max(a, p.d), 0);
+  return { x: mx(rozpietosci(q, G.V, 'x')), y: mx(rozpietosci(q, G.H, 'y')) };
+}
+// pomieszczenia bez nazwy ↔ pomieszczenia z karty po wymiarach (tylko jednoznaczne pary)
+export function nazwyPoWymiarach(fl, pokoje, karta) {
+  const tol = (m) => Math.max(25, m * 0.08);
+  const pasuje = (w, k) => { const a = k.a * 100, b = k.b * 100; return (Math.abs(w.x - a) <= tol(a) && Math.abs(w.y - b) <= tol(b)) || (Math.abs(w.x - b) <= tol(b) && Math.abs(w.y - a) <= tol(a)); };
+  const kand = pokoje.map((p) => ({ p, w: glowneWymiary(fl, p.poly) })).map((x) => ({ ...x, k: karta.filter((k) => pasuje(x.w, k)) }));
+  return kand.filter((x) => x.k.length === 1 && kand.filter((y) => y.k.includes(x.k[0])).length === 1).map((x) => ({ pokoj: x.p, k: x.k[0] }));
+}
+
 // pomiary: [{ pokoj (z scena().pokoje), a, b (cm), pary?: { a: [idŚciany, idŚciany], b: [...] } }]
 export function dopasujDoPomiarow(fl, pokoje, pomiary) {
   const kat = katGlowny(fl.walls), G = grupy(fl.walls, kat);
@@ -171,22 +186,45 @@ export function dopasujDoPomiarow(fl, pokoje, pomiary) {
     mi.przed = mi.p.d; mi.po = mi.p.d + delta(mi.p.g2, mi.p.os) - delta(mi.p.g1, mi.p.os);
     mi.sprzeczny = Math.abs(mi.po - mi.m) > 1;
   }
-  // przesunięcia punktów
-  const przes = (p, s) => { // p — punkt w układzie wyprostowanym, s — ściana, do której należy (albo null)
-    const gx = s?.os === 'x' ? s.g : naLinii(G.V, p, 'x'), gy = s?.os === 'y' ? s.g : naLinii(G.H, p, 'y');
-    let dx = gx ? delta(gx, 'x') : null, dy = gy ? delta(gy, 'y') : null;
-    if (s && (dx === null || dy === null)) { // wolny koniec ściany idzie za drugim końcem
-      const q = Math.abs(p.x - s.a.x) + Math.abs(p.y - s.a.y) < 0.01 ? s.b : s.a;
-      if (dx === null) { const g = s.os === 'x' ? s.g : naLinii(G.V, q, 'x'); dx = g ? delta(g, 'x') : 0; }
-      if (dy === null) { const g = s.os === 'y' ? s.g : naLinii(G.H, q, 'y'); dy = g ? delta(g, 'y') : 0; }
-    }
-    return { dx: dx ?? 0, dy: dy ?? 0 };
+  // Nowe położenie ścian. Każda prosta ściany przesuwa się o przesunięcie swojej linii (pionowe w x, poziome w y, ukośne stoją),
+  // a każdy narożnik i „T” liczymy od nowa jako przecięcie przesuniętych prostych — połączenia ścian nie mogą się rozejść,
+  // więc pomieszczenia zostają zamknięte (niezależnie od tego, jak krzywy był skan).
+  const T = (s) => (s.os === 'x' ? { x: delta(s.g, 'x'), y: 0 } : s.os === 'y' ? { x: 0, y: delta(s.g, 'y') } : { x: 0, y: 0 });
+  const kier = (s) => { const dx = s.b.x - s.a.x, dy = s.b.y - s.a.y, l = Math.hypot(dx, dy) || 1; return { x: dx / l, y: dy / l }; };
+  const przeciecie = (s1, s2) => { // proste przesuniętych ścian
+    const u = kier(s1), v = kier(s2), t1 = T(s1), t2 = T(s2), p = { x: s1.a.x + t1.x, y: s1.a.y + t1.y }, q = { x: s2.a.x + t2.x, y: s2.a.y + t2.y };
+    const d = u.x * v.y - u.y * v.x; if (Math.abs(d) < 0.17) return null; // prawie równoległe (<10°)
+    const t = ((q.x - p.x) * v.y - (q.y - p.y) * v.x) / d;
+    return { x: p.x + u.x * t, y: p.y + u.y * t };
   };
-  const wSwiecie = (d) => obroc({ x: d.dx, y: d.dy }, kat);
-  const zaokr = (v) => Math.round(v * 10) / 10;
-  for (const s of G.S) for (const [k, p] of [['start', s.a], ['end', s.b]]) {
-    const d = wSwiecie(przes(p, s)); s.w[k] = { x: zaokr(s.w[k].x + d.x), y: zaokr(s.w[k].y + d.y) };
+  const odlOdc = (p, s) => { const dx = s.b.x - s.a.x, dy = s.b.y - s.a.y, l2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((p.x - s.a.x) * dx + (p.y - s.a.y) * dy) / l2)); return Math.hypot(p.x - s.a.x - t * dx, p.y - s.a.y - t * dy); };
+  // skupiska końców ścian w tym samym punkcie
+  const konce = []; for (const s of G.S) for (const k of ['a', 'b']) konce.push({ s, k, p: s[k] });
+  const skup = [];
+  for (const e of konce) { let c = skup.find((x) => Math.hypot(x.p.x - e.p.x, x.p.y - e.p.y) <= 1.5); if (!c) skup.push((c = { p: e.p, el: [] })); c.el.push(e); }
+  const nowe = new Map(); // klucz: s + k
+  const wolne = [];
+  for (const c of skup) {
+    const proste = [...new Set(c.el.map((e) => e.s))];
+    for (const s of G.S) if (!proste.includes(s) && odlOdc(c.p, s) < TOL) proste.push(s); // ściana, w środek której dochodzi ta („T”)
+    let p = null, najl = 0;
+    for (let i = 0; i < proste.length; i++) for (let j = i + 1; j < proste.length; j++) {
+      const u = kier(proste[i]), v = kier(proste[j]), sin = Math.abs(u.x * v.y - u.y * v.x);
+      if (sin > najl) { const q = przeciecie(proste[i], proste[j]); if (q) { p = q; najl = sin; } }
+    }
+    if (p) for (const e of c.el) nowe.set(e, p);
+    else wolne.push(c);
   }
+  for (const c of wolne) { // wolny koniec (albo tylko przedłużenia): idzie razem z drugim końcem ściany, długość zostaje
+    for (const e of c.el) {
+      const inny = konce.find((x) => x.s === e.s && x.k !== e.k), np = nowe.get(inny);
+      const t = c.el.length === 1 && np ? { x: np.x - inny.p.x, y: np.y - inny.p.y } : T(e.s);
+      nowe.set(e, { x: e.p.x + t.x, y: e.p.y + t.y });
+    }
+  }
+  const zaokr = (v) => Math.round(v * 10) / 10;
+  const wSwiecie = (d) => obroc({ x: d.dx, y: d.dy }, kat);
+  for (const e of konce) { const q = obroc(nowe.get(e), kat); e.s.w[e.k === 'a' ? 'start' : 'end'] = { x: zaokr(q.x), y: zaokr(q.y) }; }
   // meble, schody, słupy, napisy: przesunięcie interpolowane między najbliższymi liniami ścian
   const interp = (p) => {
     const q = obroc(p, -kat), wyn = { dx: 0, dy: 0 };

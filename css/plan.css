@@ -124,7 +124,7 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .podpowiedz.z-przyciskami { white-space: normal; width: min(92%, 440px); display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; font-size: 14px; line-height: 1.35; }
 .podpowiedz .pp-przyciski { display: flex; gap: 8px; }
 .podpowiedz .pp-przyciski button { flex: 1; min-height: 40px; border-radius: 10px; font: 600 14px Archivo, system-ui, sans-serif; background: rgba(255,255,255,0.1); color: var(--bone); }
-.podpowiedz .pp-przyciski button[data-a=kalibruj] { background: linear-gradient(180deg, #E2C77E, #C8A44D); color: #1c1b19; }
+.podpowiedz .pp-przyciski button[data-a=kalibruj], .podpowiedz .pp-przyciski button[data-a=napraw] { background: linear-gradient(180deg, #E2C77E, #C8A44D); color: #1c1b19; }
 .arkusz .kalibracja { list-style: none; margin: 4px 0 8px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .arkusz .kalibracja li { border: 1px solid var(--linia); border-radius: 12px; padding: 10px 12px; }
 .arkusz .kalibracja .k-gl { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 4px; }
