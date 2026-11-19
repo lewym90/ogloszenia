@@ -105,14 +105,24 @@ with sync_playwright() as p:
     J(f"location.hash='#/o/{oid}/s/pom'"); pg.wait_for_timeout(600)
     ok('ten metraż trafia do ogłoszenia' in pg.inner_text('#sek-pom') if pg.locator('#sek-pom').count() else 'ten metraż trafia do ogłoszenia' in pg.inner_text('body'), 'karta pokazuje metraż z rzutu')
     shot('06-karta')
-    # pęknięte połączenie ścian: czerwone kółka, „Napraw” zamyka pomieszczenie, bezpiecznik dopasowania
-    pg.goto(f'http://127.0.0.1:8767/ogloszenia/plan.html?am={oid}'); pg.wait_for_timeout(1800)
-    J("(()=>{const S=window.__plan, f=S.projekt.floors[0], w=f.walls.find(q=>q.id==='w10'); w.start={x:w.start.x, y:w.start.y}; w.end={x:w.end.x-9, y:w.end.y+0.4}; window.__planUI.przebuduj(); window.__planUI.odswiez(); window.__planUI.propozycja();})()")
+    # zniszczenia jak po 1.8.0: przerwa w prostej ścianie (pokój otwarty), przerwa w ścianie łazienki (zlana z przedpokojem),
+    # rozjechany narożnik (oba końce wolne); nazwy zgubione bez pamięci → „Napraw” zamyka, nazwy wracają z karty po wymiarach
+    pg.goto(URL); pg.wait_for_selector('#karty'); J(f"location.hash='#/o/{oid}/s/pom'"); pg.wait_for_selector('[data-a=rzut-otworz]')
+    pg.click('[data-a=rzut-otworz]'); pg.wait_for_url('**/plan.html**'); pg.wait_for_timeout(1800)
+    J(r'''(()=>{const S=window.__plan, f=S.projekt.floors[0], W=(id)=>f.walls.find(q=>q.id===id);
+      const l=W('w7'); const s0={...l.start}, e0={...l.end}; const yM=s0.y+(e0.y-s0.y)*0.85;
+      l.end={x:e0.x+(s0.x-e0.x)*0, y:yM+14}; f.walls.push({id:'w7b', start:{x:e0.x, y:yM-14}, end:{...e0}, thickness:l.thickness, height:260});
+      const b=W('w9'); const m={x:(b.start.x+b.end.x)/2, y:(b.start.y+b.end.y)/2}; const be={...b.end}; b.end={x:m.x-11, y:m.y}; f.walls.push({id:'w9b', start:{x:m.x+11, y:m.y}, end:be, thickness:b.thickness, height:260});
+      const g=W('w0'), r=W('w1'); g.end={x:g.end.x-9, y:g.end.y}; r.start={x:r.start.x, y:r.start.y+7};
+      window.__planUI.przebuduj(); delete f.amZnikniete; for (const x of f.rooms) if (x.name==='Pokój'||x.name==='Łazienka') x.name=''; window.__planUI.przebuduj(); window.__planUI.odswiez(); window.__planUI.propozycja();})()''')
     pg.wait_for_timeout(300)
-    n1 = len(J("window.__planUI.wolneKonce()")); ok(n1 >= 1 and pg.is_visible('#podpowiedz [data-a=napraw]'), f'niestykające się ściany wykryte ({n1}) i „Napraw” proponowane')
+    n1 = len(J("window.__planUI.wolneKonce()")); print('   wolne końce:', n1, J("window.__plan.sc.pokoje.map(p=>p.nazwa)"))
+    ok(n1 >= 4 and pg.is_visible('#podpowiedz [data-a=napraw]'), f'niestykające się ściany wykryte ({n1}) i „Napraw” proponowane')
     shot('07-pekniete')
-    pg.click('#podpowiedz [data-a=napraw]'); pg.wait_for_timeout(600)
-    ok(len(J("window.__planUI.wolneKonce()")) == 0, '„Napraw” łączy ściany')
+    pg.click('#podpowiedz [data-a=napraw]'); pg.wait_for_timeout(800)
     print('   po naprawie:', J("window.__plan.sc.pokoje.map(p=>[p.nazwa,p.m])"))
-    ok(len([q for q in J("window.__plan.sc.pokoje.map(p=>p.nazwa)") if q]) == 4, 'po naprawie wszystkie 4 pomieszczenia z nazwami')
+    print('   wymiary:', J("(async()=>{const D=await import('./js/plan/dopasuj.js'); const S=window.__plan, f=S.projekt.floors[0]; return [S.sc.pokoje.map(p=>[p.nazwa, D.glowneWymiary(f,p.poly)]), S.pomKarty, D.nazwyPoWymiarach(f, S.sc.pokoje.filter(p=>!p.nazwa), S.pomKarty.filter(k=>k.a&&k.b)).map(x=>x.k.nazwa)]})()"))
+    ok(len(J("window.__planUI.wolneKonce()")) == 0, '„Napraw” łączy ściany: przerwy w prostej, rozjechany narożnik')
+    ok(sorted(q for q in J("window.__plan.sc.pokoje.map(p=>p.nazwa)") if q) == ['Pokój', 'Przedpokój', 'Sypialnia', 'Łazienka'], 'po naprawie pomieszczenia zamknięte, nazwy z karty wróciły')
+    shot('08-naprawione')
     print('BLEDY', bl[:8]); assert not bl

@@ -126,18 +126,30 @@ function rozwiaz(n, rown) {
   return x;
 }
 
-// największa rozpiętość pomieszczenia w świetle w obu kierunkach (do rozpoznania pomieszczenia po wymiarach z karty)
-export function glowneWymiary(fl, poly) {
+// rozpiętości pomieszczenia w świetle w obu kierunkach (wszystkie pary ścian, które się „widzą” przez pomieszczenie)
+export function rozpietosciPokoju(fl, poly) {
   const kat = katGlowny(fl.walls), G = grupy(fl.walls, kat), q = poly.map((p) => obroc(p, -kat));
-  const mx = (L) => L.reduce((a, p) => Math.max(a, p.d), 0);
-  return { x: mx(rozpietosci(q, G.V, 'x')), y: mx(rozpietosci(q, G.H, 'y')) };
+  return { x: rozpietosci(q, G.V, 'x').map((p) => p.d), y: rozpietosci(q, G.H, 'y').map((p) => p.d) };
 }
-// pomieszczenia bez nazwy ↔ pomieszczenia z karty po wymiarach (tylko jednoznaczne pary)
+export function glowneWymiary(fl, poly) { const r = rozpietosciPokoju(fl, poly); return { x: Math.max(0, ...r.x), y: Math.max(0, ...r.y) }; }
+// pomieszczenia bez nazwy ↔ pomieszczenia z karty po wymiarach: długość i szerokość z karty muszą pasować do którejś
+// rozpiętości pomieszczenia (dalmierz mierzy przez całe pomieszczenie, np. obok wnęki); tylko jednoznaczne pary
 export function nazwyPoWymiarach(fl, pokoje, karta) {
-  const tol = (m) => Math.max(25, m * 0.08);
-  const pasuje = (w, k) => { const a = k.a * 100, b = k.b * 100; return (Math.abs(w.x - a) <= tol(a) && Math.abs(w.y - b) <= tol(b)) || (Math.abs(w.x - b) <= tol(b) && Math.abs(w.y - a) <= tol(a)); };
-  const kand = pokoje.map((p) => ({ p, w: glowneWymiary(fl, p.poly) })).map((x) => ({ ...x, k: karta.filter((k) => pasuje(x.w, k)) }));
-  return kand.filter((x) => x.k.length === 1 && kand.filter((y) => y.k.includes(x.k[0])).length === 1).map((x) => ({ pokoj: x.p, k: x.k[0] }));
+  const tol = (m) => Math.max(15, m * 0.06);
+  const jest = (L, m) => L.some((d) => Math.abs(d - m) <= tol(m));
+  const pasuje = (r, k) => { const a = k.a * 100, b = k.b * 100; return (jest(r.x, a) && jest(r.y, b)) || (jest(r.x, b) && jest(r.y, a)); };
+  const kand = pokoje.map((p) => ({ p, r: rozpietosciPokoju(fl, p.poly) })).map((x) => ({ ...x, k: karta.filter((k) => pasuje(x.r, k)) }));
+  const wynik = [], uzyteK = new Set(), uzyteP = new Set();
+  for (let zmiana = true; zmiana;) { // pewne pary najpierw; po każdej przypisanej karta i pokój wypadają z gry
+    zmiana = false;
+    for (const x of kand) {
+      if (uzyteP.has(x)) continue;
+      const k = x.k.filter((kk) => !uzyteK.has(kk)); if (k.length !== 1) continue;
+      if (kand.filter((y) => !uzyteP.has(y) && y.k.includes(k[0])).length !== 1) continue;
+      wynik.push({ pokoj: x.p, k: k[0] }); uzyteK.add(k[0]); uzyteP.add(x); zmiana = true;
+    }
+  }
+  return wynik;
 }
 
 // pomiary: [{ pokoj (z scena().pokoje), a, b (cm), pary?: { a: [idŚciany, idŚciany], b: [...] } }]

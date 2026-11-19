@@ -827,6 +827,7 @@ function htmlMenu() {
     ${btn('skan', 'podloga', 'Wczytaj skan z iPhone\'a')}
     ${S.projekt ? btn('wyprostuj', 'linijka', 'Wyprostuj skan (kąty proste, meble do ścian)') : ''}
     ${S.projekt ? btn('obraz', 'duplikuj', 'Pobierz obraz rzutu') : ''}
+    ${S.projekt ? btn('plik-rzutu', 'duplikuj', 'Pobierz plik rzutu (.json) — do sprawdzenia') : ''}
     ${btn('zaawansowany', 'strona', 'Edytor zaawansowany')}
     ${btn('pomoc', 'wiecej', 'Jak to działa')}</div>`;
 }
@@ -983,24 +984,52 @@ function propozycjaDopasowania() {
   el.innerHTML = `<span>Twoje pomiary z karty: ${nie.length} ${nie.length === 1 ? 'pomieszczenie' : nie.length < 5 ? 'pomieszczenia' : 'pomieszczeń'}. Dopasować do nich rzut?</span><span class="pp-przyciski"><button data-a="kalibruj">Dopasuj</button><button data-a="propozycja-nie" data-r="dopasuj:${nie.length}">Nie teraz</button></span>`;
   el.hidden = false; el.classList.add('z-przyciskami');
 }
+AKCJE['plik-rzutu'] = () => {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([migawka()], { type: 'application/json' }));
+  a.download = `rzut-${(S.nazwa || 'oferta').replace(/[^\p{L}\p{N}]+/gu, '-')}.json`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+};
 AKCJE['propozycja-nie'] = (b) => { podpowiedz(''); try { localStorage.setItem(kluczPropozycji(), b?.dataset.r || ''); } catch { /* */ } }; // nie pokazuj tej samej propozycji znowu (wróci, gdy sytuacja się zmieni)
-// dociągnięcie wolnych końców ścian do najbliższej ściany (do 40 cm): koniec ląduje na przecięciu prostych
+// dociągnięcie wolnych końców ścian: do ściany obok (koniec na przecięciu prostych), do drugiego wolnego końca w narożniku
+// (obie ściany wydłużone do przecięcia) albo do przedłużenia tej samej ściany (przerwa w prostej ścianie — końce w połowie)
 function polaczSciany() {
-  const W = fl().walls.filter((w) => !w.curvePoint); let n = 0;
-  for (const w of W) for (const k of ['start', 'end']) {
-    const p = w[k]; if (W.some((q) => q !== w && rzutNaOdcinek(p, q.start, q.end).d < 2)) continue;
-    const u = kierunek(w); let best = null;
-    for (const q of W) {
-      if (q === w) continue; const v = kierunek(q), sin = u.x * v.y - u.y * v.x; if (Math.abs(sin) < 0.5) continue; // tylko ściany pod kątem (≥30°)
-      const t = ((q.start.x - p.x) * v.y - (q.start.y - p.y) * v.x) / sin, X = { x: p.x + u.x * t, y: p.y + u.y * t };
-      if (Math.abs(t) > 40 || rzutNaOdcinek(X, q.start, q.end).d > 2) continue;
-      if (!best || Math.abs(t) < Math.abs(best.t)) best = { t, X };
+  const W = fl().walls.filter((w) => !w.curvePoint);
+  const styka = (p, w) => W.some((q) => q !== w && rzutNaOdcinek(p, q.start, q.end).d < 2);
+  const wolne = () => { const L = []; for (const w of W) for (const k of ['start', 'end']) if (!styka(w[k], w)) L.push({ w, k }); return L; };
+  const r1 = (v) => Math.round(v * 10) / 10, ust = (w, k, X) => { w[k] = { x: r1(X.x), y: r1(X.y) }; };
+  let n = 0;
+  for (let przebieg = 0; przebieg < 4; przebieg++) {
+    let zm = 0;
+    for (const { w, k } of wolne()) {
+      const p = w[k]; if (styka(p, w)) continue;
+      const u = kierunek(w), dalej = { x: p.x - w[k === 'start' ? 'end' : 'start'].x, y: p.y - w[k === 'start' ? 'end' : 'start'].y };
+      let best = null;
+      for (const q of W) {
+        if (q === w) continue;
+        const v = kierunek(q), sin = u.x * v.y - u.y * v.x;
+        if (Math.abs(sin) < 0.05) { // ta sama prosta: przerwa w ścianie
+          if (Math.abs((q.start.x - p.x) * -u.y + (q.start.y - p.y) * u.x) > 3) continue;
+          for (const kk of ['start', 'end']) {
+            const e = q[kk], d = Math.hypot(e.x - p.x, e.y - p.y);
+            if (d > 0 && d <= 60 && (e.x - p.x) * dalej.x + (e.y - p.y) * dalej.y > 0 && !styka(e, q) && (!best || d < best.d)) best = { d, X: { x: (p.x + e.x) / 2, y: (p.y + e.y) / 2 }, q, kk };
+          }
+          continue;
+        }
+        if (Math.abs(sin) < 0.5) continue; // ukośne pod małym kątem — nie zgadujemy
+        const t = ((q.start.x - p.x) * v.y - (q.start.y - p.y) * v.x) / sin, X = { x: p.x + u.x * t, y: p.y + u.y * t };
+        if (Math.abs(t) > 40) continue;
+        if (rzutNaOdcinek(X, q.start, q.end).d <= 2) { if (!best || Math.abs(t) < best.d) best = { d: Math.abs(t), X }; continue; }
+        for (const kk of ['start', 'end']) { // narożnik z dwóch wolnych końców
+          const e = q[kk]; if (styka(e, q) || Math.hypot(e.x - X.x, e.y - X.y) > 40) continue;
+          if (!best || Math.abs(t) < best.d) best = { d: Math.abs(t), X, q, kk };
+        }
+      }
+      if (best) { ust(w, k, best.X); if (best.q) ust(best.q, best.kk, best.X); zm++; }
     }
-    if (best) { w[k] = { x: Math.round(best.X.x * 10) / 10, y: Math.round(best.X.y * 10) / 10 }; n++; }
+    n += zm; if (!zm) break;
   }
   return n;
 }
-AKCJE.napraw = () => { podpowiedz(''); const przed = migawka(); if (polaczSciany()) { zapamietaj(przed); poScianach(); } wyprostuj(); const zost = wolneKonce().length; zastosujNazwyZKarty(); if (zost) toast(`Zostało ${zost} miejsc, gdzie ściany się nie stykają — dociągnij je ręcznie (przeciągnij koniec ściany do drugiej).`, 5000); else setTimeout(propozycjaDopasowania, 300); };
+AKCJE.napraw = () => { podpowiedz(''); const przed = migawka(); if (polaczSciany()) { zapamietaj(przed); poScianach(); } wyprostuj(); { const p2 = migawka(); if (polaczSciany()) { zapamietaj(p2); poScianach(); } } const zost = wolneKonce().length; zastosujNazwyZKarty(); if (zost) toast(`Zostało ${zost} miejsc, gdzie ściany się nie stykają — dociągnij je ręcznie (przeciągnij koniec ściany do drugiej).`, 5000); else setTimeout(propozycjaDopasowania, 300); };
 AKCJE['wym-pokoi'] = () => { const przed = migawka(), wl = !wymiaryPokoi(); for (const f of S.projekt.floors) { if (wl) delete f.amBezWymiarowPokoi; else f.amBezWymiarowPokoi = true; } zapamietaj(przed); interfejs(); odswiez(); };
 const wymiaryPokoi = () => !!S.projekt && S.projekt.floors.every((f) => !f.amBezWymiarowPokoi);
 function htmlKalibracji() {
