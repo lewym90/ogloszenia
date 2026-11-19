@@ -19,3 +19,13 @@ def odblokuj(pg, pin=PIN, czekaj='#karty'):
     """Po przeładowaniu w nowej karcie (albo po 10 min) aplikacja pyta o PIN."""
     pg.wait_for_selector('#f-pin, #karty', timeout=30000)
     if pg.locator('#f-pin').count(): wpisz_pin(pg, pin, czekaj)
+
+def pin_danych(pg, pin=PIN):
+    """Od 1.11.0 każde otwarcie danych osobowych (klienci, właściciel, wizyty, dokumenty, AML) pyta o PIN."""
+    pg.wait_for_timeout(200)
+    if pg.locator('#pin-dane').count():
+        pg.fill('#pin-dane', pin); pg.wait_for_function("!document.querySelector('#pin-dane')", timeout=20000); pg.wait_for_timeout(150)
+
+def pin_okna(pg, pin=PIN):
+    """Historia zmian, archiwum i rejestr AML pytają o PIN w okienku."""
+    pg.wait_for_selector('#pin-okno'); pg.fill('#pin-okno', pin); pg.click('.form-okna button[type=submit]')

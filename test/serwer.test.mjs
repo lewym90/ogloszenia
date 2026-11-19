@@ -281,6 +281,66 @@ await test('dziennik dostępu: wpisy z aplikacji i otwarcia dokumentów', async 
   assert.ok(dz.some((x) => x.co === 'dokument' && x.oferta === 'oferta010'), 'otwarcie dokumentu zapisane');
   assert.ok(!dz.some((x) => x.co === 'cokolwiek' || x.oferta === '../zle'));
 });
+await test('AML: karta zostaje 5 lat po usunięciu oferty (archiwum), potem znika; nie da się jej usunąć na żądanie', async () => {
+  const zm = (cid, pola, extra = {}) => api('/zmiany', { method: 'POST', body: JSON.stringify({ zmiany: [{ oid: 'oferta020', cid, pola, ...extra }] }) }, tB);
+  await zm('a1', { roboczy: 'AML test', ulica: 'Lipowa 7', miasto: 'Lublin', wlImie: 'Jan Właściciel', am_strona001: { imie: 'Jan Właściciel', pesel: '80010112345', dokNr: 'ABC123456', ryzyko: 'standardowe', podejrzenie: 'notatka tajna' }, kl_kup00001: { imie: 'Kupiec' } });
+  let r = await api('/osoba?oferta=oferta020&k=am_strona001', { method: 'DELETE' }, tB);
+  assert.equal(r.kod, 409, 'karty AML nie usuwa się na żądanie');
+  r = await api('/osoba?oferta=oferta020&k=am_strona001', {}, tB);
+  assert.equal(r.j.dane.pesel, '80010112345'); assert.equal(r.j.dane.ryzyko, undefined); assert.equal(r.j.dane.podejrzenie, undefined, 'bez tajemnicy AML');
+  r = await api('/osoba?oferta=oferta020&k=wlasciciel', {}, tB);
+  assert.equal(r.j.dane.wlImie, 'Jan Właściciel'); assert.ok(r.j.historia.length >= 1);
+  // usunięta oferta po 30 dniach: zostaje tylko karta AML i adres
+  await api('/zmiany', { method: 'POST', body: JSON.stringify({ zmiany: [{ oid: 'oferta020', cid: 'a2', usun: true }] }) }, tB);
+  S.db.prepare("UPDATE oferty SET zmieniona = ? WHERE id = 'oferta020'").run(Date.now() - 31 * 86400e3);
+  S.retencja();
+  const o = S.db.prepare("SELECT * FROM oferty WHERE id = 'oferta020'").get();
+  assert.ok(o, 'oferta z kartą AML nie znika');
+  const d = JSON.parse(S.odszyfruj(o.dane));
+  assert.ok(d.am_strona001 && d.am_strona001.zakonczenie, 'zakończenie współpracy = dzień usunięcia oferty');
+  assert.equal(d.wlImie, undefined); assert.equal(d.kl_kup00001, undefined, 'reszta danych osobowych usunięta');
+  assert.ok(!S.db.prepare("SELECT 1 FROM historia WHERE oferta = 'oferta020' AND pole = 'wlImie'").get());
+  const arch = (await api('/aml/archiwum', {}, tB)).j.archiwum;
+  const a = arch.find((x) => x.oid === 'oferta020');
+  assert.ok(a && a.karty.am_strona001.pesel === '80010112345' && a.adres.includes('Lipowa'));
+  assert.ok((await api('/dziennik', {}, tB)).j.dziennik.some((x) => x.co === 'archiwum'));
+  // po 5 latach od zakończenia — karta i oferta znikają całkiem
+  const stara = { ...d, am_strona001: { ...d.am_strona001, zakonczenie: '2019-01-01' } };
+  S.db.prepare("UPDATE oferty SET dane = ? WHERE id = 'oferta020'").run(S.szyfruj(JSON.stringify(stara)));
+  S.retencja(); S.retencja();
+  assert.equal(S.db.prepare("SELECT COUNT(*) AS n FROM oferty WHERE id = 'oferta020'").get().n, 0);
+});
+await test('okresy przechowywania: zakończona oferta z umową do końca 6. roku, bez umowy 12 mies.; prezentacje 12 mies.', async () => {
+  const zm = (oid, cid, pola) => api('/zmiany', { method: 'POST', body: JSON.stringify({ zmiany: [{ oid, cid, pola }] }) }, tB);
+  await zm('oferta021', 'b1', { roboczy: 'Z umową', umowaNr: '1/2026', wlImie: 'A', status: 'zakonczona', wz_wiz00001: { kiedy: '2020-01-01T10:00' } });
+  await zm('oferta022', 'b2', { roboczy: 'Bez umowy', wlImie: 'B', status: 'zakonczona' });
+  const rok = Date.now() - 366 * 86400e3;
+  S.db.prepare("UPDATE historia SET kiedy = ? WHERE oferta IN ('oferta021', 'oferta022')").run(rok);
+  const w = S.doUsuniecia();
+  assert.ok(w.some((x) => x.oid === 'oferta022' && x.k === 'oferta'), 'bez umowy po roku');
+  assert.ok(!w.some((x) => x.oid === 'oferta021' && x.k === 'oferta'), 'z umową jeszcze nie');
+  assert.ok(w.some((x) => x.oid === 'oferta021' && x.k === 'wz_wiz00001'), 'prezentacja po roku');
+  const t021 = S.terminOferty(S.db.prepare("SELECT * FROM oferty WHERE id = 'oferta021'").get(), { status: 'zakonczona', umowaNr: '1/2026' });
+  assert.equal(new Date(t021).getUTCFullYear(), new Date(rok).getUTCFullYear() + 6); assert.equal(new Date(t021).getUTCMonth(), 11);
+  S.retencja();
+  assert.equal(S.db.prepare("SELECT usunieta FROM oferty WHERE id = 'oferta022'").get().usunieta, 1, 'oferta bez umowy usunięta (kosz)');
+  assert.equal(S.db.prepare("SELECT usunieta FROM oferty WHERE id = 'oferta021'").get().usunieta, 0);
+});
+await test('dane firmy (do klauzuli RODO) i zdalne wylogowanie urządzenia', async () => {
+  tA = (await api('/logowanie', { method: 'POST', body: JSON.stringify({ login: 'marek', haslo: 'nowehaslo1', urzadzenie: 'Telefon Marka' }) })).j.token;
+  let r = await api('/firma', { method: 'POST', body: JSON.stringify({ firma: { nazwaSc: 'AM Nieruchomości s.c.', email: 'biuro@x.pl', 'zły klucz': 'x' } }) }, tB);
+  assert.equal(r.kod, 200);
+  r = await api('/firma', {}, tA);
+  assert.equal(r.j.firma.nazwaSc, 'AM Nieruchomości s.c.'); assert.equal(r.j.firma['zły klucz'], undefined);
+  assert.ok(!S.db.prepare("SELECT wartosc FROM ustawienia WHERE klucz = 'firma'").get().wartosc.includes('biuro@x.pl'), 'zaszyfrowane');
+  const L = (await api('/urzadzenia', {}, tB)).j.urzadzenia;
+  const a = L.find((x) => !x.moje);
+  assert.ok(a && L.some((x) => x.to));
+  assert.equal((await api(`/urzadzenie/${L.find((x) => x.to).id}`, { method: 'DELETE' }, tB)).kod, 400, 'siebie nie');
+  assert.equal((await api(`/urzadzenie/${a.id}`, { method: 'DELETE' }, tB)).kod, 200);
+  assert.equal((await api('/ja', {}, tA)).kod, 401, 'wylogowane zdalnie');
+  tA = (await api('/logowanie', { method: 'POST', body: JSON.stringify({ login: 'marek', haslo: 'nowehaslo1', urzadzenie: 'Telefon Marka' }) })).j.token;
+});
 await test('kopia bazy', async () => {
   S.kopia();
   assert.ok(fs.readdirSync(path.join(katalog, 'kopie')).some((f) => f.endsWith('.db')));

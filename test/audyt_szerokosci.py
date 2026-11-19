@@ -3,7 +3,7 @@
 # Wymaga serwera testowego jak ui_test.py.
 # Audyt: żaden element nie wystaje poza swój panel ani poza ekran, na każdym ekranie aplikacji.
 from playwright.sync_api import sync_playwright
-from pomoc import zaloguj, odblokuj, wpisz_pin
+from pomoc import zaloguj, odblokuj, wpisz_pin, PIN
 import sys, shutil, os
 os.makedirs('/tmp/amshots', exist_ok=True)
 URL = 'http://localhost:8766/?api=http://127.0.0.1:18931'
@@ -34,7 +34,7 @@ with sync_playwright() as p:
     opc = dict(viewport={'width': 390, 'height': 844}, has_touch=True, locale='pl-PL')
     c = p.webkit.launch_persistent_context(f'/tmp/amshots/prof-a-{silnik}', **opc) if silnik == 'webkit' else p.chromium.launch_persistent_context(f'/tmp/amshots/prof-a-{silnik}', executable_path='/usr/bin/google-chrome', args=['--no-sandbox'], is_mobile=True, **opc)
     pg = c.new_page()
-    bl = []; pg.on('pageerror', lambda e: bl.append(str(e)))
+    bl = []; pg.on('pageerror', lambda e: bl.append(str(e) + ' @ ' + (e.stack or '')[:300]))
     zaloguj(pg, URL)
     pg.click('#dol [data-a=nowa]'); pg.wait_for_selector('#sek-podstawy')
     oid = pg.evaluate("location.hash.split('/')[2]")
@@ -47,17 +47,25 @@ with sync_playwright() as p:
         weryf: { kwN: { ok: true, d: '2026-11-18' }, oplaty: { ok: true, d: '2026-11-17' }, pomiar: { ok: true, d: '2026-11-16' } }, wyp: { lodowka: true, drzwiAntyw: true },
         kl_a: { imie: 'Anna Kowalska-Wiśniewska', tel: '600100200', email: 'anna.kowalska.wisniewska@example.com', od: '2026-12-15', status: 'umowiony', t: Date.now() },
         wz_a: { kiedy: '2026-11-21T17:30', klient: 'kl_a', kto: 'Marek', status: 'odbyla', opinia: 'Podobało się', t: Date.now() }, wz_b: { kiedy: '2026-11-28T10:00', status: 'plan', t: Date.now() },
+        am_a: { t: Date.now(), kto: 'Marek', rola: 'kupujacy', typ: 'jdg', umowa: true, imie: 'Anna Kowalska-Wiśniewska', obywatelstwo: 'polskie', dokRodzaj: 'dowod', dokNr: 'ABC123456', adresZam: 'ul. Bardzo Długa Nazwa Ulicy 123/45, 20-001 Lublin', nazwa: 'Firma Handlowo-Usługowa Anna Kowalska-Wiśniewska', nip: '7120000001', adres: 'Lublin', pelnomocnik: true, weryfData: '2026-11-18', pep: 'pep', podej: true, podejDecyzja: 'tak', odmowa: true, zakonczenie: '2026-12-01', cz_gotowka: true },
+        am_b: { t: Date.now(), kto: 'Marek', rola: 'sprzedajacy', typ: 'firma', nazwa: 'Spółka Testowa sp. z o.o.', crbr: 'nie' },
         dk_kw: { s: 'jest', pliki: [{ id: 'xxxxxxxx1', nazwa: 'Odpis z księgi wieczystej LU1I-00012345-6 bardzo długa nazwa.pdf', typ: 'pdf' }] }, dk_q: { nazwa: 'Regulamin wspólnoty mieszkaniowej przy ulicy Granata', t: 1 } }); })()""")
     pg.wait_for_timeout(800)
-    ekrany = [''] + [f's/{k}' for k in ['podstawy','lokalizacja','lokal','pom','koszty','wyp','atuty','minusy','okolica','weryfikacja','energia','wlasciciel']] + ['zdjecia','ogloszenie','kontrola','klienci','wizyty','dokumenty']
+    ekrany = [''] + [f's/{k}' for k in ['podstawy','lokalizacja','lokal','pom','koszty','wyp','atuty','minusy','okolica','weryfikacja','energia','wlasciciel']] + ['zdjecia','ogloszenie','kontrola','klienci','wizyty','dokumenty','aml']
     wynik = {}
     for w in [320, 390, 430]:
         pg.set_viewport_size({'width': w, 'height': 844}); pg.wait_for_timeout(300)
         for e in ekrany:
+            pg.evaluate(f"location.hash='#/o/{oid}'"); pg.wait_for_timeout(150)  # wyjście z danych osobowych — każde wejście pyta o PIN
             pg.evaluate(f"location.hash='#/o/{oid}/{e}'"); pg.wait_for_timeout(450)
+            if pg.locator('#pin-dane').count():
+                z = pg.evaluate(JS)
+                if z: wynik[f'{w} {e} (PIN)'] = z
+                if w == 320 and e == 'klienci': pg.screenshot(path=f"/tmp/amshots/a-{silnik}-pin-320.png")
+                pg.fill('#pin-dane', PIN); pg.wait_for_function("!document.querySelector('#pin-dane')", timeout=20000); pg.wait_for_timeout(300)
             z = pg.evaluate(JS)
             if z: wynik[f'{w} {e or "spis"}'] = z
-            if w == 390 and e in ('s/weryfikacja', 's/koszty', 's/wlasciciel', 'wizyty', 'ogloszenie'): pg.screenshot(path=f"/tmp/amshots/a-{silnik}-{e.replace('/','-')}.png", full_page=False)
+            if w in (320, 390) and e in ('s/weryfikacja', 's/koszty', 's/wlasciciel', 'wizyty', 'ogloszenie', 'aml'): pg.screenshot(path=f"/tmp/amshots/a-{silnik}-{w}-{e.replace('/','-')}.png", full_page=False)
         # edycja wstępu
         pg.evaluate(f"location.hash='#/o/{oid}/ogloszenie'"); pg.wait_for_timeout(400)
         if pg.query_selector('[data-a=edytuj][data-k=lead]'):
@@ -69,5 +77,6 @@ with sync_playwright() as p:
             pg.evaluate(f"location.hash='{e}'"); pg.wait_for_timeout(400); z = pg.evaluate(JS)
             if z: wynik[f'{w} {e}'] = z
     for k, v in wynik.items(): print(k, v[:6])
+    print('BLEDY JS', bl[:5], len(bl))
     assert not wynik and not bl, 'są problemy'
     print('EKRANÓW BEZ PROBLEMÓW:', 3 * (len(ekrany) + 3) - len(wynik), 'z', 3 * (len(ekrany) + 3), '| błędy JS:', bl)

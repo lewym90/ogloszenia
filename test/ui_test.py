@@ -1,7 +1,7 @@
 # Test interfejsu w prawdziwej przeglądarce: python3 test/ui_test.py
 # Wymaga: serwer API na 127.0.0.1:18931 (konta marek/tajne123, anna/haslo456), statyczny na localhost:8766, zdjęcia w /tmp/amtest.
 import json, time, urllib.request, sys, os
-from pomoc import zaloguj as zaloguj_pin, odblokuj, wpisz_pin
+from pomoc import zaloguj as zaloguj_pin, odblokuj, wpisz_pin, pin_okna
 from playwright.sync_api import sync_playwright, expect
 
 URL = 'http://localhost:8766/?api=http://127.0.0.1:18931'
@@ -186,7 +186,7 @@ with sync_playwright() as p:
     pg.click('#dol a[href="#/ustawienia"]'); pg.wait_for_timeout(500)
     pg.screenshot(path=f'{OUT}/14-telefon-ustawienia.png')
     # historia
-    pl.evaluate(f"location.hash = '#/o/{oid}'"); pl.wait_for_selector('[data-a=menu]'); pl.click('[data-a=menu]'); pl.click('[data-m=historia]'); pl.wait_for_selector('.hist li', timeout=8000); pl.wait_for_timeout(300)
+    pl.evaluate(f"location.hash = '#/o/{oid}'"); pl.wait_for_selector('[data-a=menu]'); pl.click('[data-a=menu]'); pl.click('[data-m=historia]'); pin_okna(pl); pl.wait_for_selector('.hist li', timeout=20000); pl.wait_for_timeout(300)
     pl.screenshot(path=f'{OUT}/15-laptop-historia.png')
     # pobieranie ZIP na laptopie
     pl.keyboard.press('Escape'); pl.click('.okno-tlo [data-zamknij]')

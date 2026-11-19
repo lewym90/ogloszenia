@@ -6,13 +6,14 @@ import { zrobZip } from './zip.js';
 import * as K from './kopia.js';
 import * as R from './rzut.js';
 
-export const WERSJA = '1.10.0';
+export const WERSJA = '1.11.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const IK = {
   plus: '<path d="M12 4.5v15M4.5 12h15"/>', wstecz: '<path d="M14.5 5.5L8 12l6.5 6.5"/>', prawo: '<path d="M9.5 5.5L16 12l-6.5 6.5"/>', lewo: '<path d="M14.5 5.5L8 12l6.5 6.5"/>',
   dol: '<path d="M6 9.5l6 6 6-6"/>', kopiuj: '<rect x="8.5" y="8.5" width="11" height="12" rx="2"/><path d="M15.5 8.5V5.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/>',
+  tarcza: '<path d="M12 3.5l7 2.6v5.4c0 4.4-3 7.8-7 9-4-1.2-7-4.6-7-9V6.1z"/><path d="M8.8 12.2l2.2 2.2 4.3-4.6"/>',
   gwiazda: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>', kosz: '<path d="M4 7h16M9 7V4.5h6V7M6 7l1 13h10l1-13"/>',
   aparat: '<path d="M4 8.5h3l1.8-2.5h6.4L17 8.5h3V19H4z"/><circle cx="12" cy="13.3" r="3.4"/>', ok: '<path d="M5 12.5l4.5 4.5L19 7"/>', x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
   uwaga: '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17.3v.4"/>', zegar: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', pobierz: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
@@ -45,6 +46,7 @@ const szeroki = matchMedia('(min-width: 1180px)');
 const telefon = matchMedia('(max-width: 759px)');
 const obrazy = new Map(); // `${id}:${rodzaj}` -> url
 let zbudowany = false;
+let odblokowane = null; // id oferty, dla której wpisano PIN do danych osobowych
 
 function toast(t, ms = 2200) {
   const el = $('#toast'); el.textContent = t; el.classList.add('wid');
@@ -58,6 +60,9 @@ function trasa() {
   }
   else if (h[0] === 'ustawienia') { S.ekran = 'ustawienia'; S.id = null; resetEdytora(); }
   else { S.ekran = 'lista'; S.id = null; resetEdytora(); }
+  // PIN do danych osobowych obowiązuje, dopóki nie wyjdziesz z ekranów z danymi tej oferty
+  const prywatny = S.ekran === 'oferta' && PRYWATNE.has(S.tab === 'sekcja' ? S.sek : S.tab);
+  if (!(prywatny && odblokowane === S.id)) odblokowane = null;
   odswiez();
 }
 const idzDo = (h) => { if (location.hash !== h) location.hash = h; else trasa(); };
@@ -86,12 +91,12 @@ function wypelnijObrazy(el) {
   for (const img of $$('img[data-mini]', el)) {
     if (img.getAttribute('src')) continue;
     const id = img.dataset.mini;
-    D.urlZdjecia(id, 'mini').then((u) => { if (u) { obrazy.set(`${id}:mini`, u); img.src = u; } });
+    D.urlZdjecia(id, 'mini').then((u) => { if (u) { obrazy.set(`${id}:mini`, u); img.src = u; } }).catch(() => {});
   }
   for (const d of $$('[data-foto]', el)) {
     if (d.style.backgroundImage) continue;
     const id = d.dataset.foto, r = d.dataset.r || 'sr';
-    D.urlZdjecia(id, r).then((u) => { if (u) { obrazy.set(`${id}:${r}`, u); d.style.backgroundImage = `url("${u}")`; d.classList.remove('puste'); } });
+    D.urlZdjecia(id, r).then((u) => { if (u) { obrazy.set(`${id}:${r}`, u); d.style.backgroundImage = `url("${u}")`; d.classList.remove('puste'); } }).catch(() => {});
   }
 }
 const imgMini = (id, alt = '') => `<img data-mini="${esc(id)}" alt="${esc(alt)}" ${obrazy.has(`${id}:mini`) ? `src="${obrazy.get(`${id}:mini`)}"` : ''} loading="lazy">`;
@@ -317,9 +322,11 @@ function odswiezListe() {
   wstaw($('#karty'), html);
   // przypomnienie o kopii zapasowej (po 7 dniach bez kopii na komputerze)
   const dni = K.dniOdKopii();
-  const ret = (D.stan.retencja || []).filter((w) => D.oferta(w.oid)?.[w.k]);
+  const ret = (D.stan.retencja || []).filter((w) => w.k.startsWith('kl_') && D.oferta(w.oid)?.[w.k]);
+  const retOf = (D.stan.retencja || []).filter((w) => w.k === 'oferta' && D.oferta(w.oid));
   wstaw($('#przyp'), htmlProsb()
-    + (ret.length ? `<a class="przypomnienie szklo" href="#/o/${ret[0].oid}/s/klienci">${ik('uwaga')}<span>${ret.length === 1 ? 'Dane 1 klienta znikną' : `Dane ${ret.length} klientów znikną`} w ciągu 30 dni (okres przechowywania). Zachowaj, jeśli nadal jesteście w kontakcie.</span>${ik('prawo')}</a>` : '')
+    + (ret.length ? `<a class="przypomnienie szklo" href="#/o/${ret[0].oid}/klienci">${ik('uwaga')}<span>${ret.length === 1 ? 'Dane 1 klienta znikną' : `Dane ${ret.length} klientów znikną`} w ciągu 30 dni (okres przechowywania). Zachowaj, jeśli nadal jesteście w kontakcie.</span>${ik('prawo')}</a>` : '')
+    + retOf.map((w) => `<a class="przypomnienie szklo" href="#/o/${w.oid}">${ik('uwaga')}<span>Zakończona oferta „${esc(D.oferta(w.oid).roboczy || M.tytul(D.oferta(w.oid)))}” zniknie ${esc(dataKrotka(w.termin))} — minął okres przechowywania danych. Karty AML zostaną w archiwum.</span>${ik('prawo')}</a>`).join('')
     + (D.stan.konto && K.przeterminowana() && D.oferty().length ? `<a class="przypomnienie szklo" href="#/ustawienia">${ik('uwaga')}<span>${dni === null ? 'Nie ma jeszcze kopii zapasowej na komputerze' : `Ostatnia kopia zapasowa ${dni} dni temu`}</span>${ik('prawo')}</a>` : ''));
 }
 // prośba o zalogowanie nowego urządzenia — kod do przepisania na tamtym urządzeniu
@@ -339,10 +346,11 @@ const SEK_KARTY = [
   ['atuty', 'Atuty'], ['minusy', 'Co warto wiedzieć'], ['okolica', 'Okolica'], ['weryfikacja', 'Sprawdziliśmy'], ['energia', 'Świadectwo'],
   ['wlasciciel', 'Właściciel i umowa'],
 ];
-const ZAKLADKI = ['zdjecia', 'ogloszenie', 'kontrola', 'klienci', 'wizyty', 'dokumenty'];
+const ZAKLADKI = ['zdjecia', 'ogloszenie', 'kontrola', 'klienci', 'wizyty', 'dokumenty', 'aml'];
 const EKRANY = [...SEK_KARTY.map(([k, n]) => ({ k, n, sek: true })), { k: 'zdjecia', n: 'Zdjęcia' }, { k: 'ogloszenie', n: 'Ogłoszenie' }, { k: 'kontrola', n: 'Kontrola' },
-  { k: 'klienci', n: 'Klienci' }, { k: 'wizyty', n: 'Wizyty' }, { k: 'dokumenty', n: 'Dokumenty' }];
-const PRYWATNE = new Set(['wlasciciel', 'klienci', 'wizyty', 'dokumenty']);
+  { k: 'klienci', n: 'Klienci' }, { k: 'wizyty', n: 'Wizyty' }, { k: 'dokumenty', n: 'Dokumenty' }, { k: 'aml', n: 'AML' }];
+// ekrany z danymi osobowymi: tylko dla wspólników, każde otwarcie wymaga PIN-u
+const PRYWATNE = new Set(['wlasciciel', 'klienci', 'wizyty', 'dokumenty', 'aml']);
 const hashEkranu = (oid, k) => (ZAKLADKI.includes(k) ? `#/o/${oid}/${k}` : `#/o/${oid}/s/${k}`);
 const odm = (n, a, b, c) => `${n} ${n === 1 ? a : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? b : c}`;
 const DNI = ['nd', 'pn', 'wt', 'śr', 'cz', 'pt', 'sb'];
@@ -357,7 +365,7 @@ function dataWizyty(k, krotko = false) {
 }
 // ikony kafelków bez grafiki z arkusza — złota linia w tym samym stylu
 // wszystkie kafelki mają ikony z arkuszy właściciela (img/ikony/<klucz>.png); tu tylko awaryjne
-const IK_ZLOTE = {};
+const IK_ZLOTE = { aml: '<path d="M12 3.2l7.2 2.7v5.6c0 4.5-3.1 8-7.2 9.3-4.1-1.3-7.2-4.8-7.2-9.3V5.9z"/><path d="M8.6 12.1l2.3 2.3 4.5-4.8"/>' };
 const ikonaEkranu = (k) => (IK_ZLOTE[k]
   ? `<svg class="ik-zlota" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="url(#zloto)" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">${IK_ZLOTE[k]}</g></svg>`
   : `<img class="ik-zlota" src="img/ikony/${k}.png" alt="">`);
@@ -396,6 +404,7 @@ function licznikSekcji(k, o) {
   if (k === 'klienci') return { z: M.klienci(o).length ? 1 : 0, w: 1 };
   if (k === 'wizyty') { const w = M.wizyty(o); return { z: w.nad.length + w.po.length ? 1 : 0, w: 1 }; }
   if (k === 'dokumenty') { const d = M.dokumenty(o); return { z: d.filter((x) => ['jest', 'nd'].includes(x.s)).length, w: d.length }; }
+  if (k === 'aml') { const a = M.amlKarty(o); return { z: a.filter((x) => !M.amlBraki(x).length).length, w: Math.max(a.length, 1) }; }
   const L = M.checklista(o);
   if (k === 'zdjecia') { const z = L.filter((x) => x.zakladka === 'zdjecia'); return { z: z.filter((x) => x.ok).length, w: z.length }; }
   if (k === 'ogloszenie') { const n = M.kontrolaSlow(o).length; return { z: n ? 0 : 1, w: 1 }; }
@@ -416,7 +425,8 @@ function podsumowanie(k, o) {
     case 'okolica': { const n = (o.okolica || []).filter((a) => a.nazwa).length; return n ? `${n} ${n === 1 ? 'miejsce' : n < 5 ? 'miejsca' : 'miejsc'}` : 'brak'; }
     case 'weryfikacja': { const l = licznikSekcji(k, o); return `${l.z} z ${l.w} sprawdzone`; }
     case 'energia': return o.swiad === 'tak' ? j(['sporządzone', !puste(o.ep) && `EP ${M.liczba(o.ep)}`]) : o.swiad === 'nie' ? 'w przygotowaniu' : 'brak odpowiedzi';
-    case 'wlasciciel': return j([o.wlImie, o.umowaNr && `umowa ${o.umowaNr}`, o.wylacznosc && 'wyłączność']) || 'brak';
+    case 'wlasciciel': return j([o.umowaNr ? `umowa ${o.umowaNr}` : o.wlImie && 'dane wpisane', o.wylacznosc && 'wyłączność']) || 'brak'; // bez nazwiska — dane osobowe dopiero po PIN-ie
+    case 'aml': { const a = M.amlKarty(o); if (!a.length) return o.transakcja === 'najem' ? 'najem poniżej 10 000 € — zwykle nie dotyczy' : 'brak kart'; const b = a.filter((x) => M.amlBraki(x).length).length; return j([odm(a.length, 'strona', 'strony', 'stron'), b ? `${b} niekompletne` : 'komplet']); }
     case 'wyp': { const n = M.wyposazenie(o).reduce((a, g) => a + g.el.length, 0); return n ? `${najem ? '' : 'w cenie: '}${odm(n, 'element', 'elementy', 'elementów')}` : o.wypBrak ? (najem ? 'bez wyposażenia' : 'nic nie zostaje') : 'brak'; }
     case 'klienci': { const L = M.klienci(o).filter((x) => x.status !== 'rezygnacja'); const um = L.filter((x) => x.status === 'umowiony').length; return L.length ? j([odm(L.length, 'zainteresowany', 'zainteresowanych', 'zainteresowanych'), um && odm(um, 'umówiony', 'umówionych', 'umówionych')]) : 'brak'; }
     case 'wizyty': { const w = M.wizyty(o); const od = w.po.filter((x) => x.status === 'odbyla').length; return w.nad.length ? j([`najbliższa: ${dataWizyty(w.nad[0].kiedy, true) || 'termin do ustalenia'}`, od && `${od} odbyte`]) : od ? odm(od, 'odbyta', 'odbyte', 'odbytych') : 'brak'; }
@@ -454,17 +464,24 @@ function odswiezOferte() {
       ? `<button class="btn kontur maly kopiuj-nagl" data-a="kopiuj" data-co="opis" aria-label="Kopiuj całe ogłoszenie">${ik('kopiuj')}<span>Kopiuj</span></button>`
       : k === 'kontrola' ? pierscien(M.gotowosc(o).procent) : `<span class="licz-ekranu">${(() => { const l = licznikSekcji(k, o); return l ? `${wsk(l)}` : ''; })()}</span>`;
     wstaw($('#of-gora'), `<div class="naglowek-ekranu"><a class="okragly" href="#/o/${o.id}" aria-label="Wróć do karty">${ik('wstecz')}</a>${ikonaEkranu(k)}<h1 class="zloty-tekst ${ekr.n.length > 13 ? 'dlugi' : ''}">${esc(ekr.n)}</h1>${prawy}</div>`);
+    if (PRYWATNE.has(k) && odblokowane !== o.id && D.sejfUstawiony()) {
+      wstaw(t, ekranPinDanych(o.id)); wstaw($('#of-dol'), '');
+      if (!t.contains(document.activeElement)) setTimeout(() => $('#pin-dane')?.focus(), 60);
+    } else
     if (k === 'zdjecia') tabZdjecia(t, o);
     else if (k === 'ogloszenie') wstaw(t, htmlOgloszenie(o, false));
     else if (k === 'kontrola') wstaw(t, htmlKontrola(o));
     else if (k === 'klienci') wstaw(t, htmlKlienci(o));
-    else if (k === 'wizyty') wstaw(t, htmlWizyty(o));
+    else if (k === 'wizyty') { D.zapiszDostep(o.id, 'wizyty', 'wizyty'); wstaw(t, htmlWizyty(o)); }
     else if (k === 'dokumenty') { wstaw(t, htmlDokumenty(o)); D.przygotujKluczPlikow(); }
+    else if (k === 'aml') { D.zapiszDostep(o.id, 'aml', 'aml'); wstaw(t, htmlAml(o)); }
     else { if (k === 'wlasciciel') D.zapiszDostep(o.id, 'wlasciciel', 'wlasciciel'); wstaw(t, ekranSekcji(k, o)); }
+    if (!(PRYWATNE.has(k) && odblokowane !== o.id && D.sejfUstawiony())) {
     const i = EKRANY.findIndex((x) => x.k === k);
     const pop = EKRANY[i - 1], nast = EKRANY[i + 1];
     wstaw($('#of-dol'), `<nav class="nawigacja-sek">${pop ? `<a class="btn kontur" href="${hashEkranu(o.id, pop.k)}">${ik('lewo')}<span class="nr">${String(i).padStart(2, '0')}</span><span class="tx">${esc(pop.n)}</span></a>` : '<span></span>'}
       ${nast ? `<a class="btn kontur" href="${hashEkranu(o.id, nast.k)}"><span class="nr">${String(i + 2).padStart(2, '0')}</span><span class="tx">${esc(nast.n)}</span>${ik('prawo')}</a>` : `<a class="btn kontur" href="#/o/${o.id}"><span class="tx">Spis karty</span>${ik('prawo')}</a>`}</nav>`);
+    }
   }
   const p = $('#podglad');
   if (szeroki.matches) {
@@ -509,6 +526,7 @@ function ekranSekcji(k, o) {
       zamknij();
       h += grupa(nazwa, `<div class="siatka">${html.join('')}</div>`);
     }
+    if (k === 'wlasciciel') h += rodoWlasciciela(o);
     if (k === 'lokalizacja') h += `<datalist id="dl-dzielnice">${M.DZIELNICE_LUBLIN.map((d) => `<option value="${d}">`).join('')}</datalist>`;
     return `<div id="sek-${k}">${h}</div>`;
   }
@@ -653,6 +671,7 @@ function htmlKlienci(o) {
         <span class="rozp"></span><span class="dodany">${esc(kiedyDodany(x))}</span>
         <button class="usun-w" data-a="wpis-usun" data-e="${k}" data-co="klienta" aria-label="Usuń klienta">${ik('kosz')}</button>
       </div>
+      <div class="pole pelna akcje-wpisu rodo-wpisu"><button class="btn kontur maly" data-a="rodo-wyslij" data-e="${k}">${ik('sms')}Wyślij informację RODO</button><button class="btn kontur maly" data-a="am-z" data-e="${k}">${ik('tarcza')}${M.amlKarty(o).some((a) => a.klient === k) ? 'Karta AML' : 'Załóż kartę AML'}</button>${x.rodoKiedy ? `<span class="dodany">informacja RODO: ${esc(dataKrotka(x.rodoKiedy))}${x.rodoJak ? ` (${esc(x.rodoJak)})` : ''}</span>` : ''}</div>
       <div class="pole pelna akcje-wpisu rodo-wpisu"><button class="btn kontur maly" data-a="kl-eksport" data-e="${k}">${ik('pobierz')}Dane tej osoby</button><button class="btn kontur maly zly-tekst" data-a="kl-rodo-usun" data-e="${k}">Usuń na żądanie (RODO)</button></div></div>`, st === 'rezygnacja' ? 'wygaszona' : '');
   }
   return h;
@@ -956,6 +975,227 @@ function htmlKontrola(o) {
     <div class="karta-og szklo"><div class="blok-og"><div class="blok-glowa"><h3>Zalecane</h3></div><ul class="check">${zal.map(li).join('')}</ul></div></div>`;
 }
 
+// ----- PIN przy każdym otwarciu danych osobowych (właściciel, klienci, wizyty, dokumenty, AML, historia, archiwum) -----
+const dataKrotka = (v) => { const d = new Date(typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? `${v}T12:00` : v); return Number.isNaN(+d) ? '' : d.toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' }); };
+function ekranPinDanych(oid) {
+  return `<form class="pin-dane szklo" id="f-pin-dane" autocomplete="off">
+    <span class="pin-dane-ik">${ik('tarcza')}</span>
+    <h2>Dane osobowe</h2>
+    <p>Ta część zawiera dane klientów i właścicieli. Wpisz PIN, żeby ją otworzyć.</p>
+    <div class="wejscie"><input id="pin-dane" data-oid="${esc(oid)}" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" aria-label="PIN"></div>
+    <p class="blad" id="pin-dane-blad"></p>
+    <button class="btn zloty" type="submit">Otwórz</button>
+  </form>`;
+}
+const komunikatPinu = (r) => (r.zostalo === 1 ? 'Zły PIN. Została 1 próba — potem dane znikną z tego urządzenia.' : `Zły PIN. Zostały ${r.zostalo} próby.`);
+async function sprawdzPinDanych(pole) {
+  if (pole.dataset.trwa || !/^\d{6}$/.test(pole.value)) return;
+  pole.dataset.trwa = '1';
+  const r = await D.odblokuj(pole.value);
+  delete pole.dataset.trwa;
+  if (r.ok) { odblokowane = pole.dataset.oid; Z.aktywnosc(); pole.blur(); odswiez(); return; }
+  if (r.wyczyszczono) return;
+  pole.value = ''; $('#pin-dane-blad').textContent = komunikatPinu(r);
+}
+document.addEventListener('submit', (e) => { if (e.target.id !== 'f-pin-dane') return; e.preventDefault(); sprawdzPinDanych($('#pin-dane')); });
+function pytajPin(powod, dalej) {
+  formOkna('Wpisz PIN', `<p class="tekst-ust" style="padding:0 0 8px">${esc(powod)}.</p>${polePin('pin-okno', 'PIN')}`, 'Otwórz', async (v) => {
+    const r = await D.odblokuj(v('pin-okno'));
+    if (r.wyczyszczono) return '';
+    if (!r.ok) { $('#pin-okno').value = ''; return komunikatPinu(r); }
+    Z.aktywnosc(); setTimeout(dalej, 0);
+  });
+}
+
+// ----- RODO: informacja dla właściciela i klienta -----
+function rodoWlasciciela(o) {
+  const ma = M.amlKarty(o).some((a) => a.wlasciciel);
+  return grupa('Ochrona danych (RODO) i AML', `<div class="siatka">
+    <div class="pole pelna"><label class="przel"><span class="tekst">Przekazana informacja o danych osobowych (RODO)${o.wlRodoKiedy ? ` — ${esc(dataKrotka(o.wlRodoKiedy))}` : ''}</span><input type="checkbox" data-k="wlRodo" ${o.wlRodo ? 'checked' : ''}><span class="suwak"></span></label></div>
+    <div class="pole pelna akcje-wpisu rodo-wpisu"><button class="btn kontur maly" data-a="rodo-wyslij" data-e="wlasciciel">${ik('sms')}Wyślij informację RODO</button><button class="btn kontur maly" data-a="am-z" data-e="wlasciciel">${ik('tarcza')}${ma ? 'Karta AML właściciela' : 'Załóż kartę AML właściciela'}</button></div>
+    <div class="pole pelna akcje-wpisu rodo-wpisu"><button class="btn kontur maly" data-a="kl-eksport" data-e="wlasciciel">${ik('pobierz')}Dane tej osoby</button><button class="btn kontur maly zly-tekst" data-a="kl-rodo-usun" data-e="wlasciciel">Usuń na żądanie (RODO)</button></div></div>`);
+}
+function oknoRodo(o, k) {
+  const wl = k === 'wlasciciel';
+  const x = wl ? { imie: o.wlImie, tel: o.wlTel, email: o.wlEmail } : o[k] || {};
+  const f = D.stan.firma || {};
+  const tekst = M.klauzula(f, wl ? 'wlasciciel' : 'klient');
+  const tel = telLink(x.tel);
+  const w = okno('Informacja o danych (RODO)', `${M.firmaUzupelniona(f) ? '' : '<p class="info-pola" style="margin:0 0 10px">Brakuje danych firmy — w tekście są miejsca [do uzupełnienia]. Uzupełnij je w Ustawieniach → Dane firmy.</p>'}
+    <div class="klauzula">${esc(tekst).replace(/\n/g, '<br>')}</div>
+    <div class="rzad" style="margin-top:12px;flex-wrap:wrap">
+      ${x.email ? `<a class="btn zloty maly" data-jak="e-mail" href="mailto:${esc(x.email)}?subject=${encodeURIComponent('Informacja o przetwarzaniu danych osobowych')}&body=${encodeURIComponent(tekst)}">${ik('sms')}Wyślij e-mailem</a>` : ''}
+      ${tel ? `<a class="btn ${x.email ? 'kontur' : 'zloty'} maly" data-jak="SMS" href="sms:${tel}${/iPhone|iPad/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent(tekst)}">${ik('sms')}Wyślij SMS-em</a>` : ''}
+      <button class="btn kontur maly" data-jak="kopia">${ik('kopiuj')}Kopiuj tekst</button>
+      <button class="btn kontur maly" data-jak="osobiście">Przekazana osobiście / na papierze</button>
+    </div>`);
+  w.addEventListener('click', async (ev) => {
+    const el = ev.target.closest('[data-jak]'); if (!el) return;
+    const jak = el.dataset.jak;
+    if (jak === 'kopia') await kopiuj(tekst);
+    const dzis = new Date().toISOString().slice(0, 10);
+    const teraz = D.oferta(o.id); if (!teraz) return;
+    if (wl) await D.zmien(o.id, { wlRodo: true, wlRodoKiedy: dzis });
+    else await D.zmien(o.id, { [k]: { ...(teraz[k] || {}), rodo: true, rodoKiedy: dzis, rodoJak: jak === 'kopia' ? 'skopiowano' : jak } });
+    if (jak !== 'kopia') { w.remove(); toast('Zaznaczone: informacja RODO przekazana'); }
+  });
+}
+
+// ----- AML: karty stron transakcji -----
+const chk = (k, p, v, et) => `<div class="pole pelna"><label class="przel"><span class="tekst">${esc(et)}</span><input type="checkbox" data-e="${k}" data-p="${p}" data-t="b" ${v ? 'checked' : ''}><span class="suwak"></span></label></div>`;
+const dataP = (k, p, v, et, kl = 'pol') => pole(et, `<input data-e="${k}" data-p="${p}" data-t="t" type="date" value="${esc(v || '')}" aria-label="${esc(et)}">`, kl);
+const tekstP = (k, p, v, et, pl = '', rows = 2) => `<div class="pole pelna"><span class="et">${esc(et)}</span><div class="wejscie"><textarea data-e="${k}" data-p="${p}" data-t="t" rows="${rows}" placeholder="${esc(pl)}">${esc(v || '')}</textarea></div></div>`;
+const podtyt = (t) => `<div class="pole pelna aml-pod"><span>${esc(t)}</span></div>`;
+function htmlAml(o) {
+  const najem = o.transakcja === 'najem';
+  const L = M.amlKarty(o);
+  const konta = Object.fromEntries((D.stan.konta || []).map((x) => [x.nazwa, x.nazwa]));
+  let h = `<p class="sek-opis">Karty AML stron transakcji — dane wymagane przez ustawę o przeciwdziałaniu praniu pieniędzy (art. 33–46). Wypełnij przed podpisaniem umowy pośrednictwa. Skanów nie robimy: dane z dokumentu wpisz do pól. ${najem ? 'Najem z czynszem poniżej 10 000 € miesięcznie nie podlega AML.' : ''} Karty przechowujemy 5 lat od zakończenia współpracy.</p>
+    <button class="dodaj" data-a="am-dodaj">${ik('plus')}Dodaj stronę transakcji</button>`;
+  if (!L.length) return `${h}<div class="pusto maly">Nie ma jeszcze żadnej karty.</div>`;
+  for (const x of L) {
+    const k = x._k, typ = x.typ || 'osoba';
+    const braki = M.amlBraki(x), poz = M.amlPoziom(x), usun = M.amlUsuniecie(x);
+    const tag = braki.length ? `<span class="zr-tag wyg">brakuje: ${braki.length}</span>` : '<span class="zr-tag akt">komplet</span>';
+    let b = `<div class="siatka">
+      ${braki.length ? `<div class="pole pelna"><p class="info-pola" style="margin:0">Brakuje: ${esc(braki.join(', '))}.</p></div>` : ''}
+      ${pole('Rola', sel(k, 'rola', x.rola, M.AML_ROLE), 'pol')}${pole('Typ', sel(k, 'typ', x.typ || 'osoba', M.AML_TYPY, '— typ —'), 'pol')}
+      ${chk(k, 'umowa', x.umowa, 'Ma z nami umowę pośrednictwa (jest naszym klientem)')}`;
+    if (typ !== 'firma') {
+      b += `${podtyt('Dane identyfikacyjne (art. 36)')}
+        ${pole('Imię i nazwisko', inp(k, 'imie', x.imie, 'text', 'jak w dokumencie'))}
+        ${pole('Obywatelstwo', inp(k, 'obywatelstwo', x.obywatelstwo, 'text', 'np. polskie'), 'pol')}${pole('PESEL', inp(k, 'pesel', x.pesel, 'text', '11 cyfr', 'inputmode="numeric" maxlength="11"'), 'pol')}
+        ${x.pesel ? '' : `${dataP(k, 'dataUr', x.dataUr, 'Data urodzenia (gdy brak PESEL)')}${pole('Państwo urodzenia', inp(k, 'krajUr', x.krajUr, 'text', 'gdy brak PESEL'), 'pol')}`}
+        ${pole('Dokument', sel(k, 'dokRodzaj', x.dokRodzaj, M.AML_DOKUMENTY), 'pol')}${pole('Seria i numer', inp(k, 'dokNr', x.dokNr, 'text', 'np. ABC123456', 'autocapitalize="characters"'), 'pol')}
+        ${pole('Adres zamieszkania', inp(k, 'adresZam', x.adresZam, 'text', 'jeśli go znamy'))}`;
+      if (typ === 'jdg') b += `${pole('Firma działalności', inp(k, 'nazwa', x.nazwa, 'text', 'nazwa z CEIDG'))}${pole('NIP', inp(k, 'nip', x.nip, 'text', '10 cyfr', 'inputmode="numeric"'), 'pol')}${pole('Adres działalności', inp(k, 'adres', x.adres, 'text', 'główne miejsce'), 'pol')}`;
+    } else {
+      b += `${podtyt('Dane firmy (art. 36)')}
+        ${pole('Nazwa', inp(k, 'nazwa', x.nazwa, 'text', 'jak w rejestrze'))}
+        ${pole('Forma organizacyjna', inp(k, 'forma', x.forma, 'text', 'np. sp. z o.o.'), 'pol')}${pole('NIP', inp(k, 'nip', x.nip, 'text', '10 cyfr', 'inputmode="numeric"'), 'pol')}
+        ${pole('Adres siedziby', inp(k, 'adres', x.adres, 'text', 'ulica, miasto'))}
+        ${x.nip ? '' : `${pole('Rejestr i państwo (gdy brak NIP)', inp(k, 'rejestr', x.rejestr, 'text', 'np. Companies House, Wielka Brytania'))}${pole('Numer rejestru', inp(k, 'rejestrNr', x.rejestrNr, 'text', ''), 'pol')}${dataP(k, 'rejestrData', x.rejestrData, 'Data rejestracji')}`}
+        ${podtyt('Osoba reprezentująca')}
+        ${pole('Imię i nazwisko', inp(k, 'repImie', x.repImie, 'text', ''))}${pole('Obywatelstwo', inp(k, 'repObyw', x.repObyw, 'text', ''), 'pol')}${pole('PESEL / data ur.', inp(k, 'repPesel', x.repPesel, 'text', ''), 'pol')}
+        ${podtyt('Beneficjent rzeczywisty (kto faktycznie kontroluje firmę)')}
+        ${tekstP(k, 'beneficjenci', x.beneficjenci, 'Beneficjenci rzeczywiści', 'imię i nazwisko, obywatelstwo, PESEL — jedna osoba w wierszu', 3)}
+        ${dataP(k, 'crbrData', x.crbrData, 'CRBR sprawdzono')}${pole('Zgodne z CRBR?', sel(k, 'crbr', x.crbr, { tak: 'Zgodne', nie: 'Rozbieżność' }), 'pol')}
+        ${x.crbr === 'nie' ? tekstP(k, 'crbrRozb', x.crbrRozb, 'Rozbieżność z CRBR (art. 50 ust. 2 pkt 10)', 'co się nie zgadza') : ''}
+        ${tekstP(k, 'benTrud', x.benTrud, 'Trudności w ustaleniu beneficjenta (art. 50 ust. 2 pkt 11)', 'jeśli były — co zrobiliście')}`;
+    }
+    b += `${chk(k, 'pelnomocnik', x.pelnomocnik, 'Działa przez pełnomocnika')}
+      ${x.pelnomocnik ? `${pole('Pełnomocnik — imię i nazwisko', inp(k, 'pelImie', x.pelImie, 'text', ''))}${pole('Obywatelstwo', inp(k, 'pelObyw', x.pelObyw, 'text', ''), 'pol')}${pole('PESEL / data ur.', inp(k, 'pelPesel', x.pelPesel, 'text', ''), 'pol')}${pole('Dokument (seria, nr)', inp(k, 'pelDok', x.pelDok, 'text', ''), 'pol')}${pole('Podstawa umocowania', inp(k, 'pelPodstawa', x.pelPodstawa, 'text', 'np. pełnomocnictwo notarialne z dnia'), 'pol')}` : ''}
+      ${podtyt('Weryfikacja tożsamości (art. 37)')}
+      ${dataP(k, 'weryfData', x.weryfData, 'Sprawdzono')}${pole('Kto', sel(k, 'weryfKto', x.weryfKto, konta, '— kto? —'), 'pol')}
+      ${pole('Sposób', sel(k, 'weryfSposob', x.weryfSposob, M.AML_SPOSOBY))}
+      ${podtyt('Cel i źródło środków')}
+      ${tekstP(k, 'cel', x.cel, 'Cel i charakter współpracy', `np. ${M.AML_ROLE[x.rola] || 'sprzedaż'} — ${M.tytul(o) || 'nieruchomość'}`)}
+      ${pole('Źródło środków', inp(k, 'zrodlo', x.zrodlo, 'text', 'np. kredyt w banku X, sprzedaż mieszkania'))}
+      ${podtyt('PEP (art. 46)')}
+      ${pole('Status', sel(k, 'pep', x.pep, M.AML_PEP), 'pol')}${dataP(k, 'pepData', x.pepData, 'Oświadczenie')}
+      ${x.pep && x.pep !== 'nie' ? `${pole('Zgoda wspólnika', sel(k, 'pepZgoda', x.pepZgoda, konta, '— kto? —'), 'pol')}${dataP(k, 'pepZgodaData', x.pepZgodaData, 'Zgoda z dnia')}${tekstP(k, 'pepMajatek', x.pepMajatek, 'Źródło majątku i środków', 'skąd pochodzą pieniądze na transakcję')}` : ''}
+      ${podtyt('Listy sankcyjne: UE, ONZ, GIIF, MSWiA')}
+      ${dataP(k, 'sankcjeData', x.sankcjeData, 'Sprawdzono')}${pole('Kto', sel(k, 'sankcjeKto', x.sankcjeKto, konta, '— kto? —'), 'pol')}
+      ${pole('Wynik', sel(k, 'sankcje', x.sankcje, M.AML_SANKCJE))}
+      ${x.sankcje === 'trafienie' ? '<div class="pole pelna"><p class="info-pola zle" style="margin:0">Nie podpisujcie umowy i niczego tej osobie nie udostępniajcie. Zawiadomcie GIIF niezwłocznie (szczególne środki ograniczające, art. 117–118).</p></div>' : ''}
+      ${podtyt('Ocena ryzyka (art. 33, 43)')}
+      ${Object.entries(M.AML_CZYNNIKI).map(([c, n]) => chk(k, c, x[c], n)).join('')}
+      <div class="pole pelna"><p class="info-pola" style="margin:0">Poziom ryzyka: <b>${poz ? esc(M.AML_POZIOMY[poz]) : 'nieustalony'}</b>${poz === 'wysokie' ? ' — wzmożone środki: źródło majątku, zgoda drugiego wspólnika, częstsze monitorowanie.' : ''}</p></div>
+      ${poz === 'wysokie' ? '' : pole('Poziom (bez czynników wyższego ryzyka)', sel(k, 'ryzyko', x.ryzyko, { standardowe: 'Standardowe', niskie: 'Niskie (art. 42 — np. jednostka publiczna, spółka giełdowa)' }))}
+      ${tekstP(k, 'ryzykoUzas', x.ryzykoUzas, 'Uzasadnienie oceny', 'krótko, dlaczego taki poziom')}
+      ${podtyt('Monitorowanie')}
+      ${tekstP(k, 'monitor', x.monitor, 'Notatki ze współpracy', 'zmiany danych, nietypowe sytuacje — z datą')}
+      ${chk(k, 'podej', x.podej, 'Okoliczności mogące wskazywać na pranie pieniędzy')}
+      ${x.podej ? `<div class="pole pelna"><p class="info-pola" style="margin:0">Tajemnica: nikomu, także klientowi, nie mówcie o analizie ani o zawiadomieniu (art. 54). Potwierdzone podejrzenie zgłaszacie przez system GIIF najpóźniej w 2 dni robocze (art. 74).</p></div>
+        ${dataP(k, 'podejData', x.podejData, 'Zauważono')}${pole('Decyzja', sel(k, 'podejDecyzja', x.podejDecyzja, M.AML_DECYZJE, '— ocena trwa —'), 'pol')}
+        ${tekstP(k, 'podejOpis', x.podejOpis, 'Co zauważyliście', '', 3)}${tekstP(k, 'podejUzas', x.podejUzas, 'Uzasadnienie decyzji', '')}
+        ${x.podejDecyzja === 'tak' ? `${dataP(k, 'giifData', x.giifData, 'Zawiadomiono')}${pole('Numer zawiadomienia', inp(k, 'giifNr', x.giifNr, 'text', 'z systemu GIIF'), 'pol')}` : ''}` : ''}
+      ${chk(k, 'odmowa', x.odmowa, 'Odmowa lub rozwiązanie współpracy (art. 41)')}
+      ${x.odmowa ? `${dataP(k, 'odmowaData', x.odmowaData, 'Data')}${pole('Powód', inp(k, 'odmowaPowod', x.odmowaPowod, 'text', 'np. odmówił podania danych'), 'pol')}` : ''}
+      ${podtyt('Zakończenie współpracy')}
+      ${dataP(k, 'zakonczenie', x.zakonczenie, 'Zakończono')}<div class="pole pol"><p class="info-pola" style="margin:22px 0 0">${usun ? `Karta zniknie ${esc(dataKrotka(usun))} (5 lat, art. 49).` : 'Od tej daty liczy się 5 lat przechowywania.'}</p></div>
+      <div class="pole pelna akcje-wpisu">
+        <button class="btn kontur maly" data-a="kl-eksport" data-e="${k}">${ik('pobierz')}Dane dla tej osoby</button>
+        <span class="rozp"></span><span class="dodany">${esc(kiedyDodany(x))}</span>
+        ${!x.imie && !x.nazwa && !x.pesel && !x.dokNr ? `<button class="usun-w" data-a="wpis-usun" data-e="${k}" data-co="pustą kartę" aria-label="Usuń pustą kartę">${ik('kosz')}</button>` : ''}
+      </div></div>`;
+    h += grupaZ(`${M.AML_ROLE[x.rola] ? `${M.AML_ROLE[x.rola]}: ` : ''}${M.amlNazwa(x)}`, tag, b, `karta-aml${braki.length ? '' : ' aml-ok'}`);
+  }
+  return h;
+}
+async function nowaKartaAml(o, z = {}) {
+  const k = `am_${M.noweId(8)}`;
+  await D.zmien(o.id, { [k]: { t: Date.now(), kto: D.stan.konto?.nazwa || '', typ: 'osoba', ...z } });
+  return k;
+}
+
+// ----- ustawienia: dane firmy (do klauzuli RODO), archiwum i rejestr AML, urządzenia -----
+function sekcjaFirmy() {
+  const f = D.stan.firma || {};
+  const p = (k, et, pl = '', typ = 'text') => `<div class="pole"><label class="et" for="f-${k}">${et}</label><div class="wejscie"><input id="f-${k}" data-f="${k}" type="${typ}" value="${esc(f[k] || '')}" placeholder="${esc(pl)}"></div></div>`;
+  return `<section class="sek szklo"><h2>Dane firmy (RODO)</h2><div class="sek-tresc">
+    <p class="tekst-ust" style="padding:0">Z tych danych aplikacja składa informację o przetwarzaniu danych dla klientów i właścicieli. Wspólne dla obu kont.</p>
+    <div class="siatka" style="margin-top:10px">
+      ${p('imie1', 'Wspólnik 1 — imię i nazwisko')}${p('firma1', 'Wspólnik 1 — firma')}${p('nip1', 'Wspólnik 1 — NIP', '', 'text')}
+      ${p('imie2', 'Wspólnik 2 — imię i nazwisko')}${p('firma2', 'Wspólnik 2 — firma')}${p('nip2', 'Wspólnik 2 — NIP')}
+      ${p('nazwaSc', 'Nazwa spółki cywilnej')}${p('adres', 'Adres biura / do korespondencji')}
+      ${p('email', 'E-mail biura', '', 'email')}${p('telefon', 'Telefon biura', '', 'tel')}
+      ${p('hosting', 'Dostawca serwera', 'Sprint S.A., Polska')}
+    </div>
+    ${M.firmaUzupelniona(f) ? '' : '<p class="info-pola" style="margin:10px 0 0">Uzupełnij wszystkie pola — do tego czasu informacja RODO ma w tekście miejsca do uzupełnienia.</p>'}
+    </div></section>`;
+}
+async function wszystkieKartyAml() {
+  const L = [];
+  for (const o of D.oferty()) for (const x of M.amlKarty(o)) L.push({ oferta: M.tytul(o) || o.roboczy || '', adres: [o.ulica && `ul. ${o.ulica}`, o.miasto].filter(Boolean).join(', '), usunieta: false, ...x });
+  const arch = await D.archiwumAml();
+  for (const a of arch) for (const [k, x] of Object.entries(a.karty)) L.push({ oferta: a.tytul, adres: a.adres, usunieta: true, _k: k, ...x });
+  return { L, arch };
+}
+function oknoArchiwum() {
+  pytajPin('Archiwum AML zawiera dane osobowe', async () => {
+    const w = okno('Archiwum AML', '<p class="wyc">Wczytuję…</p>');
+    try {
+      const arch = await D.archiwumAml();
+      $('.okno-tresc', w).innerHTML = `<p class="tekst-ust" style="padding:0 0 8px">Karty AML z usuniętych ofert. Każda znika sama po 5 latach od zakończenia współpracy (art. 49 ustawy AML). Karty z bieżących ofert są w ofertach (ekran AML).</p>
+        <div class="menu-lista dziennik">${arch.length ? arch.map((a) => Object.values(a.karty).map((x) => `<div class="wiersz-dz"><b>${esc(M.amlNazwa(x))}</b>${x.rola ? ` · ${esc(M.AML_ROLE[x.rola] || '')}` : ''}<br><span class="wyc">${esc(a.tytul)}${a.adres && a.adres !== a.tytul ? ` — ${esc(a.adres)}` : ''} · ${x.pesel ? `PESEL ${esc(x.pesel)} · ` : ''}${x.dokNr ? `dok. ${esc(x.dokNr)} · ` : ''}zakończenie ${esc(dataKrotka(x.zakonczenie))} · usunięcie ${esc(dataKrotka(x.usuniecie))}</span></div>`).join('')).join('') : '<p class="wyc">Pusto — nie ma kart z usuniętych ofert.</p>'}</div>`;
+    } catch (er) { $('.okno-tresc', w).innerHTML = `<p class="wyc">${esc(bladSieci(er))}</p>`; }
+  });
+}
+function rejestrAml() {
+  pytajPin('Rejestr AML zawiera dane osobowe', async () => {
+    try {
+      const { L } = await wszystkieKartyAml();
+      const kol = [['oferta', 'Oferta'], ['adres', 'Adres'], ['rola', 'Rola'], ['typ', 'Typ'], ['imie', 'Imię i nazwisko'], ['nazwa', 'Firma'], ['obywatelstwo', 'Obywatelstwo'], ['pesel', 'PESEL'], ['dataUr', 'Data urodzenia'], ['krajUr', 'Państwo urodzenia'],
+        ['dokRodzaj', 'Dokument'], ['dokNr', 'Seria i numer'], ['adresZam', 'Adres zamieszkania'], ['nip', 'NIP'], ['adres', 'Adres firmy'], ['repImie', 'Reprezentant'], ['beneficjenci', 'Beneficjenci'], ['pelImie', 'Pełnomocnik'],
+        ['weryfData', 'Weryfikacja'], ['weryfKto', 'Kto weryfikował'], ['weryfSposob', 'Sposób'], ['pep', 'PEP'], ['pepData', 'Oświadczenie PEP'], ['sankcjeData', 'Sankcje — data'], ['sankcje', 'Sankcje — wynik'],
+        ['_poziom', 'Ryzyko'], ['cel', 'Cel'], ['zrodlo', 'Źródło środków'], ['zakonczenie', 'Zakończenie'], ['_braki', 'Braki'], ['_arch', 'Z usuniętej oferty']];
+      const pole = (x, k) => (k === '_poziom' ? M.AML_POZIOMY[M.amlPoziom(x)] || '' : k === '_braki' ? M.amlBraki(x).join('; ') : k === '_arch' ? (x.usunieta ? 'tak' : '') : k === 'rola' ? M.AML_ROLE[x.rola] || '' : k === 'typ' ? M.AML_TYPY[x.typ || 'osoba'] : k === 'pep' ? M.AML_PEP[x.pep] || '' : k === 'sankcje' ? (x.sankcje === 'trafienie' ? 'trafienie' : x.sankcje ? 'brak trafień' : '') : k === 'dokRodzaj' ? M.AML_DOKUMENTY[x.dokRodzaj] || '' : k === 'weryfSposob' ? M.AML_SPOSOBY[x.weryfSposob] || '' : x[k] ?? '');
+      const csv = (v) => `"${String(v).replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`;
+      const tekst = `﻿${kol.map(([, n]) => csv(n)).join(';')}\r\n${L.map((x) => kol.map(([k]) => csv(pole(x, k))).join(';')).join('\r\n')}\r\n`;
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([tekst], { type: 'text/csv;charset=utf-8' }));
+      a.download = `rejestr-aml-${new Date().toISOString().slice(0, 10)}.csv`; document.body.appendChild(a); a.click(); a.remove();
+      toast(`Rejestr AML: ${L.length} kart. Plik zawiera dane osobowe — trzymaj go na zaszyfrowanym dysku.`, 4500);
+    } catch (er) { toast(bladSieci(er), 4000); }
+  });
+}
+async function oknoUrzadzen() {
+  const w = okno('Urządzenia', '<p class="wyc">Wczytuję…</p>');
+  const rysuj = async () => {
+    try {
+      const L = await D.urzadzenia();
+      $('.okno-tresc', w).innerHTML = `<p class="tekst-ust" style="padding:0 0 8px">Zalogowane telefony i komputery obu kont. Zgubione urządzenie wyloguj tutaj — dane na nim same się nie skasują, ale nie połączy się już z serwerem, a bez PIN-u nikt ich nie odczyta.</p>
+        <div class="menu-lista dziennik">${L.map((x) => `<div class="wiersz-dz urz"><span><b>${esc(x.nazwa)}</b>${x.to ? ' <span class="licznik" style="background:var(--gold);color:#1A1408">to urządzenie</span>' : ''}<br><span class="wyc">${esc(x.kto || '')} · ostatnio ${esc(kiedy(x.ostatnio))}</span></span>${x.to ? '' : `<button class="btn kontur maly zly-tekst" data-urz="${x.id}">Wyloguj</button>`}</div>`).join('')}</div>`;
+    } catch (er) { $('.okno-tresc', w).innerHTML = `<p class="wyc">${esc(bladSieci(er))}</p>`; }
+  };
+  w.addEventListener('click', async (ev) => {
+    const el = ev.target.closest('[data-urz]'); if (!el) return;
+    if (!(await potwierdz('Wylogować to urządzenie?', 'Przestanie się łączyć z serwerem. Żeby znowu go używać, trzeba się zalogować hasłem i kodem z drugiego urządzenia.', 'Wyloguj'))) return;
+    try { await D.wylogujUrzadzenie(el.dataset.urz); toast('Urządzenie wylogowane'); rysuj(); } catch (er) { toast(bladSieci(er), 4000); }
+  });
+  rysuj();
+}
+
 // ----- bezpieczeństwo: zmiana PIN-u i hasła, dziennik dostępu -----
 function formOkna(tytul, html, przycisk, wykonaj) {
   const w = okno(tytul, `<form class="form-okna">${html}<div class="blad" style="text-align:left"></div><div class="rzad" style="margin-top:12px"><button class="btn zloty" type="submit">${esc(przycisk)}</button></div></form>`);
@@ -984,7 +1224,8 @@ function zmianaHasla() {
     toast('Hasło zmienione. Zalogowane urządzenia działają dalej.', 3500);
   });
 }
-const CO_DZIENNIK = { klient: 'otwarcie danych klienta', wlasciciel: 'otwarcie danych właściciela', dokument: 'otwarcie dokumentu', eksport: 'wydanie danych osoby', usuniecie: 'usunięcie danych osoby', kopia: 'pobranie kopii bazy' };
+const CO_DZIENNIK = { klient: 'otwarcie danych klienta', wlasciciel: 'otwarcie danych właściciela', dokument: 'otwarcie dokumentu', eksport: 'wydanie danych osoby', usuniecie: 'usunięcie danych osoby', kopia: 'pobranie kopii bazy',
+  aml: 'otwarcie kart AML', historia: 'otwarcie historii zmian', archiwum: 'otwarcie archiwum AML', wylogowanie: 'zdalne wylogowanie urządzenia', wizyty: 'otwarcie prezentacji' };
 async function pokazDziennik() {
   let L;
   try { L = await D.dziennik(); } catch (er) { toast(bladSieci(er), 3500); return; }
@@ -1016,6 +1257,10 @@ function odswiezUstawienia() {
       ${htmlProsb()}
       <p class="tekst-ust" style="padding:0">Dane na tym urządzeniu są zaszyfrowane PIN-em. Aplikacja blokuje się po 10 minutach bez używania. Pięć złych PIN-ów usuwa dane z tego urządzenia — na serwerze zostają. Nowe urządzenie zatwierdzasz kodem z zalogowanego telefonu.</p>
       <div class="rzad" style="margin-top:12px"><button class="btn kontur maly" data-a="pin-zmien">Zmień PIN</button><button class="btn kontur maly" data-a="haslo-zmien">Zmień hasło</button><button class="btn kontur maly" data-a="dziennik">Dziennik dostępu</button></div></div></section>
+    ${sekcjaFirmy()}
+    <section class="sek szklo"><h2>AML i urządzenia</h2><div class="sek-tresc">
+      <p class="tekst-ust" style="padding:0">Archiwum AML to karty klientów także z usuniętych ofert — przechowywane 5 lat od zakończenia współpracy (art. 49 ustawy AML). Rejestr pobierzesz na wypadek kontroli. Zgubiony telefon wylogujesz zdalnie w „Urządzenia”.</p>
+      <div class="rzad" style="margin-top:12px"><button class="btn kontur maly" data-a="aml-archiwum">${ik('tarcza')}Archiwum AML</button><button class="btn kontur maly" data-a="aml-rejestr">${ik('pobierz')}Rejestr AML (plik)</button><button class="btn kontur maly" data-a="urzadzenia">Urządzenia</button></div></div></section>
     <section class="sek szklo"><h2>Konto</h2><div class="sek-tresc">
       <p style="margin:6px 0">Zalogowany: <b>${esc(D.stan.konto?.nazwa || '')}</b> <span class="wyc">(${esc(D.stan.konto?.login || '')})</span></p>
       ${D.stan.konta.length > 1 ? `<p class="wyc male" style="margin:0 0 10px">W biurze: ${D.stan.konta.map((k) => esc(k.nazwa)).join(', ')}</p>` : ''}
@@ -1055,6 +1300,7 @@ function zapisz(el) {
   timery.delete(el);
   const o = D.oferta(S.id);
   if (el.dataset.u) return D.ustawAgenta({ [el.dataset.u]: el.value.trim() });
+  if (el.dataset.f) { if ((D.stan.firma?.[el.dataset.f] || '') !== el.value.trim()) D.zapiszFirme({ [el.dataset.f]: el.value.trim() }).catch((er) => toast(bladSieci(er), 3500)); return; }
   if (!o) return;
   if (el.dataset.k) {
     const k = el.dataset.k;
@@ -1077,6 +1323,8 @@ function zapisz(el) {
     const x = { ...(o[k] || {}) };
     const v = wartosc(el);
     if (v === null || v === false) delete x[p]; else x[p] = v;
+    const kto = { weryfData: 'weryfKto', sankcjeData: 'sankcjeKto' }[p]; // karta AML: kto sprawdzał = zalogowany wspólnik
+    if (k.startsWith('am_') && kto && v && !x[kto] && D.stan.konto?.nazwa) x[kto] = D.stan.konto.nazwa;
     if (JSON.stringify(o[k] || {}) === JSON.stringify(x)) return;
     D.zmien(S.id, { [k]: x });
   } else if (el.dataset.w) {
@@ -1106,9 +1354,10 @@ function zmienStatus(o, v, el) {
   D.zmien(o.id, pola);
 }
 const natychmiast = (el) => el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'date' || el.type === 'datetime-local';
-const doZapisu = (el) => el.dataset.k || el.dataset.l || el.dataset.w || el.dataset.z || el.dataset.u || el.dataset.e;
+const doZapisu = (el) => el.dataset.k || el.dataset.l || el.dataset.w || el.dataset.z || el.dataset.u || el.dataset.e || el.dataset.f;
 document.addEventListener('input', (e) => {
   const el = e.target;
+  if (el.id === 'pin-dane') { if (/^\d{6}$/.test(el.value)) sprawdzPinDanych(el); return; }
   if (!doZapisu(el) || natychmiast(el)) return;
   clearTimeout(timery.get(el));
   timery.set(el, setTimeout(() => zapisz(el), 450));
@@ -1196,9 +1445,10 @@ function okno(tytul, html) {
 const NAZWY_POL = { pom: 'Pomieszczenia', atuty: 'Atuty', minusy: 'Co warto wiedzieć', okolica: 'Okolica', zdj: 'Zdjęcia', weryf: 'Sprawdziliśmy', zr: 'Źródła danych',
   lead: 'Wstęp', tytul: 'Własny tytuł', status: 'Status', _usunieta: 'Usunięcie oferty', _usunieto: 'Usunięcie danych osoby', dataPublikacji: 'Data publikacji', utworzyl: 'Utworzenie', id: 'Utworzenie', ulubiona: 'Wyróżnienie' };
 Object.assign(NAZWY_POL, { wyp: 'Wyposażenie', wypInne: 'Wyposażenie (inne)', wypUwagi: 'Uwagi do wyposażenia', wypBrak: 'Bez wyposażenia' });
+Object.assign(NAZWY_POL, { wlRodo: 'Informacja RODO dla właściciela', wlRodoKiedy: 'Data informacji RODO' });
 function etykieta(k) {
   for (const s of M.SEKCJE) for (const p of s.pola) if (p.k === k) return p.e;
-  if (k.startsWith('kl_')) return 'Klient'; if (k.startsWith('wz_')) return 'Prezentacja'; if (k.startsWith('dk_')) return 'Dokumenty';
+  if (k.startsWith('kl_')) return 'Klient'; if (k.startsWith('wz_')) return 'Prezentacja'; if (k.startsWith('dk_')) return 'Dokumenty'; if (k.startsWith('am_')) return 'Karta AML';
   return NAZWY_POL[k] || k;
 }
 function pokazWartosc(k, j) {
@@ -1214,7 +1464,7 @@ const kiedy = (t) => new Date(t).toLocaleString('pl-PL', { dateStyle: 'medium', 
 async function pokazHistorie() {
   const w = okno('Historia zmian', '<p class="wyc">Wczytuję…</p>');
   try {
-    const h = await D.historia(S.id);
+    const h = await D.historia(S.id, true);
     $('.okno-tresc', w).innerHTML = h.length ? `<ul class="hist">${h.map((x) => `<li><div><b>${esc(etykieta(x.pole))}</b>: ${pokazWartosc(x.pole, x.stara)} → ${pokazWartosc(x.pole, x.nowa)}</div><div class="kiedy">${esc(x.kto || '')} · ${kiedy(x.kiedy)}</div></li>`).join('')}</ul>` : '<p class="wyc">Brak zapisanych zmian.</p>';
   } catch { $('.okno-tresc', w).innerHTML = '<p class="wyc">Historia jest na serwerze. Połącz się z internetem, żeby ją zobaczyć.</p>'; }
 }
@@ -1277,6 +1527,34 @@ document.addEventListener('click', async (e) => {
     case 'pin-zmien': zmianaPinu(); break;
     case 'haslo-zmien': zmianaHasla(); break;
     case 'dziennik': pokazDziennik(); break;
+    case 'aml-archiwum': oknoArchiwum(); break;
+    case 'aml-rejestr': rejestrAml(); break;
+    case 'urzadzenia': oknoUrzadzen(); break;
+    case 'rodo-wyslij': if (o) oknoRodo(o, b.dataset.e); break;
+    case 'am-dodaj': {
+      const wl = o.wlImie, kl = M.klienci(o).filter((x) => x.imie && !M.amlKarty(o).some((a) => a.klient === x._k));
+      const najem = o.transakcja === 'najem';
+      const w = okno('Nowa karta AML', `<div class="menu-lista">
+        ${wl && !M.amlKarty(o).some((a) => a.wlasciciel) ? `<button data-z="wl">${ik('dom')}Właściciel: ${esc(wl)}</button>` : ''}
+        ${kl.map((x) => `<button data-z="${x._k}">${ik('osoba')}Klient: ${esc(x.imie)}</button>`).join('')}
+        <button data-z="">${ik('plus')}Inna osoba lub firma</button></div>`);
+      w.addEventListener('click', async (ev) => {
+        const el = ev.target.closest('[data-z]'); if (!el) return; w.remove();
+        const z = el.dataset.z;
+        const dane = z === 'wl' ? { wlasciciel: true, imie: o.wlImie, rola: najem ? 'wynajmujacy' : 'sprzedajacy', umowa: !!(o.umowaNr || o.umowaData) }
+          : z ? { klient: z, imie: o[z]?.imie, rola: najem ? 'najemca' : 'kupujacy' } : {};
+        const k = await nowaKartaAml(o, JSON.parse(JSON.stringify(dane)));
+        setTimeout(() => $(`[data-e="${k}"][data-p="imie"]`)?.focus(), 120);
+      });
+      break;
+    }
+    case 'am-z': { // z karty klienta / właściciela: otwórz albo załóż kartę AML
+      const z = b.dataset.e, najem = o.transakcja === 'najem';
+      const jest = M.amlKarty(o).find((a) => (z === 'wlasciciel' ? a.wlasciciel : a.klient === z));
+      if (!jest) await nowaKartaAml(o, JSON.parse(JSON.stringify(z === 'wlasciciel' ? { wlasciciel: true, imie: o.wlImie, rola: najem ? 'wynajmujacy' : 'sprzedajacy', umowa: !!(o.umowaNr || o.umowaData) } : { klient: z, imie: o[z]?.imie, rola: najem ? 'najemca' : 'kupujacy' })));
+      idzDo(`#/o/${o.id}/aml`);
+      break;
+    }
     case 'wiecej': S.wiecej = !S.wiecej; odswiezListe(); break;
     case 'sync': D.synchronizuj().then(() => toast(D.stan.blad || 'Zsynchronizowano')); break;
     case 'aktywnosc': pokazAktywnosc(); break;
@@ -1318,13 +1596,13 @@ document.addEventListener('click', async (e) => {
         const j = await D.daneOsoby(o.id, k);
         const tekst = JSON.stringify({ oferta: M.tytul(o), wydano: new Date().toISOString(), administrator: agent().firma || 'AM Nieruchomości', dane: j.dane, historiaZmian: j.historia }, null, 2);
         const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([tekst], { type: 'application/json' }));
-        a.download = `dane-${slug(j.dane.imie || 'osoby')}.json`; document.body.appendChild(a); a.click(); a.remove();
+        a.download = `dane-${slug(j.dane.imie || j.dane.wlImie || j.dane.nazwa || 'osoby')}.json`; document.body.appendChild(a); a.click(); a.remove();
         toast('Plik z danymi osoby gotowy — przekaż go jej na żądanie (RODO art. 15)', 4000);
       } catch (er) { toast(er.kod === 404 ? 'Ta osoba nie jest jeszcze na serwerze — połącz się z internetem.' : bladSieci(er), 4000); }
       break;
     }
     case 'kl-rodo-usun': {
-      const k = b.dataset.e, x = o[k] || {};
+      const k = b.dataset.e, x = k === 'wlasciciel' ? { imie: o.wlImie || 'właściciel' } : o[k] || {};
       if (!(await potwierdz(`Usunąć dane: ${x.imie || 'klient'}?`, 'Na żądanie osoby (RODO art. 17). Znikną z obu kont razem z całą historią zmian — tego nie da się cofnąć. Kopie zapasowe wygasają same po 60 dniach.', 'Usuń na zawsze'))) return;
       try { await D.usunOsobe(o.id, k); toast('Dane osoby usunięte'); } catch (er) { toast(bladSieci(er), 4000); }
       break;
@@ -1496,7 +1774,7 @@ document.addEventListener('click', async (e) => {
       w.addEventListener('click', async (ev) => {
         const m = ev.target.closest('[data-m]')?.dataset.m; if (!m) return;
         w.remove();
-        if (m === 'historia') pokazHistorie();
+        if (m === 'historia') pytajPin('Historia zmian zawiera dane osobowe', () => pokazHistorie());
         if (m === 'usun') {
           if (!(await potwierdz('Usunąć ofertę?', 'Oferta i jej zdjęcia znikną na obu kontach. Jeśli transakcja się zakończyła, lepiej ustaw status „Zakończona”.', 'Usuń na zawsze'))) return;
           await D.usunOferte(o.id); idzDo('#/'); toast('Oferta usunięta');

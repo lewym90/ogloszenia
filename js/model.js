@@ -59,6 +59,82 @@ export function wizyty(o) {
   const po = L.filter((w) => (w.status || 'plan') !== 'plan').sort((a, b) => String(b.kiedy || '').localeCompare(String(a.kiedy || '')));
   return { nad, po };
 }
+// ---------- AML: karta strony transakcji (am_…) — ustawa z 1.03.2018, art. 33–49 ----------
+export const AML_ROLE = { sprzedajacy: 'Sprzedający', kupujacy: 'Kupujący', wynajmujacy: 'Wynajmujący', najemca: 'Najemca' };
+export const AML_TYPY = { osoba: 'Osoba fizyczna', jdg: 'Przedsiębiorca (JDG)', firma: 'Firma (spółka, inna jednostka)' };
+export const AML_DOKUMENTY = { dowod: 'Dowód osobisty', mdowod: 'mDowód (mObywatel)', paszport: 'Paszport', karta: 'Karta pobytu', inny: 'Inny dokument' };
+export const AML_SPOSOBY = { osobiscie: 'Osobiście, oryginał dokumentu', mobywatel: 'mObywatel', rejestr: 'Odpis z KRS / CEIDG', inny: 'Inaczej (opisz w notatce)' };
+export const AML_PEP = { nie: 'Nie', pep: 'Tak — PEP', rodzina: 'Rodzina PEP', wspolpracownik: 'Współpracownik PEP' };
+export const AML_SANKCJE = { brak: 'Brak trafień', trafienie: 'Trafienie — nie zawierać umowy, zawiadomić GIIF' };
+export const AML_POZIOMY = { niskie: 'Niskie', standardowe: 'Standardowe', wysokie: 'Wysokie' };
+// czynniki wyższego ryzyka (art. 43 ust. 2, art. 44, 46) — każdy oznacza ryzyko wysokie
+export const AML_CZYNNIKI = {
+  cz_pep: 'PEP, jego rodzina albo bliski współpracownik',
+  cz_panstwo: 'Powiązanie z państwem wysokiego ryzyka lub objętym sankcjami',
+  cz_gotowka: 'Płatność gotówką lub z niejasnego źródła',
+  cz_trzecia: 'Płaci nieznana osoba trzecia lub firma bez związku z klientem',
+  cz_struktura: 'Nietypowa lub zbyt złożona struktura własności firmy',
+  cz_zdalnie: 'Klient nieobecny fizycznie przy weryfikacji',
+  cz_cena: 'Cena wyraźnie odbiegająca od rynkowej albo szybka odsprzedaż',
+  cz_pelnomocnik: 'Pełnomocnik bez wyraźnego powodu',
+  cz_inwestycja: 'Obywatelstwo lub pobyt w zamian za inwestycje',
+};
+export const AML_DECYZJE = { tak: 'Potwierdzone — zawiadomić GIIF w 2 dni robocze', nie: 'Niepotwierdzone' };
+export const amlKarty = (o) => wpisy(o, 'am_').sort((a, b) => (a.t || 0) - (b.t || 0));
+export function amlPoziom(x) {
+  if (Object.keys(AML_CZYNNIKI).some((k) => x[k]) || (x.pep && x.pep !== 'nie')) return 'wysokie';
+  return x.ryzyko === 'niskie' ? 'niskie' : x.ryzyko || null;
+}
+// czego brakuje do kompletnej karty (identyfikacja art. 36, weryfikacja art. 37, PEP art. 46, sankcje art. 117, ryzyko art. 33)
+export function amlBraki(x) {
+  const b = [];
+  const typ = x.typ || 'osoba';
+  if (typ === 'firma') {
+    for (const [k, n] of [['nazwa', 'nazwa firmy'], ['forma', 'forma organizacyjna'], ['adres', 'adres siedziby'], ['repImie', 'osoba reprezentująca'], ['beneficjenci', 'beneficjent rzeczywisty']]) if (!x[k]) b.push(n);
+    if (!x.nip && !(x.rejestr && x.rejestrNr)) b.push('NIP albo dane rejestru');
+  } else {
+    for (const [k, n] of [['imie', 'imię i nazwisko'], ['obywatelstwo', 'obywatelstwo'], ['dokNr', 'seria i numer dokumentu']]) if (!x[k]) b.push(n);
+    if (!x.pesel && !(x.dataUr && x.krajUr)) b.push('PESEL albo data i państwo urodzenia');
+    if (typ === 'jdg' && (!x.nazwa || !x.nip)) b.push('firma i NIP działalności');
+  }
+  if (!x.weryfData) b.push('weryfikacja dokumentu');
+  if (!x.pep) b.push('status PEP');
+  else if (x.pep !== 'nie' && !x.pepZgoda) b.push('zgoda drugiego wspólnika (PEP)');
+  if (!x.sankcjeData || !x.sankcje) b.push('sprawdzenie list sankcyjnych');
+  if (!amlPoziom(x)) b.push('ocena ryzyka');
+  return b;
+}
+export function amlUsuniecie(x) { // 5 lat od zakończenia współpracy (art. 49)
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(x?.zakonczenie || ''));
+  return m ? new Date(+m[1] + 5, +m[2] - 1, +m[3]) : null;
+}
+export const amlNazwa = (x) => (x.typ === 'firma' ? x.nazwa : x.imie) || 'Strona bez nazwy';
+
+// ---------- RODO: klauzula informacyjna z danych firmy (art. 13 i 14) ----------
+export function klauzula(f = {}, dla = 'klient') {
+  const z = (v, d) => (String(v || '').trim() || `[${d}]`);
+  const wsp = [1, 2].map((i) => `${z(f[`imie${i}`], `imię i nazwisko wspólnika ${i}`)} (${z(f[`firma${i}`], `firma wspólnika ${i}`)}, NIP ${z(f[`nip${i}`], 'NIP')})`).join(' i ');
+  const kontakt = `${z(f.email, 'e-mail biura')}, tel. ${z(f.telefon, 'telefon biura')}`;
+  const host = z(f.hosting, 'dostawca serwera');
+  const L = [`Informacja o przetwarzaniu Pani/Pana danych osobowych`, '',
+    `1. Administratorzy. Pani/Pana dane przetwarzają wspólnie ${wsp}, wspólnicy spółki cywilnej ${z(f.nazwaSc, 'nazwa spółki')}, ${z(f.adres, 'adres')}. Każdy z nich przyjmuje i załatwia Pani/Pana sprawy dotyczące danych. Kontakt: ${kontakt}.`];
+  if (dla === 'wlasciciel') {
+    L.push('2. Cele i podstawy. Przetwarzamy dane, aby zawrzeć i wykonać umowę pośrednictwa (art. 6 ust. 1 lit. b RODO); wykonać obowiązki z ustawy o przeciwdziałaniu praniu pieniędzy oraz finansowaniu terroryzmu i przepisów podatkowych (art. 6 ust. 1 lit. c RODO); ustalić, dochodzić lub bronić roszczeń z umowy — to nasz prawnie uzasadniony interes (art. 6 ust. 1 lit. f RODO).',
+      '3. Obowiązek podania danych. Podanie danych jest warunkiem zawarcia umowy. Dane wymagane przez ustawę o przeciwdziałaniu praniu pieniędzy (m.in. PESEL, seria i numer dokumentu tożsamości) musimy zebrać z mocy prawa; bez nich nie możemy zawrzeć umowy ani prowadzić transakcji (art. 41 tej ustawy).',
+      `4. Odbiorcy. Dostawca serwera naszej aplikacji (${host}) na podstawie umowy powierzenia; biuro rachunkowe; strony transakcji i notariusz w zakresie potrzebnym do jej zawarcia; Generalny Inspektor Informacji Finansowej i inne organy, gdy wymagają tego przepisy. Nie przekazujemy danych poza Europejski Obszar Gospodarczy.`,
+      '5. Jak długo. Dane z umowy — do 31 grudnia szóstego roku po jej zakończeniu (przedawnienie roszczeń, art. 118 Kodeksu cywilnego). Dane zebrane na podstawie przepisów o przeciwdziałaniu praniu pieniędzy — 5 lat od zakończenia współpracy lub transakcji (art. 49 tej ustawy). Dokumenty księgowe — przez okres wymagany przepisami podatkowymi. Jeśli umowa nie zostanie zawarta — 12 miesięcy od zakończenia oferty.');
+  } else {
+    L.push('2. Cele i podstawy. Przetwarzamy dane, aby odpowiedzieć na Pani/Pana zapytanie, umówić i przeprowadzić prezentację nieruchomości oraz informować o ofercie, o którą Pani/Pan pyta — to nasz prawnie uzasadniony interes (art. 6 ust. 1 lit. f RODO). Jeśli podpisze Pani/Pan z nami umowę pośrednictwa — także w celu jej wykonania (art. 6 ust. 1 lit. b RODO) i wykonania obowiązków z ustawy o przeciwdziałaniu praniu pieniędzy oraz finansowaniu terroryzmu i przepisów podatkowych (art. 6 ust. 1 lit. c RODO).',
+      '3. Obowiązek podania danych. Podanie danych jest dobrowolne, ale bez telefonu lub e-maila nie umówimy prezentacji. Przy umowie pośrednictwa i transakcji dane wymagane przez ustawę o przeciwdziałaniu praniu pieniędzy musimy zebrać z mocy prawa.',
+      `4. Odbiorcy. Dostawca serwera naszej aplikacji (${host}) na podstawie umowy powierzenia; właściciel nieruchomości — wyłącznie Pani/Pana wrażenia z prezentacji, bez danych kontaktowych; przy transakcji — strony i notariusz; organy państwa, gdy wymagają tego przepisy. Nie przekazujemy danych poza Europejski Obszar Gospodarczy.`,
+      '5. Jak długo. 12 miesięcy od ostatniego kontaktu z nami. Jeśli dojdzie do transakcji — 5 lat od jej zawarcia, a dane zebrane na podstawie przepisów o przeciwdziałaniu praniu pieniędzy — 5 lat od zakończenia współpracy lub transakcji (art. 49 tej ustawy).');
+  }
+  L.push('6. Pani/Pana prawa. Dostęp do danych, ich sprostowanie, usunięcie, ograniczenie przetwarzania i przeniesienie, a także sprzeciw wobec przetwarzania opartego na naszym prawnie uzasadnionym interesie. Usunięcie nie dotyczy danych, które musimy przechowywać z mocy prawa. Skarga do Prezesa Urzędu Ochrony Danych Osobowych (ul. Stawki 2, 00-193 Warszawa).',
+    '7. Nie podejmujemy wobec Pani/Pana decyzji wyłącznie automatycznie i nie profilujemy.');
+  return L.join('\n');
+}
+export const firmaUzupelniona = (f = {}) => ['imie1', 'firma1', 'nip1', 'imie2', 'firma2', 'nip2', 'nazwaSc', 'adres', 'email', 'telefon'].every((k) => String(f[k] || '').trim());
+
 // lista dokumentów zależna od transakcji, rodzaju i formy własności
 export function dokumentyWymagane(o) {
   const r = o.rodzaj, najem = o.transakcja === 'najem';

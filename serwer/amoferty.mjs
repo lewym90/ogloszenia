@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
-export const WERSJA = '1.6.0';
+export const WERSJA = '1.7.0';
 const PORT = Number(process.env.PORT || 18930);
 const DANE = process.env.AM_DANE || './dane';
 const ORIGINS = (process.env.AM_ORIGINS || 'https://lewym90.github.io,http://localhost:8766,http://127.0.0.1:8766').split(',');
@@ -430,24 +430,49 @@ function urzadzenieZBiletu(b) {
 }
 
 // ---------- dziennik dostępu do danych osobowych ----------
+const OSOBA = /^(kl_[A-Za-z0-9_-]{2,40}|am_[A-Za-z0-9_-]{2,40}|wlasciciel)$/;
+const POLA_WLASCICIELA = ['wlImie', 'wlTel', 'wlEmail', 'wlRodo', 'wlRodoKiedy', 'umowaNr', 'umowaData', 'umowaDo', 'wylacznosc', 'prowizjaWl'];
+// z karty AML na żądanie osoby wydajemy tylko dane, które sama podała, i fakt weryfikacji — bez oceny ryzyka i analiz (tajemnica, art. 54)
+const AML_NIEJAWNE = /^(ryz|cz_|podej|giif|monitor|odmowa)/;
+const jawneAml = (v) => Object.fromEntries(Object.entries(v || {}).filter(([k]) => !AML_NIEJAWNE.test(k)));
 function zapiszDziennik(dev, oid, pole, co, kiedy = teraz()) {
   db.prepare('INSERT INTO dziennik (konto, urzadzenie, oferta, pole, co, kiedy) VALUES (?, ?, ?, ?, ?, ?)').run(dev?.konto ?? null, dev?.nazwa || null, oid, pole, co, Math.min(kiedy, teraz()));
 }
 
 // ---------- usuwanie i okresy przechowywania ----------
 // klient bez transakcji: 12 miesięcy od ostatniej zmiany wpisu; klient z transakcją: 5 lat (jak dokumentacja AML)
-export const RETENCJA = { klient: 365 * DZIEN, klientTransakcja: 5 * 365 * DZIEN, usunietaOferta: 30 * DZIEN, dziennik: 5 * 365 * DZIEN };
+export const RETENCJA = { klient: 365 * DZIEN, klientTransakcja: 5 * 365 * DZIEN, usunietaOferta: 30 * DZIEN, dziennik: 5 * 365 * DZIEN,
+  wizyta: 365 * DZIEN, ofertaBezUmowy: 365 * DZIEN, latOfertaZUmowa: 6, latAml: 5 };
 function ostatniaZmiana(oid, pole, utworzona) {
   return db.prepare('SELECT MAX(kiedy) AS m FROM historia WHERE oferta = ? AND pole = ?').get(oid, pole)?.m || utworzona;
 }
+const dataMs = (v) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v || '')); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null; };
+const plusLat = (ms, n) => { const d = new Date(ms); d.setUTCFullYear(d.getUTCFullYear() + n); return d.getTime(); };
+const koniecRoku = (ms, n) => Date.UTC(new Date(ms).getUTCFullYear() + n, 11, 31, 23, 59, 59);
+// karta AML: 5 lat od zakończenia stosunków z klientem (art. 49 ustawy AML); usunięcie oferty = koniec współpracy
+export function terminAml(v, o) {
+  const z = dataMs(v?.zakonczenie) ?? (o.usunieta ? o.zmieniona : null);
+  return z === null ? null : plusLat(z, RETENCJA.latAml);
+}
+// zakończona oferta: z umową pośrednictwa — do końca 6. roku (przedawnienie roszczeń, art. 118 k.c.), bez umowy — 12 miesięcy
+export function terminOferty(o, d) {
+  if (o.usunieta || d.status !== 'zakonczona') return null;
+  const tz = ostatniaZmiana(o.id, 'status', o.utworzona);
+  return d.umowaData || d.umowaNr ? koniecRoku(tz, RETENCJA.latOfertaZUmowa) : tz + RETENCJA.ofertaBezUmowy;
+}
 export function doUsuniecia(doKiedy = teraz()) {
   const wyn = [];
-  for (const o of db.prepare('SELECT * FROM oferty WHERE usunieta = 0').all()) {
+  for (const o of db.prepare('SELECT * FROM oferty').all()) {
     let d; try { d = daneOferty(o); } catch { continue; }
+    if (!o.usunieta) { const t = terminOferty(o, d); if (t !== null && t <= doKiedy) wyn.push({ oid: o.id, k: 'oferta', termin: t }); }
     for (const [k, v] of Object.entries(d)) {
-      if (!k.startsWith('kl_') || !v || typeof v !== 'object') continue;
-      const termin = ostatniaZmiana(o.id, k, o.utworzona) + (v.status === 'transakcja' ? RETENCJA.klientTransakcja : RETENCJA.klient);
-      if (termin <= doKiedy) wyn.push({ oid: o.id, k, termin });
+      if (!v || typeof v !== 'object') continue;
+      let termin = null;
+      if (k.startsWith('am_')) termin = terminAml(v, o);
+      else if (o.usunieta) continue;
+      else if (k.startsWith('kl_')) termin = Math.max(ostatniaZmiana(o.id, k, o.utworzona), Number(v.kontakt) || 0) + (v.status === 'transakcja' ? RETENCJA.klientTransakcja : RETENCJA.klient);
+      else if (k.startsWith('wz_')) termin = ostatniaZmiana(o.id, k, o.utworzona) + RETENCJA.wizyta;
+      if (termin !== null && termin <= doKiedy) wyn.push({ oid: o.id, k, termin });
     }
   }
   return wyn;
@@ -462,7 +487,7 @@ export function usunPole(oid, pole, konto, powod) {
       if (d[pole] !== undefined) {
         delete d[pole];
         const seq = nastepnySeq();
-        db.prepare('UPDATE oferty SET dane = ?, seq = ?, zmieniona = ? WHERE id = ?').run(szyfruj(JSON.stringify(d)), seq, teraz(), oid);
+        db.prepare('UPDATE oferty SET dane = ?, seq = ? WHERE id = ?').run(szyfruj(JSON.stringify(d)), seq, oid);
       }
       db.prepare('DELETE FROM historia WHERE oferta = ? AND pole = ?').run(oid, pole);
       db.prepare('INSERT INTO historia (oferta, pole, stara, nowa, kto, kiedy) VALUES (?, ?, ?, ?, ?, ?)').run(oid, '_usunieto', null, szyfruj(`Usunięto dane osoby (${powod})`), konto || null, teraz());
@@ -471,21 +496,65 @@ export function usunPole(oid, pole, konto, powod) {
   } catch (e) { db.exec('ROLLBACK'); throw e; }
   rozglos(Number(ust('seq') || 0));
 }
-function usunOferteCalkiem(oid) {
+function usunPlikiOferty(oid) {
   for (const r of db.prepare('SELECT id, typ FROM pliki WHERE oferta = ?').all(oid)) fs.rmSync(path.join(P_PLIKI, `${r.id}.${r.typ}`), { force: true });
   for (const r of db.prepare('SELECT id FROM zdjecia WHERE oferta = ?').all(oid)) for (const f of [`${r.id}.jpg`, `${r.id}.sr.jpg`, `${r.id}.mini.jpg`]) fs.rmSync(path.join(P_ZDJ, f), { force: true });
   db.prepare('DELETE FROM pliki WHERE oferta = ?').run(oid);
   db.prepare('DELETE FROM zdjecia WHERE oferta = ?').run(oid);
+}
+function usunOferteCalkiem(oid) {
+  usunPlikiOferty(oid);
   db.prepare('DELETE FROM historia WHERE oferta = ?').run(oid);
   db.prepare('DELETE FROM dziennik WHERE oferta = ?').run(oid);
   db.prepare('DELETE FROM oferty WHERE id = ?').run(oid);
 }
+// oferta po okresie przechowywania: jak usunięcie z aplikacji (30 dni w koszu, potem całkiem; karty AML zostają w archiwum)
+function usunOferteZRetencji(oid) {
+  const t = teraz(), seq = nastepnySeq();
+  db.prepare('UPDATE oferty SET usunieta = 1, seq = ?, zmieniona = ? WHERE id = ?').run(seq, t, oid);
+  db.prepare('INSERT INTO historia (oferta, pole, stara, nowa, kto, kiedy) VALUES (?, ?, ?, ?, ?, ?)').run(oid, '_usunieta', null, szyfruj(JSON.stringify('minął okres przechowywania')), null, t);
+  rozglos(seq);
+}
+const POLA_ARCHIWUM = ['roboczy', 'transakcja', 'rodzaj', 'miasto', 'dzielnica', 'ulica', 'cena'];
+// usunięta oferta po 30 dniach: bez kart AML — znika całkiem; z kartami — zostają tylko karty i adres (archiwum AML, art. 49)
+function wyczyscUsunieta(o) {
+  let d; try { d = daneOferty(o); } catch { return; }
+  const am = Object.keys(d).filter((k) => k.startsWith('am_') && d[k] && typeof d[k] === 'object');
+  if (!am.length) return usunOferteCalkiem(o.id);
+  if (d._archiwumAml) return;
+  const zak = new Date(o.zmieniona).toISOString().slice(0, 10);
+  const nowe = { _archiwumAml: true };
+  for (const k of POLA_ARCHIWUM) if (d[k] !== undefined) nowe[k] = d[k];
+  for (const k of am) nowe[k] = { ...d[k], zakonczenie: d[k].zakonczenie || zak };
+  db.exec('BEGIN');
+  try {
+    usunPlikiOferty(o.id);
+    db.prepare("DELETE FROM historia WHERE oferta = ? AND pole NOT LIKE 'am\\_%' ESCAPE '\\'").run(o.id);
+    db.prepare('UPDATE oferty SET dane = ? WHERE id = ?').run(szyfruj(JSON.stringify(nowe)), o.id);
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+}
 export function retencja(t = teraz()) {
-  for (const o of db.prepare('SELECT id FROM oferty WHERE usunieta = 1 AND zmieniona < ?').all(t - RETENCJA.usunietaOferta)) usunOferteCalkiem(o.id);
-  for (const w of doUsuniecia(t)) usunPole(w.oid, w.k, null, 'minął okres przechowywania');
+  for (const w of doUsuniecia(t)) {
+    if (w.k === 'oferta') usunOferteZRetencji(w.oid);
+    else usunPole(w.oid, w.k, null, w.k.startsWith('am_') ? 'minęło 5 lat od zakończenia współpracy (AML)' : 'minął okres przechowywania');
+  }
+  for (const o of db.prepare('SELECT * FROM oferty WHERE usunieta = 1 AND zmieniona < ?').all(t - RETENCJA.usunietaOferta)) wyczyscUsunieta(o);
   db.prepare('DELETE FROM dziennik WHERE kiedy < ?').run(t - RETENCJA.dziennik);
   db.prepare('DELETE FROM urzadzenia WHERE ostatnio < ?').run(t - 30 * DZIEN);
   db.prepare('DELETE FROM prosby WHERE utworzona < ?').run(t - PROSBA_WAZNA);
+}
+// archiwum AML: karty z usuniętych ofert (aktywne oferty mają je u siebie)
+export function archiwumAml() {
+  const L = [];
+  for (const o of db.prepare('SELECT * FROM oferty WHERE usunieta = 1').all()) {
+    let d; try { d = daneOferty(o); } catch { continue; }
+    const karty = Object.fromEntries(Object.entries(d).filter(([k, v]) => k.startsWith('am_') && v && typeof v === 'object'));
+    if (!Object.keys(karty).length) continue;
+    const adres = [d.ulica && `ul. ${d.ulica}`, d.dzielnica, d.miasto].filter(Boolean).join(', ');
+    L.push({ oid: o.id, tytul: d.roboczy || adres || 'oferta', adres, usunieta: o.zmieniona, karty: Object.fromEntries(Object.entries(karty).map(([k, v]) => [k, { ...v, usuniecie: terminAml(v, o) }])) });
+  }
+  return L;
 }
 
 // ---------- jednorazowe zaszyfrowanie danych sprzed 1.6.0 (baza, kopie bazy, dokumenty, kosz) ----------
@@ -610,7 +679,7 @@ export function utworzSerwer() {
       if (p === '/dziennik' && req.method === 'POST') {
         const b = await cialoJson(req);
         for (const w of (Array.isArray(b.wpisy) ? b.wpisy : []).slice(0, 100)) {
-          if (!okId(w?.oid) || !['klient', 'wlasciciel', 'dokument'].includes(w.co)) continue;
+          if (!okId(w?.oid) || !['klient', 'wlasciciel', 'dokument', 'aml', 'wizyty'].includes(w.co)) continue;
           zapiszDziennik(dev, w.oid, czysty(w.k, 60), w.co, Number(w.kiedy) || teraz());
         }
         return json(res, nag, 200, { ok: true });
@@ -623,21 +692,53 @@ export function utworzSerwer() {
       if (p === '/retencja' && req.method === 'GET') return json(res, nag, 200, { wpisy: doUsuniecia(teraz() + 30 * DZIEN) });
       if (p === '/osoba' && req.method === 'GET') { // RODO art. 15: wszystko o osobie z jednej oferty (wpis + historia jego zmian)
         const oid = u.searchParams.get('oferta'), k = String(u.searchParams.get('k') || '');
-        if (!okId(oid) || !/^kl_[A-Za-z0-9_-]{2,40}$/.test(k)) return json(res, nag, 400, { blad: 'Zły wpis.' });
+        if (!okId(oid) || !OSOBA.test(k)) return json(res, nag, 400, { blad: 'Zły wpis.' });
         const o = db.prepare('SELECT * FROM oferty WHERE id = ?').get(oid);
-        const dane = o ? daneOferty(o)[k] : null;
-        if (!dane) return json(res, nag, 404, { blad: 'Nie ma takiej osoby.' });
-        const hist = db.prepare('SELECT h.stara, h.nowa, h.kiedy, k.nazwa AS kto FROM historia h LEFT JOIN konta k ON k.id = h.kto WHERE h.oferta = ? AND h.pole = ? ORDER BY h.kiedy').all(oid, k)
-          .map((r) => ({ kiedy: r.kiedy, kto: r.kto, przed: JSON.parse(odszyfruj(r.stara) || 'null'), po: JSON.parse(odszyfruj(r.nowa) || 'null') }));
+        const d = o ? daneOferty(o) : {};
+        const pola = k === 'wlasciciel' ? POLA_WLASCICIELA : [k];
+        let dane = k === 'wlasciciel' ? Object.fromEntries(POLA_WLASCICIELA.filter((x) => d[x] !== undefined).map((x) => [x, d[x]])) : d[k];
+        if (!dane || (k === 'wlasciciel' && !Object.keys(dane).length)) return json(res, nag, 404, { blad: 'Nie ma takiej osoby.' });
+        if (k.startsWith('am_')) dane = jawneAml(dane); // bez oceny ryzyka i notatek o podejrzeniu (art. 54 ustawy AML)
+        const hist = k.startsWith('am_') ? [] : db.prepare(`SELECT h.pole, h.stara, h.nowa, h.kiedy, k.nazwa AS kto FROM historia h LEFT JOIN konta k ON k.id = h.kto
+            WHERE h.oferta = ? AND h.pole IN (${pola.map(() => '?').join(',')}) ORDER BY h.kiedy`).all(oid, ...pola)
+          .map((r) => ({ kiedy: r.kiedy, kto: r.kto, ...(pola.length > 1 ? { pole: r.pole } : {}), przed: JSON.parse(odszyfruj(r.stara) || 'null'), po: JSON.parse(odszyfruj(r.nowa) || 'null') }));
         zapiszDziennik(dev, oid, k, 'eksport');
         return json(res, nag, 200, { dane, historia: hist });
       }
       if (p === '/osoba' && req.method === 'DELETE') { // RODO art. 17: usunięcie na żądanie — razem z historią zmian
         const oid = u.searchParams.get('oferta'), k = String(u.searchParams.get('k') || '');
-        if (!okId(oid) || !/^kl_[A-Za-z0-9_-]{2,40}$/.test(k)) return json(res, nag, 400, { blad: 'Zły wpis.' });
-        usunPole(oid, k, dev.konto, 'na żądanie osoby');
+        if (!okId(oid) || !OSOBA.test(k)) return json(res, nag, 400, { blad: 'Zły wpis.' });
+        if (k.startsWith('am_')) return json(res, nag, 409, { blad: 'Karty AML nie wolno usunąć przed upływem 5 lat (art. 49 ustawy AML).' });
+        for (const pole of k === 'wlasciciel' ? ['wlImie', 'wlTel', 'wlEmail', 'wlRodo', 'wlRodoKiedy'] : [k]) usunPole(oid, pole, dev.konto, 'na żądanie osoby');
         zapiszDziennik(dev, oid, k, 'usuniecie');
         return json(res, nag, 200, { ok: true, seq: Number(ust('seq') || 0) });
+      }
+      if (p === '/aml/archiwum' && req.method === 'GET') {
+        zapiszDziennik(dev, null, null, 'archiwum');
+        return json(res, nag, 200, { archiwum: archiwumAml() });
+      }
+      if (p === '/firma' && req.method === 'GET') return json(res, nag, 200, { firma: JSON.parse(odszyfruj(ust('firma')) || '{}') });
+      if (p === '/firma' && req.method === 'POST') {
+        const b = await cialoJson(req);
+        const f = {};
+        for (const [k, v] of Object.entries(b.firma || {}).slice(0, 40)) if (/^[a-zA-Z0-9]{1,30}$/.test(k)) f[k] = czysty(v, 300);
+        ustaw('firma', szyfruj(JSON.stringify(f)));
+        rozglosZdarzenie('firma');
+        return json(res, nag, 200, { ok: true });
+      }
+      if (p === '/urzadzenia' && req.method === 'GET') {
+        const rows = db.prepare('SELECT u.id, u.nazwa, u.ostatnio, u.utworzone, u.konto, k.nazwa AS kto FROM urzadzenia u LEFT JOIN konta k ON k.id = u.konto ORDER BY u.ostatnio DESC').all();
+        return json(res, nag, 200, { urzadzenia: rows.map((r) => ({ id: r.id, nazwa: r.nazwa, ostatnio: r.ostatnio, utworzone: r.utworzone, kto: r.kto, moje: r.konto === dev.konto, to: r.id === dev.id })) });
+      }
+      const mU = p.match(/^\/urzadzenie\/(\d{1,12})$/);
+      if (mU && req.method === 'DELETE') { // zdalne wylogowanie (zgubiony telefon) — także urządzenia wspólnika
+        const id = Number(mU[1]);
+        if (id === dev.id) return json(res, nag, 400, { blad: 'To urządzenie wylogujesz przyciskiem „Wyloguj to urządzenie”.' });
+        const r = db.prepare('SELECT nazwa FROM urzadzenia WHERE id = ?').get(id);
+        if (!r) return json(res, nag, 404, { blad: 'Nie ma takiego urządzenia.' });
+        db.prepare('DELETE FROM urzadzenia WHERE id = ?').run(id);
+        zapiszDziennik(dev, null, r.nazwa, 'wylogowanie');
+        return json(res, nag, 200, { ok: true });
       }
       if (p === '/ja' && req.method === 'POST') {
         const b = await cialoJson(req);
@@ -667,6 +768,7 @@ export function utworzSerwer() {
         const oid = u.searchParams.get('oferta');
         if (!okId(oid)) return json(res, nag, 400, { blad: 'Brak oferty.' });
         const rows = db.prepare('SELECT h.pole, h.stara, h.nowa, h.kiedy, k.nazwa AS kto FROM historia h LEFT JOIN konta k ON k.id = h.kto WHERE h.oferta = ? ORDER BY h.kiedy DESC, h.id DESC LIMIT 300').all(oid);
+        if (u.searchParams.get('dziennik') === '1') zapiszDziennik(dev, oid, null, 'historia');
         return json(res, nag, 200, { historia: rows.map((r) => ({ ...r, stara: odszyfruj(r.stara), nowa: odszyfruj(r.nowa) })) });
       }
       if (p === '/aktywnosc' && req.method === 'GET') {

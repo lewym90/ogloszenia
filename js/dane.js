@@ -46,7 +46,7 @@ const req = (r) => new Promise((ok, zle) => { r.onsuccess = () => ok(r.result); 
 // sól i zawinięty klucz (meta.sejf), numer zmian, licznik złych PIN-ów i uchwyt folderu kopii
 const KP = { baza: 'id', kolejka: 'cid', wysylka: 'klucz' };
 const SZYFR = new Set(['baza', 'kolejka', 'wysylka', 'pliki']);
-const META_SZYFR = new Set(['token', 'konto', 'konta', 'agent', 'aktywnosc', 'kluczPlikow']);
+const META_SZYFR = new Set(['token', 'konto', 'konta', 'agent', 'aktywnosc', 'kluczPlikow', 'firma']);
 const szyfrowane = (st, k) => SZYFR.has(st) || (st === 'meta' && META_SZYFR.has(k));
 let sejfZapis = null;
 async function koduj(st, v, k) {
@@ -111,7 +111,7 @@ export async function wyczysc(komunikat = '') {
 const bazy = new Map();      // id -> {id, dane, seq, zmieniona, kto, usunieta}
 let kolejka = [];            // [{cid, oid, pola?, usun?, t}]
 let wysylki = [];            // [{klucz, id, oid, rodzaj}]
-export const stan = { token: null, konto: null, konta: [], seq: 0, online: navigator.onLine, polaczony: false, blad: '', agent: {}, aktywnosc: [], aktywnoscWidziana: 0, prosby: [], retencja: [] };
+export const stan = { token: null, konto: null, konta: [], seq: 0, online: navigator.onLine, polaczony: false, blad: '', agent: {}, aktywnosc: [], aktywnoscWidziana: 0, prosby: [], retencja: [], firma: {} };
 const sluchacze = new Set();
 export const naZmiane = (f) => { sluchacze.add(f); return () => sluchacze.delete(f); };
 let zaplanowane = false;
@@ -128,6 +128,7 @@ export async function start() {
   stan.agent = await idbGet('meta', 'agent') || {};
   stan.aktywnosc = await idbGet('meta', 'aktywnosc') || [];
   stan.aktywnoscWidziana = await idbGet('meta', 'aktywnoscWidziana') || 0;
+  stan.firma = await idbGet('meta', 'firma') || {};
   klucz = await idbGet('meta', 'kluczPlikow') || null;
   for (const b of await idbAll('baza')) bazy.set(b.id, b);
   kolejka = (await idbAll('kolejka')).sort((a, b) => a.t - b.t);
@@ -226,6 +227,7 @@ async function odswiezJa() {
     const j = await api('/ja');
     stan.konto = j.konto; stan.konta = j.konta; stan.push = j.push; stan.vapid = j.vapid; stan.kopia = j.kopia || null; stan.prosby = j.prosby || [];
     api('/retencja').then((r) => { stan.retencja = r.wpisy || []; powiadom(); }).catch(() => {});
+    pobierzFirme();
     await idbPut('meta', j.konto, 'konto'); await idbPut('meta', j.konta, 'konta');
     powiadom();
   } catch { /* offline */ }
@@ -321,6 +323,7 @@ async function polaczNaZywo() {
     es = new EventSource(`${API}/na-zywo?b=${encodeURIComponent(b)}`);
     es.addEventListener('seq', (e) => { stan.polaczony = true; if (Number(e.data) > stan.seq) pobierz().catch(() => {}); powiadom(); });
     es.addEventListener('prosba', () => odswiezJa());
+    es.addEventListener('firma', () => pobierzFirme());
     // po zerwaniu bilet jest zużyty — zamykamy i łączymy się od nowa z nowym biletem
     es.onerror = () => { stan.polaczony = false; try { es.close(); } catch { /* */ } powiadom(); setTimeout(() => polaczNaZywo(), 5000); };
   } catch { /* offline — spróbuje przy następnej synchronizacji */ }
@@ -346,7 +349,8 @@ export const dziennik = () => api('/dziennik').then((j) => j.dziennik);
 export const daneOsoby = (oid, k) => api(`/osoba?oferta=${encodeURIComponent(oid)}&k=${encodeURIComponent(k)}`);
 export async function usunOsobe(oid, k) {
   await api(`/osoba?oferta=${encodeURIComponent(oid)}&k=${encodeURIComponent(k)}`, { method: 'DELETE' });
-  for (const z of kolejka) if (z.oid === oid && z.pola && k in z.pola) delete z.pola[k]; // niewysłane zmiany tej osoby też znikają
+  const pola = k === 'wlasciciel' ? ['wlImie', 'wlTel', 'wlEmail', 'wlRodo', 'wlRodoKiedy'] : [k];
+  for (const z of kolejka) if (z.oid === oid && z.pola) for (const p of pola) delete z.pola[p]; // niewysłane zmiany tej osoby też znikają
   kolejka = kolejka.filter((z) => z.usun || Object.keys(z.pola || {}).length);
   await tx('kolejka', 'readwrite', (s) => { s.clear(); });
   for (const z of kolejka) await idbPut('kolejka', z);
@@ -429,7 +433,8 @@ export async function urlZdjecia(id, rodzaj = 'mini') {
   if (!blob && rodzaj === 'pelne') blob = await idbGet('pliki', `${id}:pelne`);
   if (!blob) {
     if (!stan.token || !navigator.onLine) return null;
-    const r = await fetch(`${API}/zdjecie/${id}?rodzaj=${rodzaj}`, { headers: { Authorization: `Bearer ${stan.token}` } });
+    let r;
+    try { r = await fetch(`${API}/zdjecie/${id}?rodzaj=${rodzaj}`, { headers: { Authorization: `Bearer ${stan.token}` } }); } catch { return null; } // sieć zerwana — miniatura spróbuje przy następnym odświeżeniu
     if (!r.ok) return rodzaj === 'sr' ? urlZdjecia(id, 'mini') : null;
     blob = await r.blob();
     if (rodzaj !== 'pelne') await idbPut('pliki', blob, k);
@@ -525,7 +530,23 @@ export async function zglosKopie(dane) {
 export const odswiezStanKopii = () => odswiezJa();
 
 // ---------- historia ----------
-export const historia = (oid) => api(`/historia?oferta=${encodeURIComponent(oid)}`).then((j) => j.historia);
+export const historia = (oid, doDziennika = false) => api(`/historia?oferta=${encodeURIComponent(oid)}${doDziennika ? '&dziennik=1' : ''}`).then((j) => j.historia);
+// ---------- AML, dane firmy, urządzenia ----------
+export const archiwumAml = () => api('/aml/archiwum').then((j) => j.archiwum);
+export const urzadzenia = () => api('/urzadzenia').then((j) => j.urzadzenia);
+export const wylogujUrzadzenie = (id) => api(`/urzadzenie/${Number(id)}`, { method: 'DELETE' });
+let zapisyFirmy = 0; // trwający zapis wygrywa z pobraniem (inaczej stara wersja z serwera nadpisałaby to, co właśnie wpisano)
+export async function pobierzFirme() {
+  try { const j = await api('/firma'); if (zapisyFirmy) return stan.firma; stan.firma = j.firma || {}; await idbPut('meta', stan.firma, 'firma'); powiadom(); } catch { /* offline — zostaje kopia z telefonu */ }
+  return stan.firma || {};
+}
+export async function zapiszFirme(f) {
+  stan.firma = { ...(stan.firma || {}), ...f };
+  await idbPut('meta', stan.firma, 'firma');
+  zapisyFirmy++;
+  try { await api('/firma', { method: 'POST', body: JSON.stringify({ firma: stan.firma }) }); } finally { zapisyFirmy--; }
+  powiadom();
+}
 
 // ---------- powiadomienia push ----------
 export async function wlaczPush() {

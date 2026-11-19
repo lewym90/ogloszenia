@@ -605,3 +605,21 @@ input[type=date]:not(:valid)::-webkit-datetime-edit, input[type=datetime-local]:
 .pom-rzut li.suma { border-bottom: 0; font-weight: 600; }
 .pom-rzut li span small { display: block; color: var(--ash); font-size: 12.5px; margin-top: 2px; }
 .dodaj.odzysk { margin: -4px 0 14px; height: 46px; font-size: 14.5px; }
+
+/* 1.11.0 — PIN do danych osobowych, karta AML, klauzula RODO, urządzenia */
+.pin-dane { max-width: 380px; margin: 28px auto 12px; padding: 26px 22px 22px; border-radius: 22px; text-align: center; display: flex; flex-direction: column; gap: 10px; }
+.pin-dane-ik .ik { width: 40px; height: 40px; stroke: var(--gold-l); }
+.pin-dane h2 { margin: 0; font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 26px; color: var(--gold-j); }
+.pin-dane p { margin: 0; color: var(--ash); font-size: 14px; line-height: 1.45; }
+.pin-dane .wejscie input { text-align: center; letter-spacing: .5em; font-size: 22px; }
+.pin-dane .blad { min-height: 1.2em; color: var(--zle); }
+.aml-pod { margin-top: 10px; }
+.aml-pod span { display: block; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold-l); border-bottom: 1px solid rgba(200, 164, 77, .25); padding-bottom: 6px; }
+.info-pola.zle { color: var(--zle); }
+.grupa.aml-ok .grupa-glowa .zr-tag.akt { color: var(--ok, #9fd39a); }
+.klauzula { max-height: 46vh; overflow: auto; padding: 12px 14px; border-radius: 12px; background: rgba(10, 9, 8, .55); border: 1px solid rgba(237, 233, 225, .1); font-size: 13.5px; line-height: 1.5; color: var(--ash); white-space: normal; overflow-wrap: anywhere; }
+.wiersz-dz.urz { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.akcje-wpisu.rodo-wpisu { flex-wrap: wrap; }
+/* karta AML: na telefonie każde pole w całej szerokości — długie etykiety i wartości z dokumentów się nie ucinają */
+@container (max-width: 469px) { .karta-aml .siatka > .pole.pol { grid-column: 1 / -1; } }
+.karta-aml .grupa-tyt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

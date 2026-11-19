@@ -2,7 +2,7 @@
 # Spis mieści się na szerokość, przewinięcie zostaje po zmianie, wyposażenie, klienci, prezentacje, dokumenty.
 # Wymaga tego samego co ui_test.py oraz `python3 -m playwright install webkit`. Profil trwały, bo prywatny WebKit nie zapisuje plików w IndexedDB.
 from playwright.sync_api import sync_playwright
-from pomoc import zaloguj, odblokuj, wpisz_pin
+from pomoc import zaloguj, odblokuj, wpisz_pin, pin_danych
 import sys, os
 os.makedirs('/tmp/amshots', exist_ok=True)
 open('/tmp/amtest-akt.pdf', 'wb').write(b'%PDF-1.4\n%%EOF')
@@ -23,7 +23,7 @@ with sync_playwright() as p:
     pg.click('[data-a=wybor][data-k=transakcja][data-v=najem]'); pg.fill('#f-cena','3500'); pg.locator('#f-cena').blur(); pg.wait_for_timeout(300)
     ed = lambda: pg.evaluate("(()=>{const e=document.querySelector('.kol-edytor');return [e.scrollTop,e.scrollWidth,e.clientWidth]})()")
     pg.evaluate(f"location.hash='#/o/{oid}'"); pg.wait_for_timeout(500)
-    print('spis', ed(), 'kafle', len(pg.query_selector_all('.kafel'))); assert ed()[1] <= ed()[2] and len(pg.query_selector_all('.kafel')) == 18
+    print('spis', ed(), 'kafle', len(pg.query_selector_all('.kafel'))); assert ed()[1] <= ed()[2] and len(pg.query_selector_all('.kafel')) == 19
     pg.screenshot(path=f'/tmp/amshots/{silnik}-spis.png')
     def srodek(sel): pg.evaluate(f"(()=>{{const e=document.querySelector('.kol-edytor'); const r=document.querySelector('{sel}').getBoundingClientRect(); e.scrollTop += r.top - 450;}})()"); pg.wait_for_timeout(200); return ed()[0]
     pg.evaluate(f"location.hash='#/o/{oid}/s/lokal'"); pg.wait_for_selector('#sek-lokal'); pg.wait_for_timeout(300)
@@ -36,7 +36,7 @@ with sync_playwright() as p:
     s=srodek('[data-a=wyp-el][data-k=domofon]'); pg.tap('[data-a=wyp-el][data-k=domofon]'); pg.wait_for_timeout(300); print('wyp scroll', s, '->', ed()[0]); assert abs(ed()[0] - s) < 2
     pg.screenshot(path=f'/tmp/amshots/{silnik}-wyp.png')
     # klienci
-    pg.evaluate(f"location.hash='#/o/{oid}/klienci'"); pg.wait_for_selector('[data-a=kl-dodaj]'); pg.tap('[data-a=kl-dodaj]'); pg.wait_for_selector('[data-p=imie]')
+    pg.evaluate(f"location.hash='#/o/{oid}/klienci'"); pin_danych(pg); pg.wait_for_selector('[data-a=kl-dodaj]'); pg.tap('[data-a=kl-dodaj]'); pg.wait_for_selector('[data-p=imie]')
     pg.fill('[data-p=imie]','Anna Kowalska'); pg.fill('[data-p=tel]','600 100 200'); pg.locator('[data-p=tel]').blur(); pg.wait_for_timeout(300)
     pg.select_option('select[data-p=zrodlo]','otodom'); pg.wait_for_timeout(200)
     pg.fill('textarea[data-p=notatka]','Para, bez zwierząt.'); pg.locator('textarea[data-p=notatka]').blur(); pg.wait_for_timeout(300)
@@ -49,7 +49,7 @@ with sync_playwright() as p:
     pg.screenshot(path=f'/tmp/amshots/{silnik}-wizyty.png')
     pg.tap('[data-a=wz-status][data-v=odbyla]'); pg.wait_for_selector('textarea[data-p=opinia]'); print('opinia ok')
     # dokumenty
-    pg.evaluate(f"location.hash='#/o/{oid}/dokumenty'"); pg.wait_for_selector('.dok'); pg.wait_for_timeout(300)
+    pg.evaluate(f"location.hash='#/o/{oid}/dokumenty'"); pin_danych(pg); pg.wait_for_selector('.dok'); pg.wait_for_timeout(300)
     pg.set_input_files('input[data-dok=dk_kw]', '/tmp/amtest-akt.pdf'); pg.wait_for_timeout(1500)
     pg.set_input_files('input[data-dok=dk_umowaPosr]', '/tmp/amtest/z01.jpg'); pg.wait_for_timeout(2500)
     pg.fill('#dk-nowy','Regulamin wspólnoty'); pg.tap('[data-a=dk-dodaj]'); pg.wait_for_timeout(500)
@@ -62,7 +62,7 @@ with sync_playwright() as p:
     pg.screenshot(path=f'/tmp/amshots/{silnik}-spis-dol.png')
     print('spis szer', ed())
     # otwarcie PDF
-    pg.evaluate(f"location.hash='#/o/{oid}/dokumenty'"); pg.wait_for_selector('.plik'); pg.wait_for_timeout(1500)
+    pg.evaluate(f"location.hash='#/o/{oid}/dokumenty'"); pin_danych(pg); pg.wait_for_selector('.plik'); pg.wait_for_timeout(1500)
     with c.expect_page(timeout=8000) as nowa:
         pg.click('[data-a=dk-otworz][data-e=dk_kw]')
     np_ = nowa.value; np_.wait_for_timeout(1500); print('pdf url', np_.url[:90].split('?')[0], np_.url.count('k='))

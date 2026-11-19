@@ -5,7 +5,7 @@
 # python3 test/ui_bezpieczenstwo_test.py [chromium|webkit] [szer wys]
 import os, sys, json, shutil, subprocess, time, tempfile, urllib.request
 from playwright.sync_api import sync_playwright
-from pomoc import wpisz_pin, odblokuj, PIN
+from pomoc import wpisz_pin, odblokuj, PIN, pin_danych
 
 silnik = sys.argv[1] if len(sys.argv) > 1 else 'chromium'
 W, H = (int(sys.argv[2]), int(sys.argv[3])) if len(sys.argv) > 3 else (390, 844)
@@ -55,7 +55,7 @@ try:
         A.locator('[data-a=nowa]:visible').first.click(); A.wait_for_selector('#sek-podstawy')
         oid = A.evaluate("location.hash.split('/')[2]")
         A.fill('#f-roboczy', 'Testowa Lipowa 7'); A.locator('#f-roboczy').blur()
-        A.evaluate(f"location.hash='#/o/{oid}/s/klienci'"); A.wait_for_selector('[data-a=kl-dodaj]')
+        A.evaluate(f"location.hash='#/o/{oid}/s/klienci'"); pin_danych(A); A.wait_for_selector('[data-a=kl-dodaj]')
         A.click('[data-a=kl-dodaj]'); A.wait_for_timeout(300)
         A.locator('[data-p=imie]').first.fill('Ewa Poufna'); A.locator('[data-p=tel]').first.fill('600111222'); A.locator('[data-p=tel]').first.blur()
         A.wait_for_timeout(1500)
@@ -95,7 +95,7 @@ try:
         ok(True, 'po 10 min przerwy aplikacja pyta o PIN')
         odblokuj(A2)
         # 6) RODO: wydanie danych osoby i usunięcie na żądanie
-        A2.evaluate(f"location.hash='#/o/{oid}/s/klienci'"); A2.wait_for_selector('[data-a=kl-eksport]')
+        A2.evaluate(f"location.hash='#/o/{oid}/s/klienci'"); pin_danych(A2); A2.wait_for_selector('[data-a=kl-eksport]')
         shot(A2, '06-klient-rodo')
         with A2.expect_download() as dl: A2.click('[data-a=kl-eksport]')
         dane = json.loads(open(dl.value.path(), encoding='utf-8').read())
