@@ -162,22 +162,36 @@ function miejsceNapisu(p, meble) {
   const xs = p.poly.map((q) => q.x), ys = p.poly.map((q) => q.y);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
   if (p.room.labelOffset) { const c = srodek(p.poly); return { x: c.x + p.room.labelOffset.x, y: c.y + p.room.labelOffset.y, d: 80 }; }
-  const ocena = (x, y) => {
-    if (!wPokoju(p, x, y)) return -1;
-    let d = Infinity;
-    for (const r of [p.poly, ...(p.dziury || [])]) for (let i = 0; i < r.length; i++) d = Math.min(d, odlOdcinka(x, y, r[i], r[(i + 1) % r.length]));
-    for (const f of meble) if (wMeblu(f, x, y, 15)) d *= 0.35;
-    return d;
-  };
-  let best = { x: (x0 + x1) / 2, y: (y0 + y1) / 2, d: -1 };
-  const N = 22;
-  for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
-    const x = x0 + ((x1 - x0) * i) / N, y = y0 + ((y1 - y0) * j) / N, d = ocena(x, y);
-    if (d > best.d) best = { x, y, d };
-  }
-  let krok = Math.max(x1 - x0, y1 - y0) / N;
-  for (let it = 0; it < 4; it++, krok /= 2) for (const [ax, ay] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
-    const x = best.x + ax * krok, y = best.y + ay * krok, d = ocena(x, y); if (d > best.d) best = { x, y, d };
+  // napis ma wymiary (≈ jak w obrazie do ogłoszenia): sprawdzamy cały prostokąt, nie tylko środek;
+  // długą nazwę można złamać na dwie linie, jeśli wtedy zmieści się w wolnym miejscu
+  const nazwa = p.nazwa || 'Pomieszczenie', slowa = nazwa.split(' ');
+  const uklady = [{ linia: nazwa.length, dwie: false }];
+  if (slowa.length > 1) { let m = Infinity; for (let i = 1; i < slowa.length; i++) m = Math.min(m, Math.max(slowa.slice(0, i).join(' ').length, slowa.slice(i).join(' ').length)); uklady.push({ linia: m, dwie: true }); }
+  const stale = meble.filter((f) => !naPodlodze(f));
+  let best = null;
+  for (const u of uklady) {
+    const hw = Math.min((x1 - x0) * 0.45, (u.linia * 11.5) / 2 + 6), hh = u.dwie ? 34 : 22;
+    const ocena = (x, y) => {
+      if (!wPokoju(p, x, y)) return -1;
+      let d = Infinity, kolizje = 0;
+      for (const [px, py] of [[x, y], [x - hw, y - hh], [x + hw, y - hh], [x - hw, y + hh], [x + hw, y + hh], [x - hw, y], [x + hw, y], [x, y - hh], [x, y + hh]]) {
+        if (!wPokoju(p, px, py)) { d = Math.min(d, 0); continue; }
+        for (const r of [p.poly, ...(p.dziury || [])]) for (let i = 0; i < r.length; i++) d = Math.min(d, odlOdcinka(px, py, r[i], r[(i + 1) % r.length]) + Math.min(hw, hh));
+        for (const f of stale) if (wMeblu(f, px, py, 8)) kolizje++;
+      }
+      return (d + 1) * Math.pow(0.4, kolizje) * (u.dwie ? 0.85 : 1); // jedna linia, jeśli tylko się da
+    };
+    let b = { x: (x0 + x1) / 2, y: (y0 + y1) / 2, d: -1, dwie: u.dwie };
+    const N = 22;
+    for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+      const x = x0 + ((x1 - x0) * i) / N, y = y0 + ((y1 - y0) * j) / N, d = ocena(x, y);
+      if (d > b.d) b = { x, y, d, dwie: u.dwie };
+    }
+    let krok = Math.max(x1 - x0, y1 - y0) / N;
+    for (let it = 0; it < 4; it++, krok /= 2) for (const [ax, ay] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+      const x = b.x + ax * krok, y = b.y + ay * krok, d = ocena(x, y); if (d > b.d) b = { x, y, d, dwie: u.dwie };
+    }
+    if (!best || b.d > best.d) best = b;
   }
   return best;
 }
@@ -460,7 +474,7 @@ export function rysuj(ctx, sc, widok, op = {}) {
     let f1 = 15 * F, f2 = 12.5 * F;
     ctx.font = `600 ${f1}px Archivo, system-ui, sans-serif`;
     let linie = [nazwa];
-    if (ctx.measureText(nazwa).width > szer && nazwa.includes(' ')) { // zawijanie na dwie linie
+    if ((pos.dwie || ctx.measureText(nazwa).width > szer) && nazwa.includes(' ')) { // zawijanie na dwie linie
       const sl = nazwa.split(' '); let best = null;
       for (let i = 1; i < sl.length; i++) { const a = sl.slice(0, i).join(' '), b = sl.slice(i).join(' '); const w = Math.max(ctx.measureText(a).width, ctx.measureText(b).width); if (!best || w < best.w) best = { w, l: [a, b] }; }
       linie = best.l;
