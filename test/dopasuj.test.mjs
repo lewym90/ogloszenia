@@ -75,3 +75,17 @@ test('symulacja: 60 losowych mieszkań — zmierzone pomieszczenia średnio < 0,
   assert.ok(Number(zm[1]) < 0.5 && Number(zm[2]) < 2, out);
   assert.match(out, /pęknięcia\): 0/);
 });
+
+test('porządki po skanie: otwór między pokojami → drzwi, typowe skrzydła, podwójne meble', async () => {
+  const { porzadkujSkan } = await import('../js/plan/dopasuj.js');
+  const f = mieszkanie();
+  f.doors = [{ id: 'd1', wallId: 'w8', position: 0.7, width: 92.6, type: 'opening' }, { id: 'd2', wallId: 'w8', position: 0.3, width: 160, type: 'opening' }, { id: 'd3', wallId: 'w0', position: 0.5, width: 169, type: 'single' }];
+  f.furniture = [{ id: 'a', sourceCategory: 'sink_b', position: { x: 450, y: 30 }, width: 66, depth: 46, rotation: 0 }, { id: 'b', sourceCategory: 'storage', position: { x: 451, y: 31 }, width: 70, depth: 50, rotation: 0 }, { id: 'c', sourceCategory: 'storage', position: { x: 100, y: 30 }, width: 200, depth: 60, rotation: 0 }, { id: 'e', sourceCategory: 'storage', position: { x: 105, y: 25 }, width: 190, depth: 36, rotation: 0 }];
+  const r = porzadkujSkan(f, pokoje(f));
+  const d = Object.fromEntries(f.doors.map((x) => [x.id, x]));
+  assert.equal(d.d1.type, 'single'); assert.equal(d.d1.width, 90);
+  assert.equal(d.d2.type, 'opening', 'szerokie przejście zostaje otworem');
+  assert.equal(d.d3.type, 'double'); assert.equal(d.d3.width, 160);
+  assert.deepEqual(f.furniture.map((x) => x.id).sort(), ['a', 'c']);
+  assert.equal(r.meble, 2);
+});

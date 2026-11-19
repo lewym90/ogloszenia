@@ -362,3 +362,43 @@ export function dopasujDoPomiarow(fl, pokoje, pomiary) {
   zastosuj(fl, U, nowe);
   return { raport, grubosci };
 }
+
+// ---------- porządki po skanie (każde mieszkanie) ----------
+// • „otwór” w ścianie między dwoma pomieszczeniami o szerokości drzwi to prawie zawsze drzwi (skaner widzi otwarte/zdjęte
+//   skrzydło jako otwór) → drzwi pojedyncze; szersze przejścia zostają otworami. Szerokość skrzydła → najbliższa typowa.
+// • meble wykryte podwójnie (szafka pod zlewem, lodówka w zabudowie, szafki wiszące nad blatem) → zostaje jeden.
+const SKRZYDLA = [60, 70, 80, 90, 100];
+export function porzadkujSkan(fl, pokoje) {
+  const polys = pokoje.filter((p) => !p.otwor).map((p) => p.poly);
+  const ilePokoi = (x, y) => polys.filter((q) => wWielokacie(q, x, y)).length;
+  let drzwi = 0, meble = 0;
+  for (const d of fl.doors || []) {
+    const w = fl.walls.find((q) => q.id === d.wallId); if (!w) continue;
+    const L = Math.hypot(w.end.x - w.start.x, w.end.y - w.start.y) || 1, ux = (w.end.x - w.start.x) / L, uy = (w.end.y - w.start.y) / L;
+    const cx = w.start.x + ux * d.position * L, cy = w.start.y + uy * d.position * L, o = (w.thickness || 10) / 2 + 12;
+    const obie = ilePokoi(cx - uy * o, cy + ux * o) > 0 && ilePokoi(cx + uy * o, cy - ux * o) > 0;
+    if (d.type === 'opening' && obie && d.width >= 55 && d.width <= 125) { d.type = 'single'; d.amZOtworu = true; drzwi++; }
+    if (d.type === 'single' && d.width > 135) d.type = 'double';
+    if (d.type === 'single' || d.type === 'double') {
+      const n = d.type === 'double' ? 2 : 1, skrz = (d.width - 7) / n;
+      const typowe = SKRZYDLA.reduce((a, s) => (Math.abs(s - skrz) < Math.abs(a - skrz) ? s : a), SKRZYDLA[0]);
+      d.width = typowe * n;
+    }
+  }
+  const F = fl.furniture || [], usun = new Set();
+  const prost = (f) => ({ x0: f.position.x - (f.width || 50) / 2, x1: f.position.x + (f.width || 50) / 2, y0: f.position.y - (f.depth || 50) / 2, y1: f.position.y + (f.depth || 50) / 2 });
+  const nakladanie = (a, b) => { // przybliżenie: prostokąty bez obrotu (skan i tak jest pod kątem prostym), obrócone o 90° — zamiana boków
+    const ra = Math.abs(Math.round(((a.rotation || 0) % 180) / 90)) % 2 ? { ...a, width: a.depth, depth: a.width } : a, rb = Math.abs(Math.round(((b.rotation || 0) % 180) / 90)) % 2 ? { ...b, width: b.depth, depth: b.width } : b;
+    const p = prost(ra), q = prost(rb), w = Math.min(p.x1, q.x1) - Math.max(p.x0, q.x0), h = Math.min(p.y1, q.y1) - Math.max(p.y0, q.y0);
+    return w > 0 && h > 0 ? (w * h) / Math.min((ra.width || 50) * (ra.depth || 50), (rb.width || 50) * (rb.depth || 50)) : 0;
+  };
+  const kat = (f) => f.sourceCategory || f.catalogId || '';
+  for (let i = 0; i < F.length; i++) for (let j = i + 1; j < F.length; j++) {
+    const a = F[i], b = F[j]; if (usun.has(a) || usun.has(b) || nakladanie(a, b) < 0.6) continue;
+    const sa = /storage/.test(kat(a)), sb = /storage/.test(kat(b));
+    if (sa && !sb) usun.add(a); else if (sb && !sa) usun.add(b);
+    else if (kat(a) === kat(b) || (sa && sb)) usun.add((a.depth || 0) * (a.width || 0) < (b.depth || 0) * (b.width || 0) ? a : b);
+  }
+  if (usun.size) { fl.furniture = F.filter((f) => !usun.has(f)); meble = usun.size; }
+  return { drzwi, meble };
+}

@@ -571,22 +571,24 @@ export function dlugoscCzysta(g, sciany) {
 
 // ---------- trafienie palcem / myszą (w jednostkach świata) ----------
 export function trafienie(sc, x, y, tol, op = {}) {
-  const { fl, pokoje, sciany } = sc;
+  const { fl, pokoje, sciany } = sc, pom = op.pomin || new Set(); // pomin: id już znalezionych (stuknięcie ponownie = to, co pod spodem)
   for (const g of sciany) for (const o of g.otwory) {
+    if (pom.has(o.el.id)) continue;
     const t = (x - g.w.start.x) * g.ux + (y - g.w.start.y) * g.uy, n = (x - g.w.start.x) * g.nx + (y - g.w.start.y) * g.ny;
     if (t >= o.t0 - tol * 0.3 && t <= o.t1 + tol * 0.3 && Math.abs(n) <= g.th / 2 + tol * 0.6) return { rodzaj: o.rodzaj, id: o.el.id };
   }
   if (op.meble !== false) {
     const lista = [...(fl.furniture || [])].reverse();
-    for (const f of [...lista.filter((f) => !naPodlodze(f)), ...lista.filter(naPodlodze)]) if (wMeblu(f, x, y, tol * 0.25)) return { rodzaj: 'mebel', id: f.id };
+    for (const f of [...lista.filter((f) => !naPodlodze(f)), ...lista.filter(naPodlodze)]) if (!pom.has(f.id) && wMeblu(f, x, y, tol * 0.25)) return { rodzaj: 'mebel', id: f.id };
   }
   let best = null;
   for (const g of sciany) {
+    if (pom.has(g.w.id)) continue;
     const d = odlOdcinka(x, y, g.w.start, g.w.end);
     if (d <= g.th / 2 + tol * 0.5 && (!best || d < best.d)) best = { d, id: g.w.id };
   }
   if (best) return { rodzaj: 'sciana', id: best.id };
-  const p = pokoje.filter((q) => wPokoju(q, x, y)).sort((a, b) => Math.abs(pole(a.poly)) - Math.abs(pole(b.poly)))[0];
+  const p = pokoje.filter((q) => !pom.has(q.room.id) && wPokoju(q, x, y)).sort((a, b) => Math.abs(pole(a.poly)) - Math.abs(pole(b.poly)))[0];
   if (p) return { rodzaj: 'pokoj', id: p.room.id };
   return null;
 }

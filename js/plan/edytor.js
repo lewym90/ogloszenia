@@ -4,7 +4,7 @@
 import * as G from './geom.js';
 import { rysuj3D, eksport3DPNG, skalaEksportu3D } from './rysuj3d.js';
 import { scena, rysuj, trafienie, eksportPNG, skalaEksportu, wMeblu, wymiaryMebla, pietro, przeliczSciany, warstwaPodlog, dlugoscCzysta, wPokoju } from './rysuj.js';
-import { dopasujDoPomiarow, nazwyPoWymiarach, poprawImport } from './dopasuj.js';
+import { dopasujDoPomiarow, nazwyPoWymiarach, poprawImport, porzadkujSkan } from './dopasuj.js';
 import { MEBLE, GRUPY, PODLOGI, GRUPY_PODLOG, rodzajMebla, nazwaMebla, NAZWY_POMIESZCZEN } from './biblioteka.js';
 import * as R from '../rzut.js';
 
@@ -115,6 +115,7 @@ function nakladka() {
   }
   if (r) for (const p of r.punkty) { const q = doEkranu(p.x, p.y); ctx.beginPath(); ctx.arc(q.x, q.y, 6, 0, 7); ctx.fillStyle = '#C8A44D'; ctx.fill(); }
   if (S.projekt && S.narzedzie === 'widok' && !S.tryb3d) for (const p of wolneKonce()) { const q = doEkranu(p.x, p.y); ctx.beginPath(); ctx.arc(q.x, q.y, 9, 0, 7); ctx.lineWidth = 3; ctx.strokeStyle = '#D9534F'; ctx.stroke(); }
+  if (S.arkusz?.typ === 'wneka') { const g = geomWneki(S.arkusz); if (g) { ctx.beginPath(); g.obrys.forEach((q, i) => { const e = doEkranu(q.x, q.y); i ? ctx.lineTo(e.x, e.y) : ctx.moveTo(e.x, e.y); }); ctx.closePath(); ctx.fillStyle = 'rgba(200,164,77,0.25)'; ctx.fill(); ctx.setLineDash([6, 4]); ctx.lineWidth = 2; ctx.strokeStyle = '#C8A44D'; ctx.stroke(); ctx.setLineDash([]); } }
   if (S.para) for (const id of S.para.sciany) { const w = fl().walls.find((q) => q.id === id); if (!w) continue; const a = doEkranu(w.start.x, w.start.y), b = doEkranu(w.end.x, w.end.y); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineWidth = 7; ctx.strokeStyle = 'rgba(200,164,77,0.85)'; ctx.stroke(); }
   if (S.podglad?.tekst) etykieta(S.podglad.tekst, S.podglad.x, S.podglad.y);
   ctx.restore();
@@ -195,7 +196,7 @@ function nazwyPoPodziale(f, stare) {
   for (const [rodzic, czesci] of doRodzica) {
     czesci.sort((a, b) => pole(b.polygon) - pole(a.polygon));
     const r = f.rooms.find((q) => q.id === czesci[0].room.id);
-    if (r) { r.name = rodzic.room.name; if (rodzic.room.amPodloga) r.amPodloga = rodzic.room.amPodloga; }
+    if (r) { r.name = rodzic.room.name; for (const k of ['amPodloga', 'amDopasowanie', 'amBezWymiarow', 'amPary', 'amOsA']) if (rodzic.room[k] !== undefined) r[k] = JSON.parse(JSON.stringify(rodzic.room[k])); }
   }
   for (const r of f.rooms) if (/^Room \d+$/.test(r.name || '')) r.name = '';
   pamiecNazw(f, stare, wPoly);
@@ -204,7 +205,7 @@ function nazwyPoPodziale(f, stare) {
 // jego nazwa, podłoga i dopasowanie czekają w miejscu, gdzie było — i wracają, gdy pomieszczenie znów się zamknie
 function pamiecNazw(f, stare, wPoly) {
   let twarze = []; try { twarze = G.resolveRoomGeometry(f, f.rooms); } catch { return; }
-  const POLA = ['name', 'amPodloga', 'amDopasowanie', 'amBezWymiarow', 'amPary'];
+  const POLA = ['name', 'amPodloga', 'amDopasowanie', 'amBezWymiarow', 'amPary', 'amOsA'];
   const sa = new Set(twarze.map((t) => (t.room.name || '').trim()).filter(Boolean));
   const P = (f.amZnikniete || []).filter((e) => !sa.has(e.meta.name));
   for (const o of stare) {
@@ -525,8 +526,14 @@ function stukniecie(x, y, typ = 'touch') {
   if (S.narzedzie === 'drzwi' || S.narzedzie === 'okno') return wstawOtwor(p);
   if (S.narzedzie === 'para' && S.para) return stuknijPare(p, tol);
   if (S.tryb3d) { if (trafienie(S.sc, p.x, p.y, tol, { meble: S.meble })) toast('W 3D tylko oglądasz — edycja w 2D', 2600); return; }
-  const h = trafienie(S.sc, p.x, p.y, tol, { meble: S.meble });
-  // ponowne stuknięcie w zaznaczony pokój — wybierz to, co pod spodem? zostaw zaznaczenie
+  // wszystko pod palcem, od wierzchu; ponowne stuknięcie w zaznaczony element wybiera następny pod nim (np. ściana pod otworem,
+  // szafka pod umywalką) — inaczej nie dałoby się dostać do elementów leżących na sobie
+  const pod = [], pomin = new Set();
+  for (let h; pod.length < 8 && (h = trafienie(S.sc, p.x, p.y, tol, { meble: S.meble, pomin }));) { pod.push(h); pomin.add(h.id); }
+  const i = S.zazn ? pod.findIndex((h) => h.id === S.zazn.id) : -1;
+  const nast = i >= 0 ? pod.slice(i + 1).find((h) => h.rodzaj !== 'pokoj') || pod.find((h) => h.rodzaj !== 'pokoj' && h.id !== S.zazn.id && pod.indexOf(h) < i) : null;
+  const h = i >= 0 ? nast || S.zazn : pod[0] || null;
+  if (i >= 0 && nast) toast(`Pod spodem: ${({ mebel: 'element wyposażenia', sciana: 'ściana', drzwi: 'drzwi', okno: 'okno' })[nast.rodzaj] || 'pomieszczenie'}`, 1600);
   S.zazn = h; S.arkusz = null;
   interfejs(); odswiez();
 }
@@ -728,6 +735,7 @@ function interfejs() {
   else if (a.typ === 'pokoj-nowy') ark.innerHTML = naglowek('Pokój prostokątny') + htmlNowegoPokoju(a);
   else if (a.typ === 'pomoc') ark.innerHTML = naglowek('Jak to działa') + htmlPomoc();
   else if (a.typ === 'kalibracja') ark.innerHTML = naglowek('Dopasowanie do pomiarów') + htmlKalibracji();
+  else if (a.typ === 'wneka') ark.innerHTML = naglowek('Wnęka w ścianie') + htmlWneki(a);
   else if (a.typ === 'podloga') ark.innerHTML = naglowek('Podłoga') + htmlPodlogi(el);
   else if (a.typ === 'element' && z && el) ark.innerHTML = naglowek(tytulElementu(z, el)) + htmlElementu(z, el);
   else ark.innerHTML = naglowek('Rzut') + htmlPodsumowania();
@@ -764,7 +772,7 @@ function htmlElementu(z, el) {
     return `<label>Szerokość</label><div class="chipy">${[70, 80, 90, 100, 120, 140].map((v) => chip('szer', `${v} cm`, Math.round(el.width) === v, `data-v="${v}"`)).join('')}</div>
       <input type="number" inputmode="decimal" data-pole="szer" value="${Math.round(el.width)}" aria-label="Szerokość w cm" style="margin-top:8px">
       <label>Rodzaj</label><div class="chipy">${typy.map(([k, t]) => chip('typ-drzwi', t, (el.type || 'single') === k, `data-v="${k}"`)).join('')}</div>
-      <div class="przyciski">${btn('kierunek', 'kierunek', 'Zmień kierunek')}${btn('strona', 'strona', 'Na drugą stronę')}${btn('usun', 'usun', 'Usuń drzwi', 'zly')}</div>`;
+      <div class="przyciski">${btn('kierunek', 'kierunek', 'Zmień kierunek')}${btn('strona', 'strona', 'Na drugą stronę')}${btn('wneka-z-drzwi', 'podloga', 'To nie drzwi — wnęka (np. szafa)')}${btn('usun', 'usun', 'Usuń drzwi', 'zly')}</div>`;
   }
   if (z.rodzaj === 'okno') {
     return `<label>Szerokość</label><div class="chipy">${[60, 90, 120, 150, 180, 240].map((v) => chip('szer', `${v} cm`, Math.round(el.width) === v, `data-v="${v}"`)).join('')}</div>
@@ -778,7 +786,7 @@ function htmlElementu(z, el) {
       <label>Przesuwa się</label><div class="chipy">${['start', 'end'].map((k) => chip('dl-koniec', nazwaKonca(el, k), kon === k, `data-v="${k}"`)).join('')}</div>
       ${el.granica ? '' : `<label>Grubość</label><div class="chipy">${[8, 12, 15, 25, 38].map((v) => chip('grubosc', `${v} cm`, Math.round(el.thickness) === v, `data-v="${v}"`)).join('')}</div>`}
       <label class="przelacznik"><span>Granica pomieszczeń (bez ściany)<small>Dzieli otwartą przestrzeń, np. przedpokój i salon. Na rzucie przerywana linia.</small></span><input type="checkbox" data-pole="granica" ${el.granica ? 'checked' : ''}></label>
-      <div class="przyciski">${btn('usun', 'usun', el.granica ? 'Usuń granicę' : 'Usuń ścianę', 'zly')}</div>`;
+      <div class="przyciski">${el.granica ? '' : btn('wneka', 'podloga', 'Dodaj wnękę (np. na szafę)')}${btn('usun', 'usun', el.granica ? 'Usuń granicę' : 'Usuń ścianę', 'zly')}</div>`;
   }
   if (z.rodzaj === 'pokoj') {
     const p = el, k = p.karta && p.wym ? p.karta : null, wy = (v) => Number(v).toFixed(2).replace('.', ',');
@@ -1080,6 +1088,67 @@ function htmlKalibracji() {
     <p class="info">Metraż każdego pomieszczenia liczy się teraz z dopasowanego kształtu — razem z wnękami i załamaniami — i po „Zapisz” trafi do karty.</p>
     <div class="przyciski">${btn('zamknij', 'zakoncz', 'Gotowe')}</div>`;
 }
+// ---------- wnęka w ścianie (szafa, nisza): ściana rozcięta, trzy nowe ściany dokładnie w narożnikach ----------
+function stronyWneki(w) { // która strona ściany należy do którego pomieszczenia (σ = +1: kierunek normalnej)
+  const u = kierunek(w), nx = -u.y, ny = u.x, mx = (w.start.x + w.end.x) / 2, my = (w.start.y + w.end.y) / 2, o = (w.thickness || 10) / 2 + 10;
+  const pok = (sg) => S.sc.pokoje.find((p) => !p.otwor && wPokoju(p, mx + nx * o * sg, my + ny * o * sg));
+  return { plus: pok(1), minus: pok(-1) };
+}
+function geomWneki(a) {
+  const w = fl().walls.find((q) => q.id === a.scianaId); if (!w) return null;
+  const u = kierunek(w), L = u.l, nx = -u.y, ny = u.x, t = w.thickness || 10, tw = Math.min(t, 12), sg = a.strona;
+  const g = S.sc.sciany.find((q) => q.w.id === w.id), p0 = g?.p0 ?? t / 2, p1 = g?.p1 ?? t / 2;
+  const szer = Math.max(20, Math.min(a.szer, L - p0 - p1 - 2 * tw)), sr = Math.max(p0 + tw + szer / 2, Math.min(L - p1 - tw - szer / 2, a.srodek));
+  const A = sr - szer / 2 - tw / 2, B = sr + szer / 2 + tw / 2, ob = sg * (a.gleb - t / 2 + tw / 2); // osie ścianek bocznych i tylnej
+  const P = (s, o) => ({ x: w.start.x + u.x * s + nx * o, y: w.start.y + u.y * s + ny * o });
+  const twarz = -sg * t / 2, tyl = sg * (a.gleb - t / 2);
+  return { w, u, L, A, B, ob, tw, P, p0, szer, sr, obrys: [P(sr - szer / 2, twarz), P(sr + szer / 2, twarz), P(sr + szer / 2, tyl), P(sr - szer / 2, tyl)] };
+}
+function otworzWneke(w, srodek, szer, drzwiId = null) {
+  const st = stronyWneki(w);
+  // domyślnie wnęka wchodzi tam, gdzie nie ma pomieszczenia; jeśli po obu stronach są — w większe (szafa z przedpokoju „zabiera” z pokoju)
+  const pole = (p) => (p ? Math.abs(p.m || 0) : 0);
+  const strona = !st.plus ? 1 : !st.minus ? -1 : pole(st.plus) >= pole(st.minus) ? 1 : -1;
+  S.arkusz = { typ: 'wneka', scianaId: w.id, srodek, szer, gleb: 60, strona, drzwiId }; S.zazn = null;
+  interfejs(); odswiez();
+}
+AKCJE.wneka = () => { const w = element(); if (!w || S.zazn?.rodzaj !== 'sciana') return; const L = kierunek(w).l; otworzWneke(w, L / 2, Math.min(100, Math.max(40, czysta(w) - 30))); };
+AKCJE['wneka-z-drzwi'] = () => {
+  const d = element(); if (!d || S.zazn?.rodzaj !== 'drzwi') return; const w = fl().walls.find((q) => q.id === d.wallId); if (!w) return;
+  otworzWneke(w, d.position * kierunek(w).l, d.width, d.id);
+};
+AKCJE['wn-strona'] = (b) => { if (S.arkusz?.typ !== 'wneka') return; S.arkusz.strona = Number(b.dataset.v); interfejs(); odswiez(); };
+function htmlWneki(a) {
+  const g = geomWneki(a); if (!g) return '<p class="info">Ściana zniknęła.</p>';
+  const st = stronyWneki(g.w), nazwa = (p) => (p ? p.nazwa || 'pomieszczenie bez nazwy' : 'na zewnątrz');
+  const opcja = (sg) => { const wl = sg === 1 ? st.minus : st.plus, cel = sg === 1 ? st.plus : st.minus; return `Należy do: ${nazwa(wl)} (wchodzi ${cel ? `w ${nazwa(cel)}` : 'na zewnątrz'})`; };
+  return `<p class="info" style="margin-top:0">Złoty prostokąt na rzucie pokazuje wnękę. Ściany wnęki dorysuję dokładnie w narożnikach — pomieszczenie zostanie zamknięte.${a.drzwiId ? ' Drzwi w tym miejscu zostaną usunięte.' : ''}</p>
+    <div class="dwa"><div><label for="wn-s">Szerokość (cm)</label><input id="wn-s" type="number" inputmode="decimal" data-pole="wn-szer" value="${Math.round(g.szer)}"></div>
+    <div><label for="wn-g">Głębokość (cm)</label><input id="wn-g" type="number" inputmode="decimal" data-pole="wn-gleb" value="${Math.round(a.gleb)}"></div></div>
+    <label for="wn-o">Odstęp od narożnika: ${esc(nazwaKonca(g.w, 'start').replace(/[←→↑↓]/g, '').trim())} (cm)</label><input id="wn-o" type="number" inputmode="decimal" data-pole="wn-od" value="${Math.round(g.sr - g.szer / 2 - g.p0)}">
+    <label>Strona</label><div class="chipy">${[1, -1].map((sg) => chip('wn-strona', opcja(sg), a.strona === sg, `data-v="${sg}"`)).join('')}</div>
+    <div class="przyciski">${btn('wneka-wstaw', 'zakoncz', 'Wstaw wnękę')}${btn('zamknij', 'cofnij', 'Anuluj')}</div>`;
+}
+AKCJE['wneka-wstaw'] = () => {
+  const a = S.arkusz, g = a?.typ === 'wneka' && geomWneki(a); if (!g) return;
+  const przed = migawka(), f = fl(), w = g.w, { A, B, ob, tw, P } = g, r1 = (q) => ({ x: Math.round(q.x * 10) / 10, y: Math.round(q.y * 10) / 10 });
+  const kopia = (o) => ({ ...JSON.parse(JSON.stringify(o)), id: noweId() });
+  const koniec = { ...w.end }, w2 = { ...kopia(w), start: r1(P(B, 0)), end: koniec };
+  w.end = r1(P(A, 0));
+  const nowe = [w2, { ...kopia(w), start: r1(P(A, 0)), end: r1(P(A, ob)), thickness: tw }, { ...kopia(w), start: r1(P(A, ob)), end: r1(P(B, ob)), thickness: tw }, { ...kopia(w), start: r1(P(B, ob)), end: r1(P(B, 0)), thickness: tw }];
+  for (const q of nowe) delete q.granica;
+  f.walls.push(...nowe);
+  // drzwi i okna z rozciętej ściany: na swoje kawałki (te w miejscu wnęki znikają)
+  for (const kol of ['doors', 'windows']) f[kol] = (f[kol] || []).filter((o) => {
+    if (o.wallId !== w.id) return true; if (o.id === a.drzwiId) return false;
+    const s = o.position * g.L;
+    if (s + o.width / 2 <= A) { o.position = s / A; return true; }
+    if (s - o.width / 2 >= B) { o.wallId = w2.id; o.position = (s - B) / (g.L - B); return true; }
+    return false;
+  });
+  zapamietaj(przed); S.arkusz = null; poScianach(); interfejs();
+  toast('Wnęka wstawiona. Cofnij, jeśli nie pasuje.', 2600);
+};
 AKCJE['dl-koniec'] = (b) => { const w = element(); if (!w) return; S.dlKoniec = { id: w.id, k: b.dataset.v }; interfejs(); odswiez(); };
 AKCJE['nazwa-pok'] = (b) => nazwijPokoj(b.dataset.v);
 AKCJE.podloga = (b) => { const p = element(); if (!p) return; const przed = migawka(); pokojMeta(p).amPodloga = b.dataset.v; zapamietaj(przed); przebuduj(); interfejs(); };
@@ -1110,6 +1179,7 @@ function podlaczPola(ark) {
       if (pole === 'nazwa') return nazwijPokoj(v);
       if (pole === 'nazwa-pietra') { const f = pietro(S.projekt), przed = migawka(); f.name = String(v).trim() || f.name; if (przed !== migawka()) { zapamietaj(przed); interfejs(); } return; }
       if (pole === 'granica') return AKCJE.granica();
+      if (pole === 'wn-szer' || pole === 'wn-gleb' || pole === 'wn-od') { const a = S.arkusz; if (a?.typ !== 'wneka') return; if (pole === 'wn-szer') a.szer = v; if (pole === 'wn-gleb') a.gleb = v; if (pole === 'wn-od') a.srodek = geomWneki(a)?.p0 + v + a.szer / 2; odswiez(); return; }
       if (pole === 'wym-pok') { const pk = element(); if (!pk) return; const przed = migawka(); const r = pokojMeta(pk); if (v) delete r.amBezWymiarow; else r.amBezWymiarow = true; zapamietaj(przed); przebuduj(); interfejs(); return; }
       if (pole === 'w' || pole === 'd') return zmien((f) => {
         const { w, d } = wymiaryMebla(f), sxx = Math.abs(f.scale?.x ?? 1) || 1, syy = Math.abs(f.scale?.y ?? 1) || 1, nv = Math.max(5, v);
@@ -1261,7 +1331,7 @@ $('#plik-skanu').addEventListener('change', async (e) => {
       for (const f of p.floors) { // ściana zewnętrzna: płaszczyzna skanu = lico od środka; działowa: środek
         try {
           const przelicz = () => { f.rooms = G.resolveRooms(f, f.rooms || []); return G.resolveRoomGeometry(f, f.rooms).map((t) => ({ room: t.room, poly: t.polygon })); };
-          poprawImport(f, przelicz(), undefined, undefined, przelicz); f.rooms = G.resolveRooms(f, f.rooms);
+          poprawImport(f, przelicz(), undefined, undefined, przelicz); porzadkujSkan(f, przelicz()); f.rooms = G.resolveRooms(f, f.rooms);
         } catch { /* */ }
       }
     }
