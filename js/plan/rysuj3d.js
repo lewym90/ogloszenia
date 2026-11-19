@@ -11,7 +11,7 @@ const SWIATLO = { x: 0.42, y: 0.91 }; // kierunek padania światła (z góry-lew
 
 export function kamera(sc, op = {}) {
   const b = sc.granice, szer = b.x1 - b.x0, wys = b.y1 - b.y0;
-  return { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 + (op.przesuniecie ?? 0.06) * wys, h: Math.max(2200, (op.wysokosc ?? 4.4) * Math.max(szer, wys)) };
+  return { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 + (op.przesuniecie ?? 0.06) * wys, h: Math.max(2200, (op.wysokosc ?? 3.3) * Math.max(szer, wys)) };
 }
 // rzut punktu (x, y, z) na płaszczyznę podłogi (z = 0) widzianą z kamery
 const rzut = (K, x, y, z) => { const k = K.h / (K.h - z); return { x: K.x + (x - K.x) * k, y: K.y + (y - K.y) * k }; };
