@@ -1,15 +1,18 @@
 // Edytor uczciwej korekty zdjęcia: jasność, cienie, balans bieli, prostowanie, piony, kadr.
-// otworzEdytor({ blob, par, tytul, maOryginal, ik }) → Promise<{ par, blob, w, h } | { przywroc: true } | null>
+// otworzEdytor({ blob, par, tytul, maOryginal, ik, podglad, wariant }) → Promise<{ par, blob, w, h } | { przywroc: true } | null>
 import * as KZ from './korekta.js';
 
-const PODGLAD = 1000; // dłuższy bok podglądu
 const SUWAKI = [
   { g: 'Światło' },
   { k: 'ev', n: 'Jasność', min: -1.5, max: 1.5, krok: 0.05, pok: (v) => znak(v, 1) },
   { k: 'cienie', n: 'Cienie', min: 0, max: 1, krok: 0.05, pok: (v) => `${Math.round(v * 100)}%` },
+  { k: 'swiatlo', n: 'Wyrównanie światła', min: 0, max: 1, krok: 0.01, pok: (v) => `${Math.round(v * 100)}%` },
   { g: 'Kolor (balans bieli)' },
   { k: 'temp', n: 'Temperatura', min: -1, max: 1, krok: 0.02, pok: (v) => (Math.abs(v) < 0.01 ? '0' : `${v > 0 ? 'cieplej' : 'chłodniej'} ${Math.round(Math.abs(v) * 100)}`) },
   { k: 'odcien', n: 'Odcień', min: -1, max: 1, krok: 0.02, pok: (v) => (Math.abs(v) < 0.01 ? '0' : `${v > 0 ? 'róż' : 'zieleń'} ${Math.round(Math.abs(v) * 100)}`) },
+  { g: 'Szczegóły' },
+  { k: 'klar', n: 'Klarowność', min: 0, max: 1, krok: 0.01, pok: (v) => `${Math.round(v * 100)}%` },
+  { k: 'ostr', n: 'Ostrość', min: 0, max: 1, krok: 0.01, pok: (v) => `${Math.round(v * 100)}%` },
   { g: 'Piony' },
   { k: 'obrot', n: 'Prostowanie', min: -10, max: 10, krok: 0.1, pok: (v) => `${znak(v, 1)}°`, siatka: true },
   { k: 'piony', n: 'Zbieżność pionów', min: -0.4, max: 0.4, krok: 0.005, pok: (v) => znak(v * 250, 0), siatka: true },
@@ -18,7 +21,7 @@ const SUWAKI = [
 ];
 function znak(v, m) { const t = Math.abs(v).toFixed(m).replace('.', ','); return Math.abs(v) < 0.5 * 10 ** -m ? '0' : `${v > 0 ? '+' : '−'}${t}`; }
 
-async function rozkoduj(blob, maks) {
+export async function rozkoduj(blob, maks) {
   let zr;
   try { zr = await createImageBitmap(blob); } catch {
     zr = await new Promise((ok, zle) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => zle(new Error('Nie mogę odczytać zdjęcia.')); i.src = URL.createObjectURL(blob); });
@@ -54,13 +57,8 @@ export async function obrobPelne(blob, par) {
   if (!out) throw new Error('Nie udało się zapisać zdjęcia.');
   return { blob: out, w, h };
 }
-// ustawienia automatyczne dla zdjęcia (bez okna)
-export async function autoDlaBloba(blob) {
-  const maly = await rozkoduj(blob, 520);
-  return KZ.analiza(maly);
-}
-
-export function otworzEdytor({ blob, par, tytul = '', maOryginal = false, ik = () => '' }) {
+export function otworzEdytor({ blob, par, tytul = '', maOryginal = false, ik = () => '', podglad = 1000, wariant = 'naturalna' }) {
+  const PODGLAD = podglad;
   return new Promise((zwroc) => {
     let p = KZ.normuj(par), prev = null, maly = null, porownaj = false, koniec = false, plan = 0;
     const el = document.createElement('div');
@@ -73,7 +71,8 @@ export function otworzEdytor({ blob, par, tytul = '', maOryginal = false, ik = (
       <div class="ez-obraz"><div class="ez-ramka"><canvas aria-label="Podgląd zdjęcia"></canvas></div><p class="ez-stan">Wczytuję zdjęcie…</p></div>
       <div class="ez-panel szklo">
         <div class="ez-przyciski">
-          <button class="btn zloty maly" data-ez="auto" disabled>${ik('wiz')}Automatycznie</button>
+          <button class="btn zloty maly" data-ez="wyrownaj" disabled>${ik('linijka')}Wyrównaj</button>
+          <button class="btn zloty maly" data-ez="obrobka" disabled>${ik('wiz')}Obróbka</button>
           <button class="btn kontur maly" data-ez="przed" disabled aria-label="Przytrzymaj, żeby zobaczyć przed korektą">Przed</button>
           <button class="btn kontur maly" data-ez="zeruj" disabled>Wyzeruj</button>
         </div>
@@ -134,7 +133,7 @@ export function otworzEdytor({ blob, par, tytul = '', maOryginal = false, ik = (
       const s = SUWAKI.find((x) => x.k === e.target.dataset.s);
       if (!s || !prev) return;
       const v = Number(e.target.value);
-      zmien({ [s.k]: s.odwr ? 1 / (v + 1) : v });
+      zmien({ [s.k]: s.odwr ? 1 / (v + 1) : v, ...(KZ.WYGLAD.includes(s.k) ? { wariant: '' } : {}) });
     });
     // siatka przy prostowaniu i kadrowaniu
     const siatka = (on) => ramka.classList.toggle('siatka', on);
@@ -154,10 +153,11 @@ export function otworzEdytor({ blob, par, tytul = '', maOryginal = false, ik = (
       if (a === 'anuluj') zamknij(null);
       else if (a === 'zeruj') zmien({ ...KZ.DOMYSLNE });
       else if (a === 'oryginal') zamknij({ przywroc: true });
-      else if (a === 'auto') {
+      else if (a === 'wyrownaj') {
         if (!maly) maly = await rozkoduj(blob, 520);
-        const auto = KZ.analiza(maly);
-        zmien({ ...auto, proporcje: p.proporcje, zoom: p.zoom, px: 0, py: 0 });
+        zmien({ ...KZ.autoWyrownanie(maly), px: 0, py: 0 });
+      } else if (a === 'obrobka') {
+        zmien(KZ.autoObrobka(prev)[wariant] || KZ.autoObrobka(prev).naturalna);
       } else if (a === 'zapisz') {
         if (!KZ.zmienia(p)) { zamknij(maOryginal ? { przywroc: true } : null); return; }
         el.querySelectorAll('button, input').forEach((x) => { x.disabled = true; });

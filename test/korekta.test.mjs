@@ -96,5 +96,41 @@ const duze = szum(2560, 1920);
 const t0 = performance.now(); K.obrob(duze, { ev: 0.4, temp: 0.2, obrot: 2, piony: 0.1 }); const ms = performance.now() - t0;
 ok(ms < 4000, `pełne zdjęcie 2560×1920 w ${Math.round(ms)} ms`);
 
+
+// 8. obróbka (1.14.0): balans z bieli, wyrównanie światła, ostrość, wersje, asystent
+const zolteBiale = scena({}, [235, 226, 208]);
+const wb = K.balansZBieli(zolteBiale);
+ok(wb.temp < -0.2, `balans z bieli: żółtawa biel → chłodniej (temp ${wb.temp})`);
+const bez = K.obrob(zolteBiale, { temp: wb.temp, odcien: wb.odcien });
+let rr = 0, bb = 0; for (let i = 0; i < bez.data.length; i += 4) if (bez.data[i + 1] > 150) { rr += bez.data[i]; bb += bez.data[i + 2]; }
+ok(Math.abs(rr - bb) / rr < 0.05, 'po balansie z bieli biel jest biała');
+// pokój z jasnym oknem: lewa połowa ciemna, prawa bardzo jasna
+const okno = { data: new Uint8ClampedArray(W * H * 4), width: W, height: H };
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, v = x < W / 2 ? 25 + ((x >> 3) % 2) * 10 : 245; okno.data[i] = okno.data[i + 1] = okno.data[i + 2] = v; okno.data[i + 3] = 255; }
+const wyr = K.obrob(okno, { swiatlo: 1 }, W, H);
+const sr = (o, x0, x1) => { let s = 0, n = 0; for (let y = 50; y < H - 50; y++) for (let x = x0; x < x1; x++) { s += o.data[(y * W + x) * 4]; n++; } return s / n; };
+ok(sr(wyr, 40, 200) > sr(okno, 40, 200) + 15 && sr(wyr, 300, 440) <= 247, `wyrównanie światła: ciemne jaśniej (${Math.round(sr(okno, 40, 200))} → ${Math.round(sr(wyr, 40, 200))}), jasne nie przepalone (${Math.round(sr(wyr, 300, 440))})`);
+const kraw = (o) => Math.abs(o.data[(100 * W + 236) * 4] - o.data[(100 * W + 243) * 4]);
+const ostre = K.obrob(okno, { ostr: 1 }, W, H);
+const kontrastKrawedzi = (o) => o.data[(100 * W + 241) * 4] - o.data[(100 * W + 238) * 4];
+ok(kontrastKrawedzi(ostre) > kontrastKrawedzi(okno) + 20, `ostrość podbija kontrast na krawędzi (${kontrastKrawedzi(okno)} → ${kontrastKrawedzi(ostre)})`);
+const gladka = { data: new Uint8ClampedArray(64 * 48 * 4).fill(128), width: 64, height: 48 };
+ok(K.obrob(gladka, { ostr: 1, klar: 1 }).data.every((v, i) => (i % 4 === 3 ? v === 255 : Math.abs(v - 128) <= 1)), 'gładka ściana bez zmian (ostrość z progiem, bez szumu)');
+const war = K.autoObrobka(scena({}, [120, 105, 80]));
+ok(Object.keys(war).join() === 'naturalna,jasna,ciepla' && war.jasna.ev > war.naturalna.ev && Math.abs(war.ciepla.temp) <= Math.abs(war.naturalna.temp), 'trzy wersje: Jasna jaśniejsza, Ciepła mniej odbarwia ciepło');
+ok(Object.values(war).every((v) => K.zmienia(v) && v.wariant), 'każda wersja coś zmienia i ma nazwę');
+ok(K.opisKorekty(war.naturalna).includes('szczegóły'), `opis obróbki: ${K.opisKorekty(war.naturalna)}`);
+const szumny = szum(200, 150);
+ok(K.szum(szumny) > 20 && K.szum(gladka) < 0.5, 'pomiar szumu');
+const w2 = K.autoObrobka(Object.assign(szumny));
+ok(w2.naturalna.ostr < war.naturalna.ostr, 'zaszumione zdjęcie → słabsza ostrość');
+const geo = K.autoWyrownanie(scena({ obrot: 3, piony: 0.1 }));
+ok(Math.abs(geo.obrot - 3) < 0.4 && Math.abs(geo.piony - 0.1) < 0.03, `„Wyrównaj”: ${JSON.stringify(geo)}`);
+ok(K.ocenaZdjecia(scena({ obrot: 4 })).includes('krzywe') && !K.ocenaZdjecia(scena({})).includes('krzywe'), 'asystent: krzywe zdjęcie oznaczone, proste nie');
+const przep = { data: okno.data.map((v, i) => (i % 4 !== 3 && v === 245 ? 255 : v)), width: W, height: H };
+ok(K.ocenaZdjecia(scena({}, [40, 40, 40])).includes('ciemne') && K.ocenaZdjecia(przep).includes('przepalone') && !K.ocenaZdjecia(scena({})).includes('ciemne'), 'asystent: ciemne i przepalone');
+const t1 = performance.now(); const duzeO = szum(2560, 1920); K.obrob(duzeO, { ...war.naturalna, obrot: 2, piony: 0.1 }); const ms2 = performance.now() - t1;
+ok(ms2 < 6000, `pełna obróbka 2560×1920 w ${Math.round(ms2)} ms`);
+
 console.log(`\n${ile - bledy}/${ile} OK`);
 process.exit(bledy ? 1 : 0);
