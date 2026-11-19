@@ -112,3 +112,10 @@ C. Gdy będzie sprzęt / potrzeba
 Własny edytor rzutów `plan.html` (js/plan/: edytor.js, rysuj.js, biblioteka.js, geom.js z openPlan3D). Pełny opis: dokument projektu claude/rzut-am-projekt.md.
 Biblioteka grafik: `python3 narzedzia/plan/tnij.py <nr arkusza> <plik> --podglad` → img/plan/meble|podlogi + img/plan/biblioteka.json.
 Testy: test/ui_plan_test.py, ui_rzut_test.py, ui_granica_test.py, ui_plan_pietra_test.py.
+
+## Widok 3D (wersja 1.7.0, 19.11.2026)
+- `js/plan/rysuj3d.js`: widok z lotu ptaka z perspektywą. Kamera stoi nad środkiem rzutu na wysokości 3,3 × dłuższy bok; to ustalone z właścicielem („pochyl trochę bardziej” — jest dobrze). Ściany mają 260 cm: widać boki zwrócone do kamery i ciemne wierzchy. Okno to parapet 90 cm, jasna szyba z ramą i słupkiem oraz jasny pasek u góry. W miejscu drzwi ściana jest otwarta. Szafy, regały, AGD, zabudowa kuchni i szafki są bryłami z bokami (wysokości w `BRYLY`, kolor boków to średni kolor brzegu grafiki). Pozostałe meble są płaskie jak w 2D. Ściany i bryły rzucają cienie. Są nazwy i metraż, bez wymiarów ścian. Stopka: „Wizualizacja 3D · metraż z pomiaru · aranżacja poglądowa”.
+- Używa tych samych grafik z biblioteki co 2D (`rysuj()` z opcjami `bezScian`, `pomin`, `tylkoNapisy`). Nie trzeba nowych grafik.
+- W edytorze przełącznik 2D | 3D jest w lewym górnym rogu płótna. 3D to sam podgląd: stuknięcie niczego nie zmienia, dolne narzędzia są wyszarzone, przesuwanie i powiększanie działa. Edytor otwiera się zawsze w 2D.
+- „Zapisz” pyta: oba widoki / tylko 2D / tylko 3D. `wynik:<oid>` = { plan, png, png3d, pokoje, t }. Aplikacja zapisuje 2D jako zdjęcie `rzutAuto`, a 3D jako `rzutAuto3d` (oba mają pom 'rzut', żadne nie jest główne). Każde podmienia tylko swoje poprzednie zdjęcie. Kilka pięter = jeden obraz na widok, piętra jedno pod drugim.
+- Test: `test/ui_plan_test.py` kroki 12b i 15. Edytor zaawansowany (openPlan3D) jest w menu jako „Edytor zaawansowany”.
