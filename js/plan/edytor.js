@@ -11,6 +11,8 @@ import * as R from '../rzut.js';
 const $ = (s) => document.querySelector(s);
 const plotno = $('#plotno'), ctx = plotno.getContext('2d');
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// aktywność w edytorze przedłuża odblokowanie aplikacji (sejf: 10 min bez używania = PIN przy powrocie)
+addEventListener('pointerdown', () => { try { if (sessionStorage.getItem('am-sejf')) sessionStorage.setItem('am-sejf-t', String(Date.now())); } catch { /* */ } }, { capture: true, passive: true });
 const noweId = () => (crypto.randomUUID ? crypto.randomUUID() : `am-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
 const cm = (v) => `${Math.round(v)} cm`;
 const m2 = (v) => `${String(Math.round(v * 100) / 100).replace('.', ',')} m²`;

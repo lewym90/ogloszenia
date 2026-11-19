@@ -1,5 +1,6 @@
 // AM Oferty — dane: kopia na urządzeniu (IndexedDB), kolejka zmian offline, synchronizacja na żywo, zdjęcia.
 import { noweId } from './model.js';
+import * as Z from './sejf.js';
 
 const DOMYSLNY_API = 'https://188-68-247-201.sslip.io/am-api';
 export const API = (() => {
@@ -22,7 +23,8 @@ function bazaDanych() {
       d.createObjectStore('wysylka', { keyPath: 'klucz' });
       d.createObjectStore('meta');
     };
-    r.onsuccess = () => ok(r.result);
+    // inna karta czyści telefon (wylogowanie, 5 złych PIN-ów) — oddajemy bazę i przeładowujemy, żeby nie blokować usunięcia
+    r.onsuccess = () => { const d = r.result; d.onversionchange = () => { d.close(); _db = null; location.reload(); }; ok(d); };
     r.onerror = () => zle(r.error);
   });
   return _db;
@@ -40,16 +42,76 @@ async function tx(store, tryb, f) {
   });
 }
 const req = (r) => new Promise((ok, zle) => { r.onsuccess = () => ok(r.result); r.onerror = () => zle(r.error); });
-const idbGet = (st, k) => tx(st, 'readonly', (s) => req(s.get(k)));
-const idbAll = (st) => tx(st, 'readonly', (s) => req(s.getAll()));
-const idbPut = (st, v, k) => tx(st, 'readwrite', (s) => { k === undefined ? s.put(v) : s.put(v, k); });
+// sejf: wszystko o ofertach i klientach zapisuje się w telefonie zaszyfrowane (js/sejf.js); jawne zostają tylko
+// sól i zawinięty klucz (meta.sejf), numer zmian, licznik złych PIN-ów i uchwyt folderu kopii
+const KP = { baza: 'id', kolejka: 'cid', wysylka: 'klucz' };
+const SZYFR = new Set(['baza', 'kolejka', 'wysylka', 'pliki']);
+const META_SZYFR = new Set(['token', 'konto', 'konta', 'agent', 'aktywnosc', 'kluczPlikow']);
+const szyfrowane = (st, k) => SZYFR.has(st) || (st === 'meta' && META_SZYFR.has(k));
+let sejfZapis = null;
+async function koduj(st, v, k) {
+  if (!szyfrowane(st, k) || !sejfZapis) return v; // przed ustawieniem PIN-u (stara instalacja) — jeszcze jawnie
+  const z = await Z.szyfruj(v);
+  return KP[st] ? { [KP[st]]: v[KP[st]], z } : { z };
+}
+const dekoduj = (r) => (r && typeof r === 'object' && Z.zaszyfrowane(r.z) ? Z.odszyfruj(r.z) : r);
+const idbGetSurowe = (st, k) => tx(st, 'readonly', (s) => req(s.get(k)));
+const idbGet = async (st, k) => dekoduj(await idbGetSurowe(st, k));
+const idbAll = async (st) => Promise.all((await tx(st, 'readonly', (s) => req(s.getAll()))).map(dekoduj));
+const idbPut = async (st, v, k) => { const w = await koduj(st, v, k); return tx(st, 'readwrite', (s) => { k === undefined ? s.put(w) : s.put(w, k); }); };
 const idbDel = (st, k) => tx(st, 'readwrite', (s) => { s.delete(k); });
+const idbWpisy = (st) => tx(st, 'readonly', (s) => new Promise((ok, zle) => { const w = []; const c = s.openCursor(); c.onsuccess = () => { const k = c.result; if (!k) return ok(w); w.push([k.key, k.value]); k.continue(); }; c.onerror = () => zle(c.error); }));
+
+// ---------- PIN ----------
+export const sejfUstawiony = () => !!sejfZapis;
+export async function przygotuj() {
+  sejfZapis = (await idbGetSurowe('meta', 'sejf')) || null;
+  const zalogowany = !!(await idbGetSurowe('meta', 'token'));
+  return { sejf: !!sejfZapis, zalogowany, bledy: Number(await idbGetSurowe('meta', 'pinBledy') || 0) };
+}
+export async function odblokuj(pin) {
+  try { await Z.otworz(pin, sejfZapis); await idbPut('meta', 0, 'pinBledy'); return { ok: true }; }
+  catch {
+    const n = Number(await idbGetSurowe('meta', 'pinBledy') || 0) + 1;
+    await idbPut('meta', n, 'pinBledy');
+    if (n >= Z.MAKS_PROB) { await wyczysc(`${Z.MAKS_PROB} razy błędny PIN — dane usunięte z tego urządzenia. Zaloguj się hasłem.`); return { ok: false, wyczyszczono: true }; }
+    return { ok: false, zostalo: Z.MAKS_PROB - n };
+  }
+}
+// pierwszy PIN: tworzy sejf i szyfruje wszystko, co już jest w telefonie (aktualizacja ze starszej wersji)
+export async function ustawPin(pin) {
+  const zapis = await Z.utworz(pin);
+  sejfZapis = zapis; // od teraz zapisy idą zaszyfrowane
+  for (const st of ['baza', 'kolejka', 'wysylka']) {
+    const L = await tx(st, 'readonly', (s) => req(s.getAll()));
+    for (const v of L) if (!(v && Z.zaszyfrowane(v.z))) await idbPut(st, v);
+  }
+  for (const [k, v] of await idbWpisy('pliki')) if (!(v && Z.zaszyfrowane(v.z))) await idbPut('pliki', v, k);
+  for (const k of META_SZYFR) { const v = await idbGetSurowe('meta', k); if (v !== undefined && !(v && Z.zaszyfrowane(v.z))) await idbPut('meta', v, k); }
+  await idbPut('meta', zapis, 'sejf'); await idbPut('meta', 0, 'pinBledy');
+}
+export async function zmienPin(stary, nowy) {
+  const zapis = await Z.przepakuj(stary, nowy, sejfZapis); // zły stary PIN = wyjątek
+  sejfZapis = zapis; await idbPut('meta', zapis, 'sejf');
+}
+// całkowite wyczyszczenie telefonu (wylogowanie, zdalne wylogowanie, 5 złych PIN-ów, „Nie pamiętam PIN-u”)
+export async function wyczysc(komunikat = '') {
+  Z.zamknij();
+  try { if (es) { es.close(); es = null; } } catch { /* */ }
+  try { (await _db)?.close(); } catch { /* */ }
+  _db = null;
+  const usun = (n) => new Promise((ok) => { const r = indexedDB.deleteDatabase(n); r.onsuccess = r.onerror = r.onblocked = () => ok(); });
+  await usun('amoferty'); await usun('am-rzut');
+  try { for (const k of Object.keys(localStorage)) if (k !== 'am_api') localStorage.removeItem(k); } catch { /* */ }
+  try { sessionStorage.clear(); if (komunikat) sessionStorage.setItem('am-komunikat', komunikat); } catch { /* */ }
+  location.reload();
+}
 
 // ---------- stan ----------
 const bazy = new Map();      // id -> {id, dane, seq, zmieniona, kto, usunieta}
 let kolejka = [];            // [{cid, oid, pola?, usun?, t}]
 let wysylki = [];            // [{klucz, id, oid, rodzaj}]
-export const stan = { token: null, konto: null, konta: [], seq: 0, online: navigator.onLine, polaczony: false, blad: '', agent: {}, aktywnosc: [], aktywnoscWidziana: 0 };
+export const stan = { token: null, konto: null, konta: [], seq: 0, online: navigator.onLine, polaczony: false, blad: '', agent: {}, aktywnosc: [], aktywnoscWidziana: 0, prosby: [], retencja: [] };
 const sluchacze = new Set();
 export const naZmiane = (f) => { sluchacze.add(f); return () => sluchacze.delete(f); };
 let zaplanowane = false;
@@ -140,28 +202,30 @@ export async function zaloguj(login, haslo) {
   const urz = /iPhone/.test(navigator.userAgent) ? 'iPhone' : /iPad|Macintosh.*Mobile/.test(navigator.userAgent) ? 'iPad'
     : /Android/.test(navigator.userAgent) ? 'Android' : /Windows/.test(navigator.userAgent) ? 'Windows' : 'Urządzenie';
   const j = await api('/logowanie', { method: 'POST', body: JSON.stringify({ login, haslo, urzadzenie: urz }) });
-  stan.token = j.token; stan.konto = j.konto; stan.blad = '';
-  await idbPut('meta', j.token, 'token'); await idbPut('meta', j.konto, 'konto');
-  if (!stan.agent.nazwa) await ustawAgenta({ nazwa: j.konto.nazwa, telefon: j.konto.telefon });
+  if (j.oczekuje) return j; // nowe urządzenie: czeka na kod z zalogowanego telefonu
+  return przyjmijToken(j);
+}
+export async function potwierdzKod(prosba, kod) { return przyjmijToken(await api('/logowanie/kod', { method: 'POST', body: JSON.stringify({ prosba, kod }) })); }
+// token trzymamy tylko w pamięci, dopóki nie ma PIN-u — zapis do telefonu dopiero zaszyfrowany (dokonczLogowanie)
+function przyjmijToken(j) { stan.token = j.token; stan.konto = j.konto; stan.blad = ''; return { zmienHaslo: !!j.zmienHaslo }; }
+export async function dokonczLogowanie() {
+  await idbPut('meta', stan.token, 'token'); await idbPut('meta', stan.konto, 'konto');
+  if (!stan.agent.nazwa) await ustawAgenta({ nazwa: stan.konto.nazwa, telefon: stan.konto.telefon });
   polaczNaZywo(); await synchronizuj(); odswiezJa();
   powiadom();
 }
-async function wylogujLokalnie(komunikat) {
-  stan.token = null; stan.blad = komunikat || '';
-  await idbDel('meta', 'token');
-  klucz = null; await idbDel('meta', 'kluczPlikow');
-  if (es) { es.close(); es = null; }
-  stan.polaczony = false;
-  powiadom();
-}
+export const zmienHaslo = (stare, nowe) => api('/haslo', { method: 'POST', body: JSON.stringify({ stare, nowe }) });
+async function wylogujLokalnie(komunikat) { await wyczysc(komunikat); }
 export async function wyloguj() {
-  try { await api('/wyloguj', { method: 'POST', body: '{}' }); } catch { /* i tak lokalnie */ }
-  await wylogujLokalnie('');
+  try { await api('/wyloguj', { method: 'POST', body: '{}' }); } catch { /* i tak czyścimy telefon */ }
+  await wyczysc('');
 }
+export const odrzucProsbe = async (id) => { try { await api(`/prosba/${id}`, { method: 'DELETE' }); } finally { odswiezJa(); } };
 async function odswiezJa() {
   try {
     const j = await api('/ja');
-    stan.konto = j.konto; stan.konta = j.konta; stan.push = j.push; stan.vapid = j.vapid; stan.kopia = j.kopia || null;
+    stan.konto = j.konto; stan.konta = j.konta; stan.push = j.push; stan.vapid = j.vapid; stan.kopia = j.kopia || null; stan.prosby = j.prosby || [];
+    api('/retencja').then((r) => { stan.retencja = r.wpisy || []; powiadom(); }).catch(() => {});
     await idbPut('meta', j.konto, 'konto'); await idbPut('meta', j.konta, 'konta');
     powiadom();
   } catch { /* offline */ }
@@ -181,7 +245,7 @@ export function synchronizuj() {
   if (!stan.token || !navigator.onLine) return Promise.resolve();
   if (synchronizacja) return synchronizacja;
   synchronizacja = (async () => {
-    try { await wyslijZmiany(true); await pobierz(); wyslijZdjecia(); kluczPlikow().catch(() => {}); stan.blad = ''; }
+    try { await wyslijZmiany(true); await pobierz(); wyslijZdjecia(); kluczPlikow().catch(() => {}); wyslijDziennik(); polaczNaZywo(); stan.blad = ''; }
     catch (e) { if (e.message !== 'wylogowano') stan.blad = navigator.onLine ? 'Brak połączenia z serwerem' : ''; }
     finally { synchronizacja = null; powiadom(); }
   })();
@@ -215,7 +279,8 @@ async function pobierz() {
   // serwer odtworzony z kopii ma niższy numer zmian — wtedy pobieramy wszystko od nowa
   if (j.seq < stan.seq) { stan.seq = 0; await idbPut('meta', 0, 'seq'); return pobierz(); }
   if (j.oferty.length) {
-    await tx('baza', 'readwrite', (s) => { for (const o of j.oferty) s.put(o); });
+    const zak = await Promise.all(j.oferty.map((o) => koduj('baza', o)));
+    await tx('baza', 'readwrite', (s) => { for (const o of zak) s.put(o); });
     for (const o of j.oferty) bazy.set(o.id, o);
   }
   if (j.seq !== stan.seq) { stan.seq = j.seq; await idbPut('meta', j.seq, 'seq'); }
@@ -246,12 +311,46 @@ export async function aktywnoscWidziana() {
 
 // ---------- na żywo ----------
 let es = null;
-function polaczNaZywo() {
-  if (!stan.token || typeof EventSource === 'undefined') return;
+let laczy = false;
+async function polaczNaZywo() {
+  if (!stan.token || typeof EventSource === 'undefined' || laczy) return;
   if (es && es.readyState !== 2) return;
-  es = new EventSource(`${API}/na-zywo?t=${encodeURIComponent(stan.token)}`);
-  es.addEventListener('seq', (e) => { stan.polaczony = true; if (Number(e.data) > stan.seq) pobierz().catch(() => {}); powiadom(); });
-  es.onerror = () => { stan.polaczony = false; powiadom(); };
+  laczy = true;
+  try {
+    const { b } = await api('/bilet'); // jednorazowy bilet — token nie trafia do adresu ani do logów
+    es = new EventSource(`${API}/na-zywo?b=${encodeURIComponent(b)}`);
+    es.addEventListener('seq', (e) => { stan.polaczony = true; if (Number(e.data) > stan.seq) pobierz().catch(() => {}); powiadom(); });
+    es.addEventListener('prosba', () => odswiezJa());
+    // po zerwaniu bilet jest zużyty — zamykamy i łączymy się od nowa z nowym biletem
+    es.onerror = () => { stan.polaczony = false; try { es.close(); } catch { /* */ } powiadom(); setTimeout(() => polaczNaZywo(), 5000); };
+  } catch { /* offline — spróbuje przy następnej synchronizacji */ }
+  finally { laczy = false; }
+}
+
+// ---------- dziennik dostępu (kto oglądał dane klientów i właścicieli) ----------
+const doDziennika = [], ostatnioZapisane = new Map();
+export function zapiszDostep(oid, k, co) {
+  const klucz = `${oid}|${k}|${co}`;
+  if (Date.now() - (ostatnioZapisane.get(klucz) || 0) < 10 * 60e3) return; // to samo oglądanie raz na 10 min
+  ostatnioZapisane.set(klucz, Date.now());
+  doDziennika.push({ oid, k, co, kiedy: Date.now() });
+  clearTimeout(tDz); tDz = setTimeout(wyslijDziennik, 2500);
+}
+let tDz = 0;
+async function wyslijDziennik() {
+  if (!doDziennika.length || !stan.token || !navigator.onLine) return;
+  const paczka = doDziennika.splice(0, 100);
+  try { await api('/dziennik', { method: 'POST', body: JSON.stringify({ wpisy: paczka }) }); } catch { doDziennika.unshift(...paczka); }
+}
+export const dziennik = () => api('/dziennik').then((j) => j.dziennik);
+export const daneOsoby = (oid, k) => api(`/osoba?oferta=${encodeURIComponent(oid)}&k=${encodeURIComponent(k)}`);
+export async function usunOsobe(oid, k) {
+  await api(`/osoba?oferta=${encodeURIComponent(oid)}&k=${encodeURIComponent(k)}`, { method: 'DELETE' });
+  for (const z of kolejka) if (z.oid === oid && z.pola && k in z.pola) delete z.pola[k]; // niewysłane zmiany tej osoby też znikają
+  kolejka = kolejka.filter((z) => z.usun || Object.keys(z.pola || {}).length);
+  await tx('kolejka', 'readwrite', (s) => { s.clear(); });
+  for (const z of kolejka) await idbPut('kolejka', z);
+  await pobierz(); odswiezJa();
 }
 
 // ---------- zdjęcia ----------

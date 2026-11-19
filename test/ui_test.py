@@ -1,6 +1,7 @@
 # Test interfejsu w prawdziwej przeglądarce: python3 test/ui_test.py
 # Wymaga: serwer API na 127.0.0.1:18931 (konta marek/tajne123, anna/haslo456), statyczny na localhost:8766, zdjęcia w /tmp/amtest.
 import json, time, urllib.request, sys, os
+from pomoc import zaloguj as zaloguj_pin, odblokuj, wpisz_pin
 from playwright.sync_api import sync_playwright, expect
 
 URL = 'http://localhost:8766/?api=http://127.0.0.1:18931'
@@ -13,10 +14,7 @@ def loguj_bledy(page, nazwa):
     page.on('pageerror', lambda e: bledy.append(f'{nazwa} pageerror: {e}'))
 
 def zaloguj(page, login, haslo):
-    page.goto(URL)
-    page.fill('#l-login', login); page.fill('#l-haslo', haslo)
-    page.click('#f-log button')
-    page.wait_for_selector('#karty')
+    zaloguj_pin(page, URL, login, haslo)
 
 def zrzut_kontenera(page, sel, nazwa, ile=4):
     """Zrzuty kolejnych ekranów przewijanego kontenera."""

@@ -582,6 +582,13 @@ input[type=date]:not(:valid)::-webkit-datetime-edit, input[type=datetime-local]:
 .przypomnienie .ik { width: 18px; height: 18px; color: var(--zle); flex: none; }
 .przypomnienie span { flex: 1; min-width: 0; }
 .przypomnienie .ik:last-child { color: var(--ash); }
+.przypomnienie.prosba { flex-wrap: wrap; border-color: rgba(200, 164, 77, .6); }
+.przypomnienie.prosba .ik { color: var(--gold-l); }
+.przypomnienie .kod-prosby { color: var(--gold-l); font-size: 1.25em; letter-spacing: .08em; white-space: nowrap; }
+.rodo-wpisu { flex-wrap: wrap; gap: 8px; border-top: 1px solid rgba(255, 255, 255, .06); padding-top: 10px; }
+.zly-tekst { color: var(--zle) !important; }
+.dziennik .wiersz-dz { padding: 8px 2px; border-bottom: 1px solid rgba(255, 255, 255, .06); font-size: 14px; line-height: 1.4; text-align: left; }
+.form-okna .pole { margin-bottom: 10px; }
 
 /* 1.5.0: rzut z edytora */
 .panel-rzut { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-bottom: 14px; border-radius: 18px; }

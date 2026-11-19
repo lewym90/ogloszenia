@@ -166,3 +166,16 @@ Testy: test/ui_plan_test.py, ui_rzut_test.py, ui_granica_test.py, ui_plan_pietra
   prysznic walk-in z jedną szybą, deszczownica i odpływ liniowy przy ścianie (górna krawędź; drugi bok — lustro);
   łóżko 140×200 (grafika 160) — skaner: łóżko 133–152 cm → 140.
 - W bibliotece `a: null` (nie z arkusza). 3D: ciąg kuchenny = bryła 90 cm.
+
+## 1.10.0 / serwer 1.6.0 (19.11.2026) — bezpieczeństwo danych osobowych (RODO) i przygotowanie pod AML
+Decyzje właściciela: sam PIN (bez Face ID z przeglądarki), blokada po 10 min bez używania, klienci bez transakcji 12 mies. od ostatniego kontaktu, zostajemy na obecnym serwerze (RapidDC = Sprint S.A.) i go utwardzamy.
+- Serwer: AES-256-GCM w spoczynku — `oferty.dane`, historia zmian (stara/nowa), pliki dokumentów (`AME1|iv|tag|treść`), kopie bazy. Klucz z systemd `LoadCredential=klucz:/etc/amoferty/klucz` (install.sh go tworzy i raz pokazuje KOD ODZYSKIWANIA; `amoferty-kod` pokazuje go ponownie). Bez klucza serwer nie wstaje. Pierwszy start szyfruje stare dane (`zaszyfrujStare`).
+- Testy: `AM_TRYB_TESTOWY=1` — klucz w `DANE/klucz-testowy`, bez kodu nowego urządzenia, hasło min. 6. Pliki w `/tmp/amdane/pliki` są zaszyfrowane (ui_granica_test odszyfrowuje je przez node).
+- Nowe urządzenie: 6-cyfrowy kod widoczny na zalogowanym urządzeniu tego samego konta (albo wspólnika, gdy konto nie ma żadnego), 10 min, 5 złych = prośba usunięta. Hasło < 12 znaków → wymuszona zmiana (`/haslo`).
+- Retencja (codziennie w `kopia()`): usunięta oferta → całkowicie po 30 dniach; klient → 12 mies. od ostatniej zmiany (transakcja → 5 lat); dziennik 5 lat; urządzenie nieużywane 30 dni wylogowane. Baner „do usunięcia” + „Zachowaj (nadal w kontakcie)”.
+- RODO: `/osoba` GET (art. 15, plik JSON) i DELETE (art. 17, usuwa też z historii). Dziennik dostępu: kto otworzył dane klienta/właściciela/dokument, eksport, kopia, usunięcie.
+- SSE przez jednorazowy bilet (`/bilet`), nagłówek HSTS.
+- Telefon: `js/sejf.js` — PBKDF2-SHA256 310 tys. → AES-KW → klucz AES-GCM. Zaszyfrowane: baza, kolejka, wysyłka, pliki, token, konto, konta, agent, aktywność, kluczPlikow. Klucz w sessionStorage (`am-sejf`, `am-sejf-t`) — zamknięcie aplikacji albo 10 min bez dotyku = PIN. 5 złych PIN-ów, wylogowanie, 401 → kasowanie baz (`amoferty`, `am-rzut`); inne karty oddają bazę (`onversionchange`) i przeładowują się.
+- Ekrany logowania (kod / nowe hasło / PIN) są chronione: `odswiez()` nie buduje szkieletu, dopóki jest `.logowanie`.
+- Testy: `test/ui_bezpieczenstwo_test.py [silnik] [szer wys]` (własny serwer produkcyjny na 18932) — 23/23 chromium i webkit 390/820/1440. Wszystkie stare testy UI używają `test/pomoc.py` (PIN 482913).
+- Do zrobienia poza kodem: umowa powierzenia z Sprint S.A., rejestr czynności, klauzula informacyjna, procedura naruszeń (72 h), ocena ryzyka AML (art. 27) i procedura wewnętrzna (art. 50) przed startem firmy; sprawdzić status druku 3163 (SIGIIF).

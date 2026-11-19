@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
-export const WERSJA = '1.5.1';
+export const WERSJA = '1.6.0';
 const PORT = Number(process.env.PORT || 18930);
 const DANE = process.env.AM_DANE || './dane';
 const ORIGINS = (process.env.AM_ORIGINS || 'https://lewym90.github.io,http://localhost:8766,http://127.0.0.1:8766').split(',');
@@ -46,11 +46,60 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS przyjete (cid TEXT PRIMARY KEY, kiedy INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS pliki (id TEXT PRIMARY KEY, oferta TEXT NOT NULL, typ TEXT NOT NULL, nazwa TEXT NOT NULL DEFAULT '', rozmiar INTEGER NOT NULL,
     kto INTEGER, utworzone INTEGER NOT NULL);
+  CREATE TABLE IF NOT EXISTS prosby (id TEXT PRIMARY KEY, konto INTEGER NOT NULL, nazwa TEXT NOT NULL, kod TEXT NOT NULL, utworzona INTEGER NOT NULL,
+    proby INTEGER NOT NULL DEFAULT 0, slabe INTEGER NOT NULL DEFAULT 0);
+  CREATE TABLE IF NOT EXISTS dziennik (id INTEGER PRIMARY KEY, konto INTEGER, urzadzenie TEXT, oferta TEXT, pole TEXT, co TEXT NOT NULL, kiedy INTEGER NOT NULL);
+  CREATE INDEX IF NOT EXISTS dziennik_kiedy ON dziennik(kiedy);
 `);
 // 1.1.0: zdjęcie średnie (karty i nagłówek oferty)
 try { db.exec('ALTER TABLE zdjecia ADD COLUMN sr INTEGER NOT NULL DEFAULT 0'); } catch { /* już jest */ }
 
 const teraz = () => Date.now();
+const DZIEN = 86400e3;
+const trybTestowy = () => process.env.AM_TRYB_TESTOWY === '1'; // tylko testy: bez kodu nowego urządzenia i bez wymogu długiego hasła
+export const MIN_HASLO = 12;
+
+// ---------- szyfrowanie danych w spoczynku (oferty, historia zmian, dokumenty, kopie bazy) ----------
+// Klucz 256-bit poza katalogiem danych: systemd LoadCredential=klucz:/etc/amoferty/klucz (plik tylko dla roota).
+// Bez klucza nie da się odczytać ani bazy, ani kopii — kod odzyskiwania (= klucz) właściciel trzyma na kartce.
+let _klucz = null;
+function kluczDanych() {
+  if (_klucz) return _klucz;
+  const cd = process.env.CREDENTIALS_DIRECTORY;
+  let p = cd && fs.existsSync(path.join(cd, 'klucz')) ? path.join(cd, 'klucz') : process.env.AM_KLUCZ_PLIK || '';
+  if (!p && trybTestowy()) p = path.join(DANE, 'klucz-testowy');
+  if (!p) throw new Error('Brak klucza szyfrowania (LoadCredential=klucz w usłudze albo AM_KLUCZ_PLIK).');
+  if (!fs.existsSync(p) && (trybTestowy() || process.env.AM_KLUCZ_PLIK) && !cd) fs.writeFileSync(p, crypto.randomBytes(32).toString('base64'), { mode: 0o600 });
+  const k = Buffer.from(fs.readFileSync(p, 'utf8').trim(), 'base64');
+  if (k.length !== 32) throw new Error('Zły klucz szyfrowania.');
+  return (_klucz = k);
+}
+const E1 = 'e1:';
+export function szyfruj(s) {
+  if (s === null || s === undefined) return s;
+  const iv = crypto.randomBytes(12), c = crypto.createCipheriv('aes-256-gcm', kluczDanych(), iv);
+  const ct = Buffer.concat([c.update(String(s), 'utf8'), c.final()]);
+  return E1 + Buffer.concat([iv, c.getAuthTag(), ct]).toString('base64');
+}
+export function odszyfruj(s) {
+  if (typeof s !== 'string' || !s.startsWith(E1)) return s; // stary zapis jawny (przed 1.6.0)
+  const b = Buffer.from(s.slice(E1.length), 'base64');
+  const d = crypto.createDecipheriv('aes-256-gcm', kluczDanych(), b.subarray(0, 12)); d.setAuthTag(b.subarray(12, 28));
+  return Buffer.concat([d.update(b.subarray(28)), d.final()]).toString('utf8');
+}
+const MAGIA = Buffer.from('AME1');
+export function szyfrujBufor(b) {
+  const iv = crypto.randomBytes(12), c = crypto.createCipheriv('aes-256-gcm', kluczDanych(), iv);
+  const ct = Buffer.concat([c.update(b), c.final()]);
+  return Buffer.concat([MAGIA, iv, c.getAuthTag(), ct]);
+}
+export const zaszyfrowany = (b) => b.length >= 32 && b.subarray(0, 4).equals(MAGIA);
+export function odszyfrujBufor(b) {
+  if (!zaszyfrowany(b)) return b;
+  const d = crypto.createDecipheriv('aes-256-gcm', kluczDanych(), b.subarray(4, 16)); d.setAuthTag(b.subarray(16, 32));
+  return Buffer.concat([d.update(b.subarray(32)), d.final()]);
+}
+const daneOferty = (r) => JSON.parse(odszyfruj(r.dane) || '{}');
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const losowe = (n = 24) => crypto.randomBytes(n).toString('base64url');
 const ust = (k) => db.prepare('SELECT wartosc FROM ustawienia WHERE klucz = ?').get(k)?.wartosc ?? null;
@@ -98,7 +147,7 @@ function sprawdzHaslo(haslo, zapis) {
 export function zapiszKonto(login, nazwa, haslo, telefon = '') {
   login = String(login || '').trim().toLowerCase();
   if (!/^[a-z0-9._-]{2,30}$/.test(login)) throw new Error('Login: 2–30 znaków, małe litery, cyfry, kropka, myślnik.');
-  if (String(haslo || '').length < 6) throw new Error('Hasło musi mieć co najmniej 6 znaków.');
+  if (String(haslo || '').length < (trybTestowy() ? 6 : MIN_HASLO)) throw new Error(`Hasło musi mieć co najmniej ${trybTestowy() ? 6 : MIN_HASLO} znaków.`);
   const ist = db.prepare('SELECT id FROM konta WHERE login = ?').get(login);
   if (ist) {
     db.prepare('UPDATE konta SET haslo = ?, nazwa = ?, telefon = ? WHERE id = ?').run(hashHasla(haslo), nazwa || login, telefon, ist.id);
@@ -178,6 +227,7 @@ function nieudana(ip) { const p = proby.get(ip); if (!p || teraz() - p.t > OKNO)
 function urzadzenieZTokenu(t) {
   if (!t) return null;
   const d = db.prepare('SELECT u.*, k.nazwa AS konto_nazwa, k.login FROM urzadzenia u JOIN konta k ON k.id = u.konto WHERE u.token = ?').get(sha(String(t)));
+  if (d && teraz() - d.ostatnio > 30 * DZIEN) { db.prepare('DELETE FROM urzadzenia WHERE id = ?').run(d.id); return null; } // nieużywane 30 dni — wylogowane
   if (d && teraz() - d.ostatnio > 60e3) { db.prepare('UPDATE urzadzenia SET ostatnio = ? WHERE id = ?').run(teraz(), d.id); d.ostatnio = teraz(); }
   return d || null;
 }
@@ -188,7 +238,7 @@ function wolneNaDysku() { try { const s = fs.statfsSync(DANE); return s.bavail *
 function cors(req) {
   const o = req.headers.origin;
   const h = { 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Max-Age': '86400', 'Access-Control-Expose-Headers': 'X-Nazwa', Vary: 'Origin' };
+    'Access-Control-Max-Age': '86400', 'Access-Control-Expose-Headers': 'X-Nazwa', Vary: 'Origin', 'Strict-Transport-Security': 'max-age=31536000' };
   if (o && ORIGINS.includes(o)) h['Access-Control-Allow-Origin'] = o;
   return h;
 }
@@ -214,6 +264,9 @@ const sluchacze = new Set();
 function rozglos(seq) {
   for (const s of sluchacze) { try { s.write(`event: seq\ndata: ${seq}\n\n`); } catch { /* zamknięty */ } }
 }
+function rozglosZdarzenie(nazwa) {
+  for (const s of sluchacze) { try { s.write(`event: ${nazwa}\ndata: 1\n\n`); } catch { /* zamknięty */ } }
+}
 setInterval(() => { for (const s of sluchacze) { try { s.write(': ping\n\n'); } catch { /* */ } } }, 25e3).unref();
 
 // ---------- logika ofert ----------
@@ -229,7 +282,7 @@ export function zastosujZmiany(konto, zmiany) {
       if (db.prepare('SELECT 1 FROM przyjete WHERE cid = ?').get(z.cid)) { wyniki.push({ cid: z.cid, ok: true, juz: true }); continue; }
       const ist = db.prepare('SELECT * FROM oferty WHERE id = ?').get(z.oid);
       const t = teraz();
-      const dane = ist ? JSON.parse(ist.dane) : {};
+      const dane = ist ? daneOferty(ist) : {};
       let zmienione = 0;
       if (z.usun) {
         if (ist && !ist.usunieta) {
@@ -246,18 +299,18 @@ export function zastosujZmiany(konto, zmiany) {
           const nowa = v === null || v === undefined ? null : JSON.stringify(v);
           if (stara === nowa) continue;
           if (nowa === null) delete dane[k]; else dane[k] = v;
-          db.prepare('INSERT INTO historia (oferta, pole, stara, nowa, kto, kiedy) VALUES (?, ?, ?, ?, ?, ?)').run(z.oid, k, stara, nowa, konto, t);
+          db.prepare('INSERT INTO historia (oferta, pole, stara, nowa, kto, kiedy) VALUES (?, ?, ?, ?, ?, ?)').run(z.oid, k, szyfruj(stara), szyfruj(nowa), konto, t);
           if (k === 'status') statusy.push({ oid: z.oid, status: v, tytul: dane.roboczy || dane.ulica || 'oferta' });
           if (k.startsWith('wz_') && stara === null && v && typeof v === 'object') statusy.push({ oid: z.oid, wizyta: String(v.kiedy || ''), tytul: dane.roboczy || dane.ulica || 'oferta' });
           zmienione++;
         }
         if (!ist) {
           const seq = nastepnySeq();
-          db.prepare('INSERT INTO oferty (id, dane, seq, utworzona, zmieniona, kto) VALUES (?, ?, ?, ?, ?, ?)').run(z.oid, JSON.stringify(dane), seq, t, t, konto);
+          db.prepare('INSERT INTO oferty (id, dane, seq, utworzona, zmieniona, kto) VALUES (?, ?, ?, ?, ?, ?)').run(z.oid, szyfruj(JSON.stringify(dane)), seq, t, t, konto);
           statusy.push({ oid: z.oid, nowa: true, tytul: dane.roboczy || 'nowa oferta' });
         } else if (zmienione || ist.usunieta) {
           const seq = nastepnySeq();
-          db.prepare('UPDATE oferty SET dane = ?, seq = ?, zmieniona = ?, kto = ?, usunieta = 0 WHERE id = ?').run(JSON.stringify(dane), seq, t, konto, z.oid);
+          db.prepare('UPDATE oferty SET dane = ?, seq = ?, zmieniona = ?, kto = ?, usunieta = 0 WHERE id = ?').run(szyfruj(JSON.stringify(dane)), seq, t, konto, z.oid);
         }
       }
       db.prepare('INSERT INTO przyjete (cid, kiedy) VALUES (?, ?)').run(z.cid, t);
@@ -282,7 +335,7 @@ export function zastosujZmiany(konto, zmiany) {
 }
 export function zmianyOd(od) {
   const rows = db.prepare('SELECT id, dane, seq, utworzona, zmieniona, kto, usunieta FROM oferty WHERE seq > ? ORDER BY seq').all(Number(od) || 0);
-  return { seq: Number(ust('seq') || 0), oferty: rows.map((r) => ({ id: r.id, dane: r.usunieta ? null : JSON.parse(r.dane), seq: r.seq, utworzona: r.utworzona, zmieniona: r.zmieniona, kto: r.kto, usunieta: !!r.usunieta })) };
+  return { seq: Number(ust('seq') || 0), oferty: rows.map((r) => ({ id: r.id, dane: r.usunieta ? null : daneOferty(r), seq: r.seq, utworzona: r.utworzona, zmieniona: r.zmieniona, kto: r.kto, usunieta: !!r.usunieta })) };
 }
 
 // ---------- kosz: usunięte zdjęcia i dokumenty czekają 30 dni ----------
@@ -337,18 +390,131 @@ export function kopia() {
   });
   db.prepare('DELETE FROM przyjete WHERE kiedy < ?').run(teraz() - 30 * 86400e3);
   oproznijKosz();
+  if (teraz() - Number(ust('retencja') || 0) > DZIEN - 3600e3) { retencja(); ustaw('retencja', teraz()); }
 }
 
 function wyslijPlik(res, nag, id) {
   const r = db.prepare('SELECT typ, nazwa FROM pliki WHERE id = ?').get(id);
   const plik = r && path.join(P_PLIKI, `${id}.${r.typ}`);
   if (!r || !fs.existsSync(plik)) return json(res, nag, 404, { blad: 'Brak pliku na serwerze.' });
-  const st = fs.statSync(plik);
+  const b = odszyfrujBufor(fs.readFileSync(plik));
   const nazwa = (r.nazwa || `dokument.${r.typ}`).replace(/["\\\r\n]/g, '');
-  res.writeHead(200, { ...nag, 'Content-Type': TYPY_PLIKOW[r.typ], 'Content-Length': st.size, 'Cache-Control': 'private, no-store',
+  res.writeHead(200, { ...nag, 'Content-Type': TYPY_PLIKOW[r.typ], 'Content-Length': b.length, 'Cache-Control': 'private, no-store',
     'Content-Disposition': `inline; filename="${nazwa.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(nazwa)}`,
     'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
-  fs.createReadStream(plik).pipe(res);
+  res.end(b);
+}
+
+// ---------- logowanie nowego urządzenia: kod z zalogowanego urządzenia ----------
+const PROSBA_WAZNA = 10 * 60e3;
+function nowyToken(k, nazwaUrz, slabe) {
+  const token = losowe(32);
+  db.prepare('INSERT INTO urzadzenia (token, konto, nazwa, utworzone, ostatnio) VALUES (?, ?, ?, ?, ?)').run(sha(token), k.id, nazwaUrz, teraz(), teraz());
+  return { token, konto: { id: k.id, login: k.login, nazwa: k.nazwa, telefon: k.telefon }, zmienHaslo: !!slabe };
+}
+// kto może zatwierdzić: urządzenia tego samego konta, a gdy konto nie ma żadnego — urządzenia wspólnika
+function zatwierdzajacy(konto) {
+  const wlasne = db.prepare('SELECT * FROM urzadzenia WHERE konto = ?').all(konto);
+  return wlasne.length ? { wlasne: true, urz: wlasne } : { wlasne: false, urz: db.prepare('SELECT * FROM urzadzenia WHERE konto != ?').all(konto) };
+}
+function prosbyDla(dev) {
+  return db.prepare('SELECT p.*, k.nazwa AS konto_nazwa FROM prosby p JOIN konta k ON k.id = p.konto WHERE p.utworzona > ?').all(teraz() - PROSBA_WAZNA)
+    .filter((p) => p.konto === dev.konto || !db.prepare('SELECT 1 FROM urzadzenia WHERE konto = ?').get(p.konto))
+    .map((p) => ({ id: p.id, urzadzenie: p.nazwa, konto: p.konto_nazwa, wlasne: p.konto === dev.konto, kod: p.kod, wygasa: p.utworzona + PROSBA_WAZNA }));
+}
+const bilety = new Map();
+function urzadzenieZBiletu(b) {
+  const v = bilety.get(String(b)); bilety.delete(String(b));
+  if (!v || v.do < teraz()) return null;
+  return db.prepare('SELECT u.*, k.nazwa AS konto_nazwa, k.login FROM urzadzenia u JOIN konta k ON k.id = u.konto WHERE u.id = ?').get(v.dev) || null;
+}
+
+// ---------- dziennik dostępu do danych osobowych ----------
+function zapiszDziennik(dev, oid, pole, co, kiedy = teraz()) {
+  db.prepare('INSERT INTO dziennik (konto, urzadzenie, oferta, pole, co, kiedy) VALUES (?, ?, ?, ?, ?, ?)').run(dev?.konto ?? null, dev?.nazwa || null, oid, pole, co, Math.min(kiedy, teraz()));
+}
+
+// ---------- usuwanie i okresy przechowywania ----------
+// klient bez transakcji: 12 miesięcy od ostatniej zmiany wpisu; klient z transakcją: 5 lat (jak dokumentacja AML)
+export const RETENCJA = { klient: 365 * DZIEN, klientTransakcja: 5 * 365 * DZIEN, usunietaOferta: 30 * DZIEN, dziennik: 5 * 365 * DZIEN };
+function ostatniaZmiana(oid, pole, utworzona) {
+  return db.prepare('SELECT MAX(kiedy) AS m FROM historia WHERE oferta = ? AND pole = ?').get(oid, pole)?.m || utworzona;
+}
+export function doUsuniecia(doKiedy = teraz()) {
+  const wyn = [];
+  for (const o of db.prepare('SELECT * FROM oferty WHERE usunieta = 0').all()) {
+    let d; try { d = daneOferty(o); } catch { continue; }
+    for (const [k, v] of Object.entries(d)) {
+      if (!k.startsWith('kl_') || !v || typeof v !== 'object') continue;
+      const termin = ostatniaZmiana(o.id, k, o.utworzona) + (v.status === 'transakcja' ? RETENCJA.klientTransakcja : RETENCJA.klient);
+      if (termin <= doKiedy) wyn.push({ oid: o.id, k, termin });
+    }
+  }
+  return wyn;
+}
+// usuwa wpis z oferty razem z całą historią jego zmian; w historii zostaje tylko ślad bez danych
+export function usunPole(oid, pole, konto, powod) {
+  db.exec('BEGIN');
+  try {
+    const o = db.prepare('SELECT * FROM oferty WHERE id = ?').get(oid);
+    if (o) {
+      const d = daneOferty(o);
+      if (d[pole] !== undefined) {
+        delete d[pole];
+        const seq = nastepnySeq();
+        db.prepare('UPDATE oferty SET dane = ?, seq = ?, zmieniona = ? WHERE id = ?').run(szyfruj(JSON.stringify(d)), seq, teraz(), oid);
+      }
+      db.prepare('DELETE FROM historia WHERE oferta = ? AND pole = ?').run(oid, pole);
+      db.prepare('INSERT INTO historia (oferta, pole, stara, nowa, kto, kiedy) VALUES (?, ?, ?, ?, ?, ?)').run(oid, '_usunieto', null, szyfruj(`Usunięto dane osoby (${powod})`), konto || null, teraz());
+    }
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+  rozglos(Number(ust('seq') || 0));
+}
+function usunOferteCalkiem(oid) {
+  for (const r of db.prepare('SELECT id, typ FROM pliki WHERE oferta = ?').all(oid)) fs.rmSync(path.join(P_PLIKI, `${r.id}.${r.typ}`), { force: true });
+  for (const r of db.prepare('SELECT id FROM zdjecia WHERE oferta = ?').all(oid)) for (const f of [`${r.id}.jpg`, `${r.id}.sr.jpg`, `${r.id}.mini.jpg`]) fs.rmSync(path.join(P_ZDJ, f), { force: true });
+  db.prepare('DELETE FROM pliki WHERE oferta = ?').run(oid);
+  db.prepare('DELETE FROM zdjecia WHERE oferta = ?').run(oid);
+  db.prepare('DELETE FROM historia WHERE oferta = ?').run(oid);
+  db.prepare('DELETE FROM dziennik WHERE oferta = ?').run(oid);
+  db.prepare('DELETE FROM oferty WHERE id = ?').run(oid);
+}
+export function retencja(t = teraz()) {
+  for (const o of db.prepare('SELECT id FROM oferty WHERE usunieta = 1 AND zmieniona < ?').all(t - RETENCJA.usunietaOferta)) usunOferteCalkiem(o.id);
+  for (const w of doUsuniecia(t)) usunPole(w.oid, w.k, null, 'minął okres przechowywania');
+  db.prepare('DELETE FROM dziennik WHERE kiedy < ?').run(t - RETENCJA.dziennik);
+  db.prepare('DELETE FROM urzadzenia WHERE ostatnio < ?').run(t - 30 * DZIEN);
+  db.prepare('DELETE FROM prosby WHERE utworzona < ?').run(t - PROSBA_WAZNA);
+}
+
+// ---------- jednorazowe zaszyfrowanie danych sprzed 1.6.0 (baza, kopie bazy, dokumenty, kosz) ----------
+function zaszyfrujBaze(d) {
+  const o = d.prepare("SELECT id, dane FROM oferty WHERE dane NOT LIKE 'e1:%'").all();
+  const h = d.prepare("SELECT id, stara, nowa FROM historia WHERE (stara IS NOT NULL AND stara NOT LIKE 'e1:%') OR (nowa IS NOT NULL AND nowa NOT LIKE 'e1:%')").all();
+  if (!o.length && !h.length) return 0;
+  d.exec('BEGIN');
+  try {
+    for (const r of o) d.prepare('UPDATE oferty SET dane = ? WHERE id = ?').run(szyfruj(r.dane), r.id);
+    for (const r of h) d.prepare('UPDATE historia SET stara = ?, nowa = ? WHERE id = ?').run(r.stara === null || r.stara.startsWith(E1) ? r.stara : szyfruj(r.stara), r.nowa === null || r.nowa.startsWith(E1) ? r.nowa : szyfruj(r.nowa), r.id);
+    d.exec('COMMIT');
+  } catch (e) { d.exec('ROLLBACK'); throw e; }
+  return o.length + h.length;
+}
+export function zaszyfrujStare() {
+  let n = zaszyfrujBaze(db);
+  for (const f of fs.readdirSync(P_KOPIE).filter((x) => /^amoferty-\d{10}\.db$/.test(x))) {
+    try { const k = new DatabaseSync(path.join(P_KOPIE, f)); n += zaszyfrujBaze(k); k.exec('VACUUM'); k.close(); } catch (e) { console.error('kopia', f, e.message); }
+  }
+  const pliki = [...fs.readdirSync(P_PLIKI).map((f) => path.join(P_PLIKI, f)), ...fs.readdirSync(P_KOSZ).filter((f) => f.startsWith('pliki--')).map((f) => path.join(P_KOSZ, f))];
+  for (const p of pliki) {
+    if (p.endsWith('.tmp')) continue;
+    const b = fs.readFileSync(p); if (zaszyfrowany(b)) continue;
+    const st = fs.statSync(p), tmp = `${p}.${losowe(6)}.tmp`;
+    fs.writeFileSync(tmp, szyfrujBufor(b)); fs.renameSync(tmp, p); fs.utimesSync(p, st.atime, st.mtime); n++;
+  }
+  if (n) db.exec('VACUUM'); // stare, jawne strony bazy nie zostają w pliku
+  return n;
 }
 
 // ---------- serwer ----------
@@ -370,27 +536,108 @@ export function utworzSerwer() {
         const k = db.prepare('SELECT * FROM konta WHERE login = ?').get(String(b.login || '').trim().toLowerCase());
         if (!k || !sprawdzHaslo(b.haslo, k.haslo)) { nieudana(ip); return json(res, nag, 401, { blad: 'Błędny login lub hasło.' }); }
         proby.delete(ip);
-        const token = losowe(32);
-        db.prepare('INSERT INTO urzadzenia (token, konto, nazwa, utworzone, ostatnio) VALUES (?, ?, ?, ?, ?)').run(sha(token), k.id, czysty(b.urzadzenie, 40) || 'urządzenie', teraz(), teraz());
-        return json(res, nag, 200, { token, konto: { id: k.id, login: k.login, nazwa: k.nazwa, telefon: k.telefon } });
+        const nazwaUrz = czysty(b.urzadzenie, 40) || 'urządzenie', slabe = !trybTestowy() && String(b.haslo).length < MIN_HASLO;
+        // nowe urządzenie zatwierdza się kodem pokazanym na już zalogowanym (samo hasło nie wystarczy)
+        if (!trybTestowy() && db.prepare('SELECT 1 FROM urzadzenia LIMIT 1').get()) {
+          db.prepare('DELETE FROM prosby WHERE utworzona < ? OR konto = ?').run(teraz() - PROSBA_WAZNA, k.id);
+          const id = losowe(12), kod = String(crypto.randomInt(0, 1e6)).padStart(6, '0');
+          db.prepare('INSERT INTO prosby (id, konto, nazwa, kod, utworzona, slabe) VALUES (?, ?, ?, ?, ?, ?)').run(id, k.id, nazwaUrz, kod, teraz(), slabe ? 1 : 0);
+          const zatw = zatwierdzajacy(k.id);
+          for (const d of zatw.urz) if (d.push) wyslijPush(d, { tytul: 'Logowanie na nowym urządzeniu', tresc: `${k.nazwa}: ${nazwaUrz}. Kod jest w aplikacji — podaj go tylko, jeśli to Ty.`, ekran: 'ustawienia' });
+          rozglosZdarzenie('prosba');
+          return json(res, nag, 200, { oczekuje: true, prosba: id, gdzie: zatw.wlasne ? 'na Twoim zalogowanym telefonie albo komputerze' : 'na urządzeniu wspólnika' });
+        }
+        return json(res, nag, 200, nowyToken(k, nazwaUrz, slabe));
+      }
+      if (p === '/logowanie/kod' && req.method === 'POST') {
+        const ip = ipKlienta(req);
+        const blok = zablokowany(ip);
+        if (blok) return json(res, nag, 429, { blad: `Za dużo prób. Spróbuj za ${blok} min.` });
+        const b = await cialoJson(req);
+        const pr = db.prepare('SELECT * FROM prosby WHERE id = ?').get(String(b.prosba || ''));
+        if (!pr || teraz() - pr.utworzona > PROSBA_WAZNA) return json(res, nag, 410, { blad: 'Prośba wygasła albo została odrzucona. Zaloguj się jeszcze raz.' });
+        const ok = String(b.kod || '').replace(/\D/g, '');
+        if (ok.length !== 6 || !crypto.timingSafeEqual(Buffer.from(ok), Buffer.from(pr.kod))) {
+          nieudana(ip);
+          if (pr.proby + 1 >= 5) db.prepare('DELETE FROM prosby WHERE id = ?').run(pr.id); else db.prepare('UPDATE prosby SET proby = proby + 1 WHERE id = ?').run(pr.id);
+          return json(res, nag, 401, { blad: pr.proby + 1 >= 5 ? 'Za dużo złych kodów. Zaloguj się jeszcze raz.' : 'Zły kod.' });
+        }
+        db.prepare('DELETE FROM prosby WHERE id = ?').run(pr.id);
+        rozglosZdarzenie('prosba');
+        const k = db.prepare('SELECT * FROM konta WHERE id = ?').get(pr.konto);
+        return json(res, nag, 200, nowyToken(k, pr.nazwa, !!pr.slabe));
       }
 
       const mp = p.match(/^\/plik\/([A-Za-z0-9_-]{6,40})$/);
       if (mp && req.method === 'GET' && u.searchParams.get('k')) {
         if (!sprawdzKluczPlikow(u.searchParams.get('k'))) return json(res, nag, 403, { blad: 'Link wygasł. Otwórz dokument jeszcze raz z aplikacji.' });
+        const devK = db.prepare('SELECT u.*, k.nazwa AS konto_nazwa FROM urzadzenia u JOIN konta k ON k.id = u.konto WHERE u.id = ?').get(Number(String(u.searchParams.get('k')).split('.')[0]));
+        const pk = db.prepare('SELECT oferta FROM pliki WHERE id = ?').get(mp[1]);
+        if (devK && pk) zapiszDziennik(devK, pk.oferta, mp[1], 'dokument');
         return wyslijPlik(res, nag, mp[1]);
       }
 
       // wszystko dalej wymaga zalogowanego urządzenia
       const auth = String(req.headers.authorization || '');
       const token = auth.startsWith('Bearer ') ? auth.slice(7) : u.searchParams.get('t');
-      const dev = urzadzenieZTokenu(token);
+      const dev = p === '/na-zywo' && u.searchParams.get('b') ? urzadzenieZBiletu(u.searchParams.get('b')) : urzadzenieZTokenu(token);
       if (!dev) return json(res, nag, 401, { blad: 'Urządzenie nie jest zalogowane.' });
 
       if (p === '/ja' && req.method === 'GET') {
         const konta = db.prepare('SELECT id, login, nazwa, telefon FROM konta ORDER BY id').all();
         let kopiaKomp = null; try { kopiaKomp = JSON.parse(ust('kopia_komputer') || 'null'); } catch { /* */ }
-        return json(res, nag, 200, { konto: konta.find((k) => k.id === dev.konto), konta, urzadzenie: dev.nazwa, push: !!dev.push, vapid: VAPID_PUB, kopia: kopiaKomp });
+        return json(res, nag, 200, { konto: konta.find((k) => k.id === dev.konto), konta, urzadzenie: dev.nazwa, push: !!dev.push, vapid: VAPID_PUB, kopia: kopiaKomp, prosby: prosbyDla(dev) });
+      }
+      if (p === '/bilet' && req.method === 'GET') { // jednorazowy bilet do połączenia na żywo — token nie trafia do adresu
+        const bil = losowe(24); bilety.set(bil, { dev: dev.id, do: teraz() + 60e3 });
+        for (const [x, v] of bilety) if (v.do < teraz()) bilety.delete(x);
+        return json(res, nag, 200, { b: bil });
+      }
+      const mpr = p.match(/^\/prosba\/([A-Za-z0-9_-]{6,40})$/);
+      if (mpr && req.method === 'DELETE') {
+        const pr = db.prepare('SELECT * FROM prosby WHERE id = ?').get(mpr[1]);
+        if (pr && prosbyDla(dev).some((x) => x.id === pr.id)) { db.prepare('DELETE FROM prosby WHERE id = ?').run(pr.id); rozglosZdarzenie('prosba'); }
+        return json(res, nag, 200, { ok: true });
+      }
+      if (p === '/haslo' && req.method === 'POST') {
+        const b = await cialoJson(req);
+        const k = db.prepare('SELECT * FROM konta WHERE id = ?').get(dev.konto);
+        if (!sprawdzHaslo(b.stare, k.haslo)) return json(res, nag, 403, { blad: 'Obecne hasło się nie zgadza.' });
+        if (String(b.nowe || '').length < MIN_HASLO) return json(res, nag, 400, { blad: `Nowe hasło musi mieć co najmniej ${MIN_HASLO} znaków.` });
+        db.prepare('UPDATE konta SET haslo = ? WHERE id = ?').run(hashHasla(b.nowe), k.id);
+        return json(res, nag, 200, { ok: true });
+      }
+      if (p === '/dziennik' && req.method === 'POST') {
+        const b = await cialoJson(req);
+        for (const w of (Array.isArray(b.wpisy) ? b.wpisy : []).slice(0, 100)) {
+          if (!okId(w?.oid) || !['klient', 'wlasciciel', 'dokument'].includes(w.co)) continue;
+          zapiszDziennik(dev, w.oid, czysty(w.k, 60), w.co, Number(w.kiedy) || teraz());
+        }
+        return json(res, nag, 200, { ok: true });
+      }
+      if (p === '/dziennik' && req.method === 'GET') {
+        const rows = db.prepare(`SELECT d.oferta, d.pole, d.co, d.kiedy, d.urzadzenie, k.nazwa AS kto FROM dziennik d LEFT JOIN konta k ON k.id = d.konto
+          ORDER BY d.kiedy DESC, d.id DESC LIMIT 300`).all();
+        return json(res, nag, 200, { dziennik: rows });
+      }
+      if (p === '/retencja' && req.method === 'GET') return json(res, nag, 200, { wpisy: doUsuniecia(teraz() + 30 * DZIEN) });
+      if (p === '/osoba' && req.method === 'GET') { // RODO art. 15: wszystko o osobie z jednej oferty (wpis + historia jego zmian)
+        const oid = u.searchParams.get('oferta'), k = String(u.searchParams.get('k') || '');
+        if (!okId(oid) || !/^kl_[A-Za-z0-9_-]{2,40}$/.test(k)) return json(res, nag, 400, { blad: 'Zły wpis.' });
+        const o = db.prepare('SELECT * FROM oferty WHERE id = ?').get(oid);
+        const dane = o ? daneOferty(o)[k] : null;
+        if (!dane) return json(res, nag, 404, { blad: 'Nie ma takiej osoby.' });
+        const hist = db.prepare('SELECT h.stara, h.nowa, h.kiedy, k.nazwa AS kto FROM historia h LEFT JOIN konta k ON k.id = h.kto WHERE h.oferta = ? AND h.pole = ? ORDER BY h.kiedy').all(oid, k)
+          .map((r) => ({ kiedy: r.kiedy, kto: r.kto, przed: JSON.parse(odszyfruj(r.stara) || 'null'), po: JSON.parse(odszyfruj(r.nowa) || 'null') }));
+        zapiszDziennik(dev, oid, k, 'eksport');
+        return json(res, nag, 200, { dane, historia: hist });
+      }
+      if (p === '/osoba' && req.method === 'DELETE') { // RODO art. 17: usunięcie na żądanie — razem z historią zmian
+        const oid = u.searchParams.get('oferta'), k = String(u.searchParams.get('k') || '');
+        if (!okId(oid) || !/^kl_[A-Za-z0-9_-]{2,40}$/.test(k)) return json(res, nag, 400, { blad: 'Zły wpis.' });
+        usunPole(oid, k, dev.konto, 'na żądanie osoby');
+        zapiszDziennik(dev, oid, k, 'usuniecie');
+        return json(res, nag, 200, { ok: true, seq: Number(ust('seq') || 0) });
       }
       if (p === '/ja' && req.method === 'POST') {
         const b = await cialoJson(req);
@@ -420,7 +667,7 @@ export function utworzSerwer() {
         const oid = u.searchParams.get('oferta');
         if (!okId(oid)) return json(res, nag, 400, { blad: 'Brak oferty.' });
         const rows = db.prepare('SELECT h.pole, h.stara, h.nowa, h.kiedy, k.nazwa AS kto FROM historia h LEFT JOIN konta k ON k.id = h.kto WHERE h.oferta = ? ORDER BY h.kiedy DESC, h.id DESC LIMIT 300').all(oid);
-        return json(res, nag, 200, { historia: rows });
+        return json(res, nag, 200, { historia: rows.map((r) => ({ ...r, stara: odszyfruj(r.stara), nowa: odszyfruj(r.nowa) })) });
       }
       if (p === '/aktywnosc' && req.method === 'GET') {
         // ostatnie zmiany wspólnika (innych kont) we wszystkich ofertach
@@ -428,8 +675,8 @@ export function utworzSerwer() {
           LEFT JOIN konta k ON k.id = h.kto LEFT JOIN oferty o ON o.id = h.oferta
           WHERE h.kto != ? AND h.pole NOT IN ('zr', 'id', 'utworzyl') ORDER BY h.kiedy DESC, h.id DESC LIMIT 120`).all(dev.konto);
         return json(res, nag, 200, { aktywnosc: rows.map((r) => {
-          let n = ''; try { const d = JSON.parse(r.dane || '{}'); n = d.roboczy || d.ulica || d.dzielnica || ''; } catch { /* */ }
-          return { oferta: r.oferta, nazwa: n, pole: r.pole, stara: r.stara, nowa: r.nowa, kiedy: r.kiedy, kto: r.kto };
+          let n = ''; try { const d = daneOferty(r); n = d.roboczy || d.ulica || d.dzielnica || ''; } catch { /* */ }
+          return { oferta: r.oferta, nazwa: n, pole: r.pole, stara: odszyfruj(r.stara), nowa: odszyfruj(r.nowa), kiedy: r.kiedy, kto: r.kto };
         }) });
       }
       if (p === '/na-zywo' && req.method === 'GET') {
@@ -487,6 +734,7 @@ export function utworzSerwer() {
       if (p === '/kopia/baza' && req.method === 'GET') {
         const b = najnowszaKopiaBazy();
         if (!b) return json(res, nag, 404, { blad: 'Brak kopii bazy.' });
+        zapiszDziennik(dev, null, null, 'kopia');
         res.writeHead(200, { ...nag, 'Content-Type': 'application/octet-stream', 'Content-Length': fs.statSync(b).size, 'Cache-Control': 'no-store', 'X-Nazwa': path.basename(b) });
         return fs.createReadStream(b).pipe(res);
       }
@@ -510,12 +758,12 @@ export function utworzSerwer() {
           if (!typ) return json(res, nag, 415, { blad: 'Obsługiwane są pliki PDF, JPG i PNG.' });
           const plik = path.join(P_PLIKI, `${id}.${typ}`);
           const tmp = `${plik}.${losowe(6)}.tmp`;
-          fs.writeFileSync(tmp, b); fs.renameSync(tmp, plik);
+          fs.writeFileSync(tmp, szyfrujBufor(b)); fs.renameSync(tmp, plik);
           db.prepare(`INSERT INTO pliki (id, oferta, typ, nazwa, rozmiar, kto, utworzone) VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET typ = excluded.typ, nazwa = excluded.nazwa, rozmiar = excluded.rozmiar`).run(id, oid, typ, czysty(u.searchParams.get('nazwa'), 120), b.length, dev.konto, teraz());
           return json(res, nag, 200, { ok: true, id, typ, rozmiar: b.length });
         }
-        if (req.method === 'GET') return wyslijPlik(res, nag, id);
+        if (req.method === 'GET') { const pk = db.prepare('SELECT oferta FROM pliki WHERE id = ?').get(id); if (pk) zapiszDziennik(dev, pk.oferta, id, 'dokument'); return wyslijPlik(res, nag, id); }
         if (req.method === 'DELETE') {
           const r = db.prepare('SELECT typ FROM pliki WHERE id = ?').get(id);
           if (r) doKosza(path.join(P_PLIKI, `${id}.${r.typ}`), 'pliki');
@@ -537,6 +785,7 @@ export function utworzSerwer() {
 
 // uruchomienie bezpośrednie
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try { const n = zaszyfrujStare(); if (n) console.log(`Zaszyfrowano dane sprzed 1.6.0: ${n}`); } catch (e) { console.error('BŁĄD szyfrowania:', e.message); process.exit(3); }
   const s = utworzSerwer();
   s.listen(PORT, '127.0.0.1', () => console.log(`AM Oferty ${WERSJA} na 127.0.0.1:${PORT}, dane: ${DANE}`));
   try { kopia(); } catch (e) { console.error('kopia:', e.message); }

@@ -2,6 +2,7 @@
 # wraca do Rzut AM → „Zapisz” → oferta: pomiar z dalmierza zostaje, odzyskanie wymiarów z historii, ponowne otwarcie z serwera.
 # python3 test/ui_rzut_test.py [chromium|webkit]; wymaga: python3 test/serwer_jak_github.py (8767) i serwera API na 18931.
 from playwright.sync_api import sync_playwright
+from pomoc import zaloguj, odblokuj, wpisz_pin
 import sys, shutil, os
 silnik = sys.argv[1] if len(sys.argv) > 1 else 'chromium'
 URL = 'http://127.0.0.1:8767/ogloszenia/?api=http://127.0.0.1:18931'
@@ -14,7 +15,7 @@ with sync_playwright() as p:
     pg = c.new_page(); bl = []
     pg.on('pageerror', lambda e: bl.append(f'pageerror {e}'))
     J = pg.evaluate
-    pg.goto(URL); pg.fill('#l-login', 'marek'); pg.fill('#l-haslo', 'tajne123'); pg.click('#f-log button'); pg.wait_for_selector('#karty')
+    zaloguj(pg, URL)
     pg.locator('[data-a=nowa]:visible').first.click(); pg.wait_for_selector('#sek-podstawy')
     oid = J("location.hash.split('/')[2]")
     pg.fill('#f-roboczy', 'Granata 1/100'); pg.locator('#f-roboczy').blur(); pg.wait_for_timeout(300)

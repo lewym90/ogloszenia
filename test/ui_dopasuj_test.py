@@ -1,6 +1,7 @@
 # Dopasowanie rzutu do pomiarów z karty + poprawione wymiary ścian (w świetle, przesunięcie równoległe, grubość na zewnątrz).
 # python3 test/ui_dopasuj_test.py [chromium|webkit] [szer wys]; serwery jak test/ui_plan_test.py
 from playwright.sync_api import sync_playwright
+from pomoc import zaloguj, odblokuj, wpisz_pin
 import sys, shutil, json, math
 silnik = sys.argv[1] if len(sys.argv) > 1 else 'chromium'
 W, H = (int(sys.argv[2]), int(sys.argv[3])) if len(sys.argv) > 3 else (430, 932)
@@ -32,7 +33,7 @@ with sync_playwright() as p:
     shot = lambda n: pg.screenshot(path=f'/tmp/amshots/d-{TAG}-{n}.png')
     def ok(w, t):
         print(('OK  ' if w else 'BŁĄD'), t); assert w, t
-    pg.goto(URL); pg.fill('#l-login', 'marek'); pg.fill('#l-haslo', 'tajne123'); pg.click('#f-log button'); pg.wait_for_selector('#karty')
+    zaloguj(pg, URL)
     pg.locator('[data-a=nowa]:visible').first.click(); pg.wait_for_selector('#sek-podstawy')
     oid = J("location.hash.split('/')[2]")
     # karta: pomiary dalmierzem

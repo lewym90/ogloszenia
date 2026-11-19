@@ -1,5 +1,6 @@
 # Rzut AM: drugi skan jako piętro, nazwa piętra, pokój z wymiarów, zapis — obraz z dwoma piętrami i pomieszczenia z kondygnacją.
 from playwright.sync_api import sync_playwright
+from pomoc import zaloguj, odblokuj, wpisz_pin
 import sys, shutil, os, base64, io
 from PIL import Image
 silnik = sys.argv[1] if len(sys.argv) > 1 else 'chromium'
@@ -12,7 +13,7 @@ with sync_playwright() as p:
     c = p.webkit.launch_persistent_context(f'/tmp/amshots/prof-pp-{silnik}', **opc) if silnik == 'webkit' else p.chromium.launch_persistent_context(f'/tmp/amshots/prof-pp-{silnik}', executable_path='/usr/bin/google-chrome', args=['--no-sandbox'], **opc)
     pg = c.new_page(); bl = []; J = pg.evaluate
     pg.on('pageerror', lambda e: bl.append(f'pageerror {e}'))
-    pg.goto(URL); pg.fill('#l-login', 'marek'); pg.fill('#l-haslo', 'tajne123'); pg.click('#f-log button'); pg.wait_for_selector('#karty')
+    zaloguj(pg, URL)
     pg.locator('[data-a=nowa]:visible').first.click(); pg.wait_for_selector('#sek-podstawy')
     oid = J("location.hash.split('/')[2]")
     J(f"location.hash='#/o/{oid}/s/pom'"); pg.wait_for_selector('[data-a=rzut-otworz]'); pg.click('[data-a=rzut-otworz]'); pg.wait_for_url('**/plan.html**'); pg.wait_for_timeout(1000)

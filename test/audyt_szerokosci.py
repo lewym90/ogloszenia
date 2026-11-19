@@ -3,6 +3,7 @@
 # Wymaga serwera testowego jak ui_test.py.
 # Audyt: żaden element nie wystaje poza swój panel ani poza ekran, na każdym ekranie aplikacji.
 from playwright.sync_api import sync_playwright
+from pomoc import zaloguj, odblokuj, wpisz_pin
 import sys, shutil, os
 os.makedirs('/tmp/amshots', exist_ok=True)
 URL = 'http://localhost:8766/?api=http://127.0.0.1:18931'
@@ -34,7 +35,7 @@ with sync_playwright() as p:
     c = p.webkit.launch_persistent_context(f'/tmp/amshots/prof-a-{silnik}', **opc) if silnik == 'webkit' else p.chromium.launch_persistent_context(f'/tmp/amshots/prof-a-{silnik}', executable_path='/usr/bin/google-chrome', args=['--no-sandbox'], is_mobile=True, **opc)
     pg = c.new_page()
     bl = []; pg.on('pageerror', lambda e: bl.append(str(e)))
-    pg.goto(URL); pg.fill('#l-login','marek'); pg.fill('#l-haslo','tajne123'); pg.click('#f-log button'); pg.wait_for_selector('#karty')
+    zaloguj(pg, URL)
     pg.click('#dol [data-a=nowa]'); pg.wait_for_selector('#sek-podstawy')
     oid = pg.evaluate("location.hash.split('/')[2]")
     # pełna oferta najmu z datami wszędzie

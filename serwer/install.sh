@@ -17,8 +17,8 @@ dodaj_konto() {
   read -rp "Imię i nazwisko (do stopki ogłoszeń): " N <&3
   read -rp "Telefon (do stopki ogłoszeń, można zostawić puste): " T <&3
   while :; do
-    read -rsp "Hasło (min. 6 znaków): " H1 <&3; echo
-    [ "${#H1}" -ge 6 ] || { echo "Za krótkie, spróbuj jeszcze raz."; continue; }
+    read -rsp "Hasło (min. 12 znaków): " H1 <&3; echo
+    [ "${#H1}" -ge 12 ] || { echo "Za krótkie, spróbuj jeszcze raz."; continue; }
     read -rsp "Wpisz je jeszcze raz: " H2 <&3; echo
     [ "$H1" = "$H2" ] && break
     echo "Hasła się różnią, spróbuj jeszcze raz."
@@ -70,6 +70,15 @@ id amoferty >/dev/null 2>&1 || useradd --system --no-create-home --home-dir "$DA
 chown -R amoferty:amoferty "$DANE"; chmod 750 "$DANE"
 [ -f /etc/amoferty.env ] || ( umask 077; printf 'PORT=%s\nAM_DANE=%s\n' "$PORT" "$DANE" > /etc/amoferty.env )
 
+# --- klucz szyfrowania danych (poza katalogiem danych, tylko root; usługa dostaje go przez LoadCredential) ---
+NOWY_KLUCZ=0
+if [ ! -s /etc/amoferty/klucz ]; then
+  mkdir -p /etc/amoferty; chmod 700 /etc/amoferty
+  ( umask 077; head -c 32 /dev/urandom | base64 > /etc/amoferty/klucz )
+  NOWY_KLUCZ=1
+fi
+chmod 600 /etc/amoferty/klucz; chown root:root /etc/amoferty/klucz
+
 cat > /etc/systemd/system/amoferty.service <<EOF
 [Unit]
 Description=AM Oferty — karta nieruchomości i ogłoszenia
@@ -82,6 +91,7 @@ WorkingDirectory=$DIR/app
 ExecStart=$NODE --no-warnings $DIR/app/amoferty.mjs
 Restart=always
 RestartSec=5
+LoadCredential=klucz:/etc/amoferty/klucz
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=$DANE
@@ -104,6 +114,13 @@ $(declare -f dodaj_konto)
 dodaj_konto
 EOF
 chmod 755 /usr/local/bin/amoferty-konto
+cat > /usr/local/bin/amoferty-kod <<'EOF2'
+#!/usr/bin/env bash
+# Pokazuje kod odzyskiwania (klucz szyfrowania danych AM Oferty). Bez niego kopii nie da się odczytać.
+[ "$(id -u)" -eq 0 ] || { echo "Uruchom jako root."; exit 1; }
+echo "Kod odzyskiwania AM Oferty:"; cat /etc/amoferty/klucz
+EOF2
+chmod 700 /usr/local/bin/amoferty-kod
 
 # --- trasa w Caddy: tylko własny plik w conf.d ---
 LC=/etc/caddy/conf.d/amoferty.caddy
@@ -138,6 +155,16 @@ if curl -fsS --max-time 20 "https://$HOST/am-api/zdrowie" -o /tmp/amoferty-zdrow
 else
   echo "Status: BŁĄD, https://$HOST/am-api/zdrowie nie odpowiada."
   journalctl -u amoferty -n 15 --no-pager
+fi
+if [ "$NOWY_KLUCZ" = 1 ]; then
+  echo
+  echo "=============================================="
+  echo "  KOD ODZYSKIWANIA — przepisz go na kartkę i schowaj w bezpiecznym miejscu."
+  echo "  Dane i kopie zapasowe są zaszyfrowane. Bez tego kodu nie da się ich"
+  echo "  odtworzyć na innym serwerze. Pokażesz go ponownie poleceniem: amoferty-kod"
+  echo
+  echo "  $(cat /etc/amoferty/klucz)"
+  echo "=============================================="
 fi
 echo; echo "Twoje pozostałe aplikacje:"
 for u in "https://$HOST/lacznik-api/zdrowie" "https://$HOST/lapa/health" "https://$HOST/midgard-api/zdrowie" "https://$HOST/trendo-api/zdrowie" "https://$HOST/smart-home-push/health"; do

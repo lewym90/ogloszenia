@@ -2,6 +2,7 @@
 # Spis mieści się na szerokość, przewinięcie zostaje po zmianie, wyposażenie, klienci, prezentacje, dokumenty.
 # Wymaga tego samego co ui_test.py oraz `python3 -m playwright install webkit`. Profil trwały, bo prywatny WebKit nie zapisuje plików w IndexedDB.
 from playwright.sync_api import sync_playwright
+from pomoc import zaloguj, odblokuj, wpisz_pin
 import sys, os
 os.makedirs('/tmp/amshots', exist_ok=True)
 open('/tmp/amtest-akt.pdf', 'wb').write(b'%PDF-1.4\n%%EOF')
@@ -15,7 +16,7 @@ with sync_playwright() as p:
     pg = c.new_page()
     pg.on('pageerror', lambda e: bl.append(f'pageerror {e}'))
     pg.on('console', lambda m: bl.append(f'console {m.type}: {m.text}') if m.type in ('error',) else None)
-    pg.goto(URL); pg.fill('#l-login','marek'); pg.fill('#l-haslo','tajne123'); pg.click('#f-log button'); pg.wait_for_selector('#karty')
+    zaloguj(pg, URL)
     pg.click('#dol [data-a=nowa]'); pg.wait_for_selector('#sek-podstawy')
     oid = pg.evaluate("location.hash.split('/')[2]")
     pg.fill('#f-roboczy','Granata 1/100'); pg.locator('#f-roboczy').blur()

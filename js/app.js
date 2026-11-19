@@ -1,11 +1,12 @@
 // AM Oferty — interfejs (wygląd 1:1 z renderem właściciela).
 import * as M from './model.js';
 import * as D from './dane.js';
+import * as Z from './sejf.js';
 import { zrobZip } from './zip.js';
 import * as K from './kopia.js';
 import * as R from './rzut.js';
 
-export const WERSJA = '1.9.3';
+export const WERSJA = '1.10.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -137,9 +138,94 @@ function ekranLogowania() {
   $('#f-log').addEventListener('submit', async (e) => {
     e.preventDefault();
     const b = $('#f-log button'); b.disabled = true; $('#l-blad').textContent = '';
-    try { await D.zaloguj($('#l-login').value, $('#l-haslo').value); render(); }
-    catch (er) { $('#l-blad').textContent = er.message === 'Failed to fetch' ? 'Brak połączenia z serwerem.' : er.message; }
+    const haslo = $('#l-haslo').value;
+    try {
+      const r = await D.zaloguj($('#l-login').value, haslo);
+      if (r.oczekuje) ekranKodu(r, haslo); else await poZalogowaniu(r, haslo);
+    } catch (er) { if ($('#l-blad')) $('#l-blad').textContent = bladSieci(er); }
     finally { b.disabled = false; }
+  });
+}
+const bladSieci = (er) => (er.message === 'Failed to fetch' || er.message === 'Load failed' ? 'Brak połączenia z serwerem.' : er.message);
+const formularz = (id, tresc) => `<div class="logowanie"><form id="${id}" class="szklo" autocomplete="off">
+    <img class="znak" src="img/monogram.png" alt="AM"><h1 class="zloty-tekst">AM Oferty</h1>${tresc}</form></div>`;
+const polePin = (id, et) => `<div class="pole"><label class="et" for="${id}">${et}</label><div class="wejscie"><input id="${id}" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" required></div></div>`;
+// nowe urządzenie: kod pokazany na zalogowanym telefonie (własnym albo wspólnika)
+function ekranKodu(r, haslo) {
+  zbudowany = false;
+  $('#app').innerHTML = formularz('f-kod', `<p>Nowe urządzenie. ${esc(r.gdzie[0].toUpperCase() + r.gdzie.slice(1))} pojawił się 6-cyfrowy kod (ważny 10 minut). Wpisz go tutaj.</p>
+    ${polePin('l-kod', 'Kod')}
+    <button class="btn zloty" type="submit">Potwierdź</button>
+    <div class="blad" id="l-blad"></div>
+    <button type="button" class="btn kontur maly" id="l-wroc" style="margin-top:6px">Wróć do logowania</button>`);
+  $('#l-wroc').onclick = () => ekranLogowania();
+  $('#l-kod').focus();
+  $('#f-kod').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const b = $('#f-kod button[type=submit]'); b.disabled = true; $('#l-blad').textContent = '';
+    try { await poZalogowaniu(await D.potwierdzKod(r.prosba, $('#l-kod').value), haslo); }
+    catch (er) { if (er.kod === 410) { D.stan.blad = er.message; ekranLogowania(); return; } $('#l-blad').textContent = bladSieci(er); }
+    finally { b.disabled = false; }
+  });
+}
+async function poZalogowaniu(r, haslo) {
+  if (r.zmienHaslo) await ekranNowegoHasla(haslo);
+  await ekranPin('ustaw', 'Ustaw PIN do otwierania aplikacji na tym urządzeniu. Dane w telefonie będą nim zaszyfrowane.');
+  await D.dokonczLogowanie();
+  render(); trasa();
+}
+function ekranNowegoHasla(stare) {
+  return new Promise((gotowe) => {
+    zbudowany = false;
+    $('#app').innerHTML = formularz('f-haslo', `<p>Twoje hasło jest za krótkie. Ustaw nowe — co najmniej 12 znaków (np. trzy słowa i cyfra). Wpisujesz je tylko raz na każdym urządzeniu.</p>
+      <div class="pole"><label class="et" for="h-1">Nowe hasło</label><div class="wejscie"><input id="h-1" type="password" autocomplete="new-password" required></div></div>
+      <div class="pole"><label class="et" for="h-2">Powtórz nowe hasło</label><div class="wejscie"><input id="h-2" type="password" autocomplete="new-password" required></div></div>
+      <button class="btn zloty" type="submit">Zapisz hasło</button><div class="blad" id="h-blad"></div>`);
+    $('#h-1').focus();
+    $('#f-haslo').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const a = $('#h-1').value, b = $('#h-2').value, bl = $('#h-blad');
+      if (a.length < 12) { bl.textContent = 'Co najmniej 12 znaków.'; return; }
+      if (a !== b) { bl.textContent = 'Hasła się różnią.'; return; }
+      try { await D.zmienHaslo(stare, a); gotowe(); } catch (er) { bl.textContent = bladSieci(er); }
+    });
+  });
+}
+const pinOk = (p) => /^\d{6}$/.test(p) && !/^(\d)\1{5}$/.test(p) && !['123456', '654321', '012345', '543210'].includes(p);
+// PIN: 'ustaw' (nowe urządzenie / aktualizacja) albo 'otworz' (każde otwarcie aplikacji)
+function ekranPin(tryb, opis = '') {
+  return new Promise((gotowe) => {
+    zbudowany = false;
+    const ustaw = tryb === 'ustaw';
+    $('#app').innerHTML = formularz('f-pin', `<p>${esc(opis || 'Wpisz PIN, żeby otworzyć aplikację.')}</p>
+      ${polePin('pin', ustaw ? 'Nowy PIN (6 cyfr)' : 'PIN')}${ustaw ? polePin('pin2', 'Powtórz PIN') : ''}
+      <button class="btn zloty" type="submit">${ustaw ? 'Ustaw PIN' : 'Otwórz'}</button>
+      <div class="blad" id="pin-blad">${esc(D.stan.blad || '')}</div>
+      ${ustaw ? '' : '<button type="button" class="btn kontur maly" id="pin-zapomnialem" style="margin-top:6px">Nie pamiętam PIN-u</button>'}`);
+    D.stan.blad = '';
+    const we = $('#pin'), bl = $('#pin-blad'), btn = $('#f-pin button[type=submit]');
+    we.focus();
+    const wyslij = async () => {
+      const pin = we.value;
+      if (ustaw) {
+        if (!pinOk(pin)) { bl.textContent = 'PIN to 6 cyfr, nie same jedynki ani 123456.'; return; }
+        if (pin !== $('#pin2').value) { bl.textContent = 'PIN-y się różnią.'; return; }
+        btn.disabled = true; bl.textContent = 'Szyfruję dane na tym urządzeniu…';
+        try { await D.ustawPin(pin); gotowe(); } catch (er) { bl.textContent = er.message; btn.disabled = false; }
+        return;
+      }
+      if (!/^\d{6}$/.test(pin)) { bl.textContent = 'PIN to 6 cyfr.'; return; }
+      btn.disabled = true; bl.textContent = '';
+      const r = await D.odblokuj(pin);
+      if (r.ok) { gotowe(); return; }
+      btn.disabled = false; we.value = ''; we.focus();
+      if (!r.wyczyszczono) bl.textContent = `Zły PIN. ${r.zostalo === 1 ? 'Została 1 próba — potem dane znikną z tego telefonu.' : `Zostały ${r.zostalo} próby.`}`;
+    };
+    $('#f-pin').addEventListener('submit', (e) => { e.preventDefault(); wyslij(); });
+    if (!ustaw) we.addEventListener('input', () => { if (/^\d{6}$/.test(we.value)) wyslij(); });
+    $('#pin-zapomnialem')?.addEventListener('click', async () => {
+      if (await potwierdz('Nie pamiętasz PIN-u?', 'Dane znikną z tego telefonu (na serwerze zostają). Zalogujesz się hasłem i ustawisz nowy PIN. Niewysłane zmiany z tego telefonu przepadną.', 'Usuń i zaloguj')) D.wyczysc('');
+    });
   });
 }
 
@@ -168,7 +254,8 @@ function render() {
   odswiez();
 }
 function odswiez() {
-  if (!D.stan.token) { if (zbudowany || !$('#f-log')) ekranLogowania(); return; }
+  if (!D.stan.token) { if (zbudowany || !$('.logowanie')) ekranLogowania(); return; }
+  if (!zbudowany && $('.logowanie')) return; // trwa logowanie: kod, nowe hasło albo PIN — nie przykrywamy ekranu
   if (!zbudowany) szkielet();
   $('#uklad').dataset.ekran = S.ekran;
   odswiezPasek(); odswiezListe(); odswiezDol();
@@ -230,7 +317,14 @@ function odswiezListe() {
   wstaw($('#karty'), html);
   // przypomnienie o kopii zapasowej (po 7 dniach bez kopii na komputerze)
   const dni = K.dniOdKopii();
-  wstaw($('#przyp'), D.stan.konto && K.przeterminowana() && D.oferty().length ? `<a class="przypomnienie szklo" href="#/ustawienia">${ik('uwaga')}<span>${dni === null ? 'Nie ma jeszcze kopii zapasowej na komputerze' : `Ostatnia kopia zapasowa ${dni} dni temu`}</span>${ik('prawo')}</a>` : '');
+  const ret = (D.stan.retencja || []).filter((w) => D.oferta(w.oid)?.[w.k]);
+  wstaw($('#przyp'), htmlProsb()
+    + (ret.length ? `<a class="przypomnienie szklo" href="#/o/${ret[0].oid}/s/klienci">${ik('uwaga')}<span>${ret.length === 1 ? 'Dane 1 klienta znikną' : `Dane ${ret.length} klientów znikną`} w ciągu 30 dni (okres przechowywania). Zachowaj, jeśli nadal jesteście w kontakcie.</span>${ik('prawo')}</a>` : '')
+    + (D.stan.konto && K.przeterminowana() && D.oferty().length ? `<a class="przypomnienie szklo" href="#/ustawienia">${ik('uwaga')}<span>${dni === null ? 'Nie ma jeszcze kopii zapasowej na komputerze' : `Ostatnia kopia zapasowa ${dni} dni temu`}</span>${ik('prawo')}</a>` : ''));
+}
+// prośba o zalogowanie nowego urządzenia — kod do przepisania na tamtym urządzeniu
+function htmlProsb() {
+  return (D.stan.prosby || []).map((p) => `<div class="przypomnienie szklo prosba">${ik('uwaga')}<span><b>Logowanie na nowym urządzeniu</b>${p.wlasne ? '' : ` (konto: ${esc(p.konto)})`} — ${esc(p.urzadzenie)}. Jeśli to Ty, wpisz tam kod <b class="kod-prosby">${esc(p.kod.slice(0, 3))} ${esc(p.kod.slice(3))}</b>. Jeśli nie — odrzuć i zmień hasło.</span><button class="btn kontur maly" data-a="prosba-odrzuc" data-id="${esc(p.id)}">Odrzuć</button></div>`).join('');
 }
 function odswiezPusty() {
   const e = $('#edytor'); e.dataset.tryb = 'pusty';
@@ -366,7 +460,7 @@ function odswiezOferte() {
     else if (k === 'klienci') wstaw(t, htmlKlienci(o));
     else if (k === 'wizyty') wstaw(t, htmlWizyty(o));
     else if (k === 'dokumenty') { wstaw(t, htmlDokumenty(o)); D.przygotujKluczPlikow(); }
-    else wstaw(t, ekranSekcji(k, o));
+    else { if (k === 'wlasciciel') D.zapiszDostep(o.id, 'wlasciciel', 'wlasciciel'); wstaw(t, ekranSekcji(k, o)); }
     const i = EKRANY.findIndex((x) => x.k === k);
     const pop = EKRANY[i - 1], nast = EKRANY[i + 1];
     wstaw($('#of-dol'), `<nav class="nawigacja-sek">${pop ? `<a class="btn kontur" href="${hashEkranu(o.id, pop.k)}">${ik('lewo')}<span class="nr">${String(i).padStart(2, '0')}</span><span class="tx">${esc(pop.n)}</span></a>` : '<span></span>'}
@@ -542,6 +636,8 @@ function htmlKlienci(o) {
   for (const x of L) {
     const k = x._k, tel = telLink(x.tel);
     const st = x.status || 'nowy';
+    D.zapiszDostep(o.id, k, 'klient');
+    const ret = (D.stan.retencja || []).find((w) => w.oid === o.id && w.k === k);
     h += grupaZ(x.imie || 'Nowy klient', `<button type="button" class="zr-tag ${['umowiony', 'oferta', 'transakcja'].includes(st) ? 'akt' : st === 'rezygnacja' ? 'wyg' : ''}" data-a="kl-status" data-e="${k}">${esc(M.KLIENT_STATUSY[st])}${ik('dol')}</button>`, `<div class="siatka">
       ${pole('Imię i nazwisko', inp(k, 'imie', x.imie, 'text', 'jak się przedstawił'))}
       ${pole('Telefon', inp(k, 'tel', x.tel, 'tel', '600 000 000', 'inputmode="tel"'), 'pol')}
@@ -550,12 +646,14 @@ function htmlKlienci(o) {
       ${najem ? pole('Wprowadzka od', `<input data-e="${k}" data-p="od" data-t="d" type="date" value="${esc(x.od || '')}" aria-label="Wprowadzka od">`, 'pol') : pole('Finansowanie', sel(k, 'fin', x.fin, M.FINANSOWANIE), 'pol')}
       <div class="pole pelna"><span class="et">Czego szuka, pytania, ustalenia</span><div class="wejscie"><textarea data-e="${k}" data-p="notatka" data-t="t" rows="3" placeholder="${najem ? 'np. para, bez zwierząt, praca na Felinie' : 'np. budżet do 520 tys., sprzedaje swoje na Czubach'}">${esc(x.notatka || '')}</textarea></div></div>
       <div class="pole pelna"><label class="przel"><span class="tekst">Przekazana informacja o danych osobowych (RODO)</span><input type="checkbox" data-e="${k}" data-p="rodo" data-t="b" ${x.rodo ? 'checked' : ''}><span class="suwak"></span></label></div>
+      ${ret ? `<div class="pole pelna"><p class="info-pola" style="margin:0">Dane tej osoby znikną ${new Date(ret.termin).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })} — ${x.status === 'transakcja' ? '5 lat od ostatniej zmiany' : '12 miesięcy bez kontaktu'}. <button class="btn kontur maly" data-a="kl-zachowaj" data-e="${k}">Zachowaj — nadal w kontakcie</button></p></div>` : ''}
       <div class="pole pelna akcje-wpisu">
         ${tel ? `<a class="btn kontur maly" href="tel:${tel}">${ik('tel')}Zadzwoń</a><a class="btn kontur maly" href="sms:${tel}">${ik('sms')}SMS</a>` : ''}
         <button class="btn kontur maly" data-a="wz-dodaj" data-kl="${k}">${ik('kal')}Umów prezentację</button>
         <span class="rozp"></span><span class="dodany">${esc(kiedyDodany(x))}</span>
         <button class="usun-w" data-a="wpis-usun" data-e="${k}" data-co="klienta" aria-label="Usuń klienta">${ik('kosz')}</button>
-      </div></div>`, st === 'rezygnacja' ? 'wygaszona' : '');
+      </div>
+      <div class="pole pelna akcje-wpisu rodo-wpisu"><button class="btn kontur maly" data-a="kl-eksport" data-e="${k}">${ik('pobierz')}Dane tej osoby</button><button class="btn kontur maly zly-tekst" data-a="kl-rodo-usun" data-e="${k}">Usuń na żądanie (RODO)</button></div></div>`, st === 'rezygnacja' ? 'wygaszona' : '');
   }
   return h;
 }
@@ -858,6 +956,42 @@ function htmlKontrola(o) {
     <div class="karta-og szklo"><div class="blok-og"><div class="blok-glowa"><h3>Zalecane</h3></div><ul class="check">${zal.map(li).join('')}</ul></div></div>`;
 }
 
+// ----- bezpieczeństwo: zmiana PIN-u i hasła, dziennik dostępu -----
+function formOkna(tytul, html, przycisk, wykonaj) {
+  const w = okno(tytul, `<form class="form-okna">${html}<div class="blad" style="text-align:left"></div><div class="rzad" style="margin-top:12px"><button class="btn zloty" type="submit">${esc(przycisk)}</button></div></form>`);
+  const f = w.querySelector('form'), bl = f.querySelector('.blad');
+  f.querySelector('input')?.focus();
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault(); bl.textContent = '';
+    const v = (id) => f.querySelector(`#${id}`).value;
+    try { const kom = await wykonaj(v); if (kom) { bl.textContent = kom; return; } w.remove(); } catch (er) { bl.textContent = bladSieci(er); }
+  });
+}
+function zmianaPinu() {
+  formOkna('Zmień PIN', polePin('zp-0', 'Obecny PIN') + polePin('zp-1', 'Nowy PIN (6 cyfr)') + polePin('zp-2', 'Powtórz nowy PIN'), 'Zmień PIN', async (v) => {
+    if (!pinOk(v('zp-1'))) return 'Nowy PIN: 6 cyfr, nie same jedynki ani 123456.';
+    if (v('zp-1') !== v('zp-2')) return 'Nowe PIN-y się różnią.';
+    try { await D.zmienPin(v('zp-0'), v('zp-1')); } catch { return 'Obecny PIN się nie zgadza.'; }
+    toast('PIN zmieniony');
+  });
+}
+function zmianaHasla() {
+  const p = (id, et, ac) => `<div class="pole"><label class="et" for="${id}">${et}</label><div class="wejscie"><input id="${id}" type="password" autocomplete="${ac}" required></div></div>`;
+  formOkna('Zmień hasło', p('zh-0', 'Obecne hasło', 'current-password') + p('zh-1', 'Nowe hasło (min. 12 znaków)', 'new-password') + p('zh-2', 'Powtórz nowe hasło', 'new-password'), 'Zmień hasło', async (v) => {
+    if (v('zh-1').length < 12) return 'Nowe hasło: co najmniej 12 znaków.';
+    if (v('zh-1') !== v('zh-2')) return 'Nowe hasła się różnią.';
+    await D.zmienHaslo(v('zh-0'), v('zh-1'));
+    toast('Hasło zmienione. Zalogowane urządzenia działają dalej.', 3500);
+  });
+}
+const CO_DZIENNIK = { klient: 'otwarcie danych klienta', wlasciciel: 'otwarcie danych właściciela', dokument: 'otwarcie dokumentu', eksport: 'wydanie danych osoby', usuniecie: 'usunięcie danych osoby', kopia: 'pobranie kopii bazy' };
+async function pokazDziennik() {
+  let L;
+  try { L = await D.dziennik(); } catch (er) { toast(bladSieci(er), 3500); return; }
+  const nazwaW = (x) => { const o = x.oferta && D.oferta(x.oferta); if (!o) return x.oferta ? '(oferta usunięta)' : ''; const kl = x.pole?.startsWith('kl_') ? o[x.pole]?.imie : ''; return `${M.tytul(o) || o.roboczy || ''}${kl ? ` · ${kl}` : ''}`; };
+  okno('Dziennik dostępu', `<p class="tekst-ust" style="padding:0 0 8px">Kto i kiedy oglądał dane osobowe (ostatnie 300 wpisów, przechowywane 5 lat).</p>
+    <div class="menu-lista dziennik">${L.length ? L.map((x) => `<div class="wiersz-dz"><b>${esc(kiedy(x.kiedy))}</b> · ${esc(x.kto || '')}${x.urzadzenie ? ` (${esc(x.urzadzenie)})` : ''}<br><span class="wyc">${esc(CO_DZIENNIK[x.co] || x.co)}${nazwaW(x) ? ` — ${esc(nazwaW(x))}` : ''}</span></div>`).join('') : '<p class="wyc">Pusto.</p>'}</div>`);
+}
 // ----- ustawienia -----
 function odswiezUstawienia() {
   const e = $('#edytor'); e.dataset.tryb = 'ustawienia';
@@ -878,6 +1012,10 @@ function odswiezUstawienia() {
       <p class="tekst-ust" style="padding:0">Wszystko zapisuje się najpierw na urządzeniu, potem od razu na serwerze. Bez internetu pracujesz dalej — zmiany wyślą się same.</p>
       <p style="margin:12px 0 4px">Do wysłania: <b style="color:var(--gold-l)">${D.ileWKolejce()}</b> · stan danych ${D.stan.seq}</p>
       <div class="rzad"><button class="btn kontur maly" data-a="sync">Synchronizuj teraz</button></div></div></section>
+    <section class="sek szklo"><h2>Bezpieczeństwo</h2><div class="sek-tresc">
+      ${htmlProsb()}
+      <p class="tekst-ust" style="padding:0">Dane na tym urządzeniu są zaszyfrowane PIN-em. Aplikacja blokuje się po 10 minutach bez używania. Pięć złych PIN-ów usuwa dane z tego urządzenia — na serwerze zostają. Nowe urządzenie zatwierdzasz kodem z zalogowanego telefonu.</p>
+      <div class="rzad" style="margin-top:12px"><button class="btn kontur maly" data-a="pin-zmien">Zmień PIN</button><button class="btn kontur maly" data-a="haslo-zmien">Zmień hasło</button><button class="btn kontur maly" data-a="dziennik">Dziennik dostępu</button></div></div></section>
     <section class="sek szklo"><h2>Konto</h2><div class="sek-tresc">
       <p style="margin:6px 0">Zalogowany: <b>${esc(D.stan.konto?.nazwa || '')}</b> <span class="wyc">(${esc(D.stan.konto?.login || '')})</span></p>
       ${D.stan.konta.length > 1 ? `<p class="wyc male" style="margin:0 0 10px">W biurze: ${D.stan.konta.map((k) => esc(k.nazwa)).join(', ')}</p>` : ''}
@@ -1056,7 +1194,7 @@ function okno(tytul, html) {
   return tlo;
 }
 const NAZWY_POL = { pom: 'Pomieszczenia', atuty: 'Atuty', minusy: 'Co warto wiedzieć', okolica: 'Okolica', zdj: 'Zdjęcia', weryf: 'Sprawdziliśmy', zr: 'Źródła danych',
-  lead: 'Wstęp', tytul: 'Własny tytuł', status: 'Status', _usunieta: 'Usunięcie oferty', dataPublikacji: 'Data publikacji', utworzyl: 'Utworzenie', id: 'Utworzenie', ulubiona: 'Wyróżnienie' };
+  lead: 'Wstęp', tytul: 'Własny tytuł', status: 'Status', _usunieta: 'Usunięcie oferty', _usunieto: 'Usunięcie danych osoby', dataPublikacji: 'Data publikacji', utworzyl: 'Utworzenie', id: 'Utworzenie', ulubiona: 'Wyróżnienie' };
 Object.assign(NAZWY_POL, { wyp: 'Wyposażenie', wypInne: 'Wyposażenie (inne)', wypUwagi: 'Uwagi do wyposażenia', wypBrak: 'Bez wyposażenia' });
 function etykieta(k) {
   for (const s of M.SEKCJE) for (const p of s.pola) if (p.k === k) return p.e;
@@ -1135,6 +1273,10 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'filtr': S.filtr = b.dataset.v; odswiezListe(); break;
+    case 'prosba-odrzuc': await D.odrzucProsbe(b.dataset.id); toast('Odrzucone. Jeśli to nie Ty próbowałeś się zalogować — zmień hasło w Ustawieniach.', 5000); break;
+    case 'pin-zmien': zmianaPinu(); break;
+    case 'haslo-zmien': zmianaHasla(); break;
+    case 'dziennik': pokazDziennik(); break;
     case 'wiecej': S.wiecej = !S.wiecej; odswiezListe(); break;
     case 'sync': D.synchronizuj().then(() => toast(D.stan.blad || 'Zsynchronizowano')); break;
     case 'aktywnosc': pokazAktywnosc(); break;
@@ -1161,6 +1303,30 @@ document.addEventListener('click', async (e) => {
       const k = `kl_${M.noweId(8)}`;
       await D.zmien(o.id, { [k]: { t: Date.now(), kto: D.stan.konto?.nazwa || '', status: 'nowy' } });
       setTimeout(() => $(`[data-e="${k}"][data-p="imie"]`)?.focus(), 80);
+      break;
+    }
+    case 'kl-zachowaj': {
+      const k = b.dataset.e; if (!o[k]) return;
+      await D.zmien(o.id, { [k]: { ...o[k], kontakt: Date.now() } });
+      D.stan.retencja = (D.stan.retencja || []).filter((w) => !(w.oid === o.id && w.k === k));
+      toast('Zachowane — kolejne 12 miesięcy od dziś'); break;
+    }
+    case 'kl-eksport': {
+      const k = b.dataset.e;
+      try {
+        if (D.ileWKolejce()) await D.synchronizuj();
+        const j = await D.daneOsoby(o.id, k);
+        const tekst = JSON.stringify({ oferta: M.tytul(o), wydano: new Date().toISOString(), administrator: agent().firma || 'AM Nieruchomości', dane: j.dane, historiaZmian: j.historia }, null, 2);
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([tekst], { type: 'application/json' }));
+        a.download = `dane-${slug(j.dane.imie || 'osoby')}.json`; document.body.appendChild(a); a.click(); a.remove();
+        toast('Plik z danymi osoby gotowy — przekaż go jej na żądanie (RODO art. 15)', 4000);
+      } catch (er) { toast(er.kod === 404 ? 'Ta osoba nie jest jeszcze na serwerze — połącz się z internetem.' : bladSieci(er), 4000); }
+      break;
+    }
+    case 'kl-rodo-usun': {
+      const k = b.dataset.e, x = o[k] || {};
+      if (!(await potwierdz(`Usunąć dane: ${x.imie || 'klient'}?`, 'Na żądanie osoby (RODO art. 17). Znikną z obu kont razem z całą historią zmian — tego nie da się cofnąć. Kopie zapasowe wygasają same po 60 dniach.', 'Usuń na zawsze'))) return;
+      try { await D.usunOsobe(o.id, k); toast('Dane osoby usunięte'); } catch (er) { toast(bladSieci(er), 4000); }
       break;
     }
     case 'kl-status': {
@@ -1368,9 +1534,11 @@ document.addEventListener('click', async (e) => {
     }
     case 'push-on': try { await D.wlaczPush(); toast('Powiadomienia włączone'); } catch (er) { toast(er.message, 4500); } break;
     case 'push-off': try { await D.wylaczPush(); toast('Powiadomienia wyłączone'); } catch (er) { toast(er.message, 4500); } break;
-    case 'wyloguj':
-      if (!(await potwierdz('Wylogować to urządzenie?', 'Niewysłane zmiany z tego urządzenia wyślą się po ponownym zalogowaniu.', 'Wyloguj'))) return;
-      await D.wyloguj(); render(); break;
+    case 'wyloguj': {
+      const n = D.ileWKolejce();
+      if (!(await potwierdz('Wylogować to urządzenie?', `Wszystkie dane znikną z tego urządzenia (na serwerze zostają).${n ? ` UWAGA: ${n} niewysłanych zmian przepadnie — najpierw połącz się z internetem.` : ''}`, 'Wyloguj'))) return;
+      await D.wyloguj(); break;
+    }
   }
 });
 
@@ -1383,8 +1551,18 @@ document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: fals
 addEventListener('hashchange', trasa);
 szeroki.addEventListener('change', () => { resetEdytora(); const e = $('#edytor'); if (e) e.dataset.tryb = ''; trasa(); });
 telefon.addEventListener('change', () => { resetEdytora(); const e = $('#edytor'); if (e) e.dataset.tryb = ''; trasa(); });
-D.naZmiane(() => { if (!D.stan.token && zbudowany) { render(); return; } odswiez(); });
+D.naZmiane(() => { if (!$('.kol-lista') && !zbudowany) return; if (!D.stan.token && zbudowany) { render(); return; } odswiez(); });
+try { const k = sessionStorage.getItem('am-komunikat'); if (k) { D.stan.blad = k; sessionStorage.removeItem('am-komunikat'); } } catch { /* */ }
+const przyg = await D.przygotuj();
+if (przyg.sejf && !(await Z.zSesji())) await ekranPin('otworz', przyg.bledy ? `Wpisz PIN. Złe próby: ${przyg.bledy} z ${Z.MAKS_PROB}.` : '');
 await D.start();
+if (D.stan.token && !D.sejfUstawiony()) await ekranPin('ustaw', 'Aplikacja chroni teraz dane klientów PIN-em. Ustaw 6 cyfr — będziesz je wpisywać przy otwarciu aplikacji i po 10 minutach przerwy.');
+// blokada po 10 minutach bez używania: klucz znika z pamięci, przy powrocie PIN
+const blokujPoPrzerwie = () => { if (D.sejfUstawiony() && Z.otwarty() && Date.now() - Z.ostatniaAktywnosc() > Z.BEZCZYNNOSC) { Z.zamknij(); location.reload(); } };
+for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => Z.aktywnosc(), { capture: true, passive: true });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') Z.aktywnosc(); else blokujPoPrzerwie(); });
+addEventListener('pageshow', blokujPoPrzerwie);
+setInterval(blokujPoPrzerwie, 30e3);
 K.naZmiane(() => { if (S.ekran === 'ustawienia') odswiezUstawienia(); });
 K.start();
 render();

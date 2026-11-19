@@ -4,7 +4,7 @@ function baza() {
   return new Promise((ok, zle) => {
     const r = indexedDB.open('am-rzut', 1);
     r.onupgradeneeded = () => r.result.createObjectStore('dane');
-    r.onsuccess = () => ok(r.result);
+    r.onsuccess = () => { r.result.onversionchange = () => r.result.close(); ok(r.result); };
     r.onerror = () => zle(r.error);
   });
 }

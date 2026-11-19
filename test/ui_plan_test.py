@@ -2,6 +2,7 @@
 # wyprostowanie, szczypanie, zapis do oferty i ponowne otwarcie. python3 test/ui_plan_test.py [chromium|webkit] [szer wys]
 # Wymaga: python3 test/serwer_jak_github.py (8767) i serwera API na 18931 (AM_ORIGINS z http://127.0.0.1:8767).
 from playwright.sync_api import sync_playwright
+from pomoc import zaloguj, odblokuj, wpisz_pin
 import sys, shutil, os, json, math
 silnik = sys.argv[1] if len(sys.argv) > 1 else 'chromium'
 W, H = (int(sys.argv[2]), int(sys.argv[3])) if len(sys.argv) > 3 else (430, 932)
@@ -17,7 +18,7 @@ with sync_playwright() as p:
     pg.on('pageerror', lambda e: bl.append(f'pageerror {e}'))
     pg.on('console', lambda m: bl.append(f'console {m.text}') if m.type == 'error' and 'favicon' not in m.text else None)
     shot = lambda n: pg.screenshot(path=f'/tmp/amshots/pt-{TAG}-{n}.png')
-    pg.goto(URL); pg.fill('#l-login', 'marek'); pg.fill('#l-haslo', 'tajne123'); pg.click('#f-log button'); pg.wait_for_selector('#karty')
+    zaloguj(pg, URL)
     pg.locator('[data-a=nowa]:visible').first.click(); pg.wait_for_selector('#sek-podstawy')
     oid = pg.evaluate("location.hash.split('/')[2]")
     pg.fill('#f-roboczy', 'Test rzutu'); pg.locator('#f-roboczy').blur(); pg.wait_for_timeout(300)
