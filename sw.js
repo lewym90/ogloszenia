@@ -1,8 +1,8 @@
 // AM Oferty — praca offline i powiadomienia.
-const WERSJA = 'amoferty-1.12.0';
+const WERSJA = 'amoferty-1.13.0';
 // edytor rzutów (rzut/) ma osobną pamięć: pliki z hashem w nazwie, raz pobrane działają też bez internetu
 const RZUT = 'amoferty-rzut';
-const PLIKI = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'js/app.js', 'js/dane.js', 'js/sejf.js', 'js/model.js', 'js/zip.js', 'js/kopia.js', 'js/rzut.js', 'plan.html', 'css/plan.css', 'js/plan/edytor.js', 'js/plan/rysuj.js', 'js/plan/rysuj3d.js', 'js/plan/dopasuj.js', 'js/plan/biblioteka.js', 'js/plan/geom.js',
+const PLIKI = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'js/app.js', 'js/dane.js', 'js/sejf.js', 'js/model.js', 'js/zip.js', 'js/kopia.js', 'js/rzut.js', 'js/korekta.js', 'js/edytorZdjec.js', 'plan.html', 'css/plan.css', 'js/plan/edytor.js', 'js/plan/rysuj.js', 'js/plan/rysuj3d.js', 'js/plan/dopasuj.js', 'js/plan/biblioteka.js', 'js/plan/geom.js',
   'fonts/archivo.woff2', ...['latin', 'latin-ext'].flatMap((z) => [500, 600].map((g) => `fonts/cormorant-${z}-${g}.woff2`)), 'ikony/icon-192.png', 'ikony/icon-512.png', 'ikony/apple-touch-icon.png',
   'img/tlo.jpg', 'img/monogram.png', ...['podstawy', 'lokalizacja', 'lokal', 'pom', 'koszty', 'atuty', 'minusy', 'okolica', 'weryfikacja', 'energia', 'tekst', 'wlasciciel', 'wyp', 'klienci', 'wizyty', 'dokumenty', 'zdjecia', 'ogloszenie', 'kontrola'].map((n) => `img/ikony/${n}.png`)];
 

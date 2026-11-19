@@ -397,6 +397,22 @@ export async function przygotujZdjecia(oid, pliki, naPostep) {
   wyslijZdjecia();
   return nowe;
 }
+// gotowy JPEG (np. po korekcie, już ≤ 2560 px) — bez ponownej kompresji pełnej wersji
+export async function dodajGotoweZdjecie(oid, blob, w, h) {
+  const id = noweId(12);
+  const sr = await przeskaluj(blob, 1400, 0.84);
+  const mini = await przeskaluj(sr.blob, 520, 0.8);
+  await idbPut('pliki', blob, `${id}:pelne`);
+  await idbPut('pliki', sr.blob, `${id}:sr`);
+  await idbPut('pliki', mini.blob, `${id}:mini`);
+  for (const rodzaj of ['mini', 'sr', 'pelne']) {
+    const wp = { klucz: `${id}:${rodzaj}`, id, oid, rodzaj };
+    wysylki.push(wp); await idbPut('wysylka', wp);
+  }
+  powiadom();
+  wyslijZdjecia();
+  return { id, w, h, t: Date.now() };
+}
 let wysylaZdjecia = false, jeszczeRaz = false;
 async function wyslijZdjecia() {
   if (wysylaZdjecia) { jeszczeRaz = true; return; } // dopisane w trakcie wysyłki pójdą zaraz po niej

@@ -5,8 +5,10 @@ import * as Z from './sejf.js';
 import { zrobZip } from './zip.js';
 import * as K from './kopia.js';
 import * as R from './rzut.js';
+import * as KZ from './korekta.js';
+import { otworzEdytor, obrobPelne, autoDlaBloba } from './edytorZdjec.js';
 
-export const WERSJA = '1.12.0';
+export const WERSJA = '1.13.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -851,6 +853,8 @@ async function otworzPlikDok(f) {
 
 // zdjęciem głównym może być tylko prawdziwe zdjęcie: nie wizualizacja i nie rzut
 const mozeBycGlowne = (z) => !z.wiz && z.pom !== 'rzut';
+// korekta tylko prawdziwych zdjęć — nie wizualizacji i nie rzutów z edytora
+const doKorekty = (z) => !z.wiz && !z.rzutAuto && !z.rzutAuto3d;
 
 // ----- rzut z edytora -----
 function panelRzutu(o) {
@@ -951,6 +955,7 @@ function tabZdjecia(t, o) {
   const brakRzutu = L.find((x) => x.id === 'rzut' && !x.ok);
   wstaw($('#zdj-rzut', t), panelRzutu(o));
   wstaw($('#zdj-licznik', t), `<div class="zdj-licznik"><b>${zdj.length}</b><span class="wyc">zdjęć · prawdziwych ${zwykle}, minimum ${M.minZdjec(o)}</span><span class="rozp"></span>
+    ${zdj.some(doKorekty) && !zdj.filter(doKorekty).every((z) => z.kor) ? `<button class="btn kontur maly" data-a="zdj-auto-wszystkie">${ik('wiz')}Popraw automatycznie</button>` : ''}
     ${zdj.length ? `<button class="btn kontur maly" data-a="pobierz-zdj">${ik('pobierz')}Pobierz w kolejności</button>` : ''}</div>`);
   // pole wyboru plików — odświeżane tylko, gdy zmieni się lista pomieszczeń
   wstaw($('#zdj-dodaj', t), `<div class="siatka" style="padding-top:0">
@@ -965,7 +970,7 @@ function tabZdjecia(t, o) {
   const oryginaly = zdj.filter((z) => !z.wiz);
   wstaw($('#zdj-siatka', t), zdj.map((z, i) => `<div class="zdj szklo ${z.glowne ? 'glowne' : ''}">
     <div class="obraz">${imgMini(z.id, nazwaMiejsca(z, o))}<span class="nr">${i + 1}</span>
-      <span class="znaczki">${z.glowne ? '<span class="zn gl">Główne</span>' : ''}${z.wiz ? '<span class="zn wiz">Wizualizacja</span>' : ''}${D.czekaNaWyslanie(z.id) ? `<span class="zn">${ik('wysyla')}</span>` : ''}</span></div>
+      <span class="znaczki">${z.glowne ? '<span class="zn gl">Główne</span>' : ''}${z.wiz ? '<span class="zn wiz">Wizualizacja</span>' : ''}${z.kor ? `<span class="zn kor" title="Poprawione: ${esc(KZ.opisKorekty(z.kor.par))}">Poprawione</span>` : ''}${D.czekaNaWyslanie(z.id) ? `<span class="zn">${ik('wysyla')}</span>` : ''}</span></div>
     <div class="dane-zdj">
       <div class="wejscie"><select data-z="${z.id}" data-p="pom" aria-label="Miejsce zdjęcia">${opcjeMiejsc(o, z.pom)}</select></div>
       ${z.wiz ? `<div class="wejscie"><select data-z="${z.id}" data-p="oryg" aria-label="Oryginał wizualizacji"><option value="">— oryginał tej wizualizacji —</option>${oryginaly.map((x) => `<option value="${x.id}" ${z.oryg === x.id ? 'selected' : ''}>Zdjęcie ${zdj.indexOf(x) + 1}${x.pom ? ` · ${esc(nazwaMiejsca(x, o))}` : ''}</option>`).join('')}</select></div>` : ''}
@@ -975,6 +980,7 @@ function tabZdjecia(t, o) {
       <button data-a="zdj-ruch" data-z="${z.id}" data-v="-1" aria-label="Przesuń wcześniej" ${i === 0 ? 'disabled' : ''}>${ik('lewo')}</button>
       <button data-a="zdj-ruch" data-z="${z.id}" data-v="1" aria-label="Przesuń dalej" ${i === zdj.length - 1 ? 'disabled' : ''}>${ik('prawo')}</button>
       <button data-a="zdj-gl" data-z="${z.id}" class="${z.glowne ? 'akt' : ''}" aria-label="Zdjęcie główne" title="Zdjęcie główne">${ik('gwiazda')}</button>
+      <button data-a="zdj-popraw" data-z="${z.id}" class="${z.kor ? 'akt' : ''}" aria-label="Popraw zdjęcie" title="Popraw: jasność, kolor, piony, kadr" ${doKorekty(z) ? '' : 'disabled'}>${ik('suwaki')}</button>
       <button data-a="zdj-wiz" data-z="${z.id}" class="${z.wiz ? 'akt' : ''}" aria-label="Wizualizacja" title="Oznacz jako wizualizację">${ik('wiz')}</button>
       <button data-a="zdj-usun" data-z="${z.id}" aria-label="Usuń zdjęcie" title="Usuń">${ik('kosz')}</button>
     </div></div>`).join('') || '<div class="pusto">Brak zdjęć. Wybierz pomieszczenie i dodaj zdjęcia z aparatu albo galerii.</div>');
@@ -1518,6 +1524,74 @@ async function podgladZdjecia(id) {
   try { const b = await D.blobZdjecia(id); $('img', tlo).src = URL.createObjectURL(b); } catch { /* zostaje miniatura */ }
 }
 
+// ---------- korekta zdjęć (jasność, kolor, piony, kadr — bez retuszu; oryginał zostaje) ----------
+// wpis zdjęcia po korekcie: nowy plik, w `kor` — id oryginału i ustawienia; odwołania wizualizacji przepięte
+async function zapiszKorekte(oid, stareId, wynik, par, org) {
+  const nowe = await D.dodajGotoweZdjecie(oid, wynik.blob, wynik.w, wynik.h);
+  const o = D.oferta(oid);
+  const zdj = (o.zdj || []).map((z) => (z.id === stareId ? { ...z, id: nowe.id, w: nowe.w, h: nowe.h, kor: { org, par: wezPar(par), t: Date.now(), w: z.kor?.w ?? z.w, h: z.kor?.h ?? z.h } }
+    : z.oryg === stareId ? { ...z, oryg: nowe.id } : z));
+  await D.zmien(oid, { zdj });
+  if (stareId !== org) D.usunZdjeciePlik(stareId); // poprzednia wersja poprawionego — oryginał zostaje
+  return nowe.id;
+}
+// tylko ustawienia różne od domyślnych (krócej w bazie)
+function wezPar(par) { const p = KZ.normuj(par), w = {}; for (const [k, v] of Object.entries(p)) if (v !== KZ.DOMYSLNE[k]) w[k] = typeof v === 'number' ? Math.round(v * 10000) / 10000 : v; return w; }
+async function przywrocOryginal(oid, id) {
+  const o = D.oferta(oid), z0 = (o.zdj || []).find((z) => z.id === id);
+  if (!z0?.kor) return;
+  const org = z0.kor.org;
+  const zdj = (o.zdj || []).map((z) => (z.id === id ? JSON.parse(JSON.stringify({ ...z, id: org, kor: undefined, w: z.kor.w || z.w, h: z.kor.h || z.h })) : z.oryg === id ? { ...z, oryg: org } : z));
+  await D.zmien(oid, { zdj });
+  D.usunZdjeciePlik(id);
+  toast('Przywrócono oryginał');
+}
+let edycjaZdjecia = false;
+async function poprawZdjecie(oid, id) {
+  if (edycjaZdjecia) return;
+  const o = D.oferta(oid), z = (o.zdj || []).find((x) => x.id === id);
+  if (!z || !doKorekty(z)) return;
+  edycjaZdjecia = true;
+  try {
+    const org = z.kor?.org || id;
+    let blob;
+    try { blob = await D.blobZdjecia(org); } catch { return toast('Oryginał jest na serwerze — połącz się z internetem, żeby poprawić zdjęcie.', 4000); }
+    const w = await otworzEdytor({ blob, par: z.kor?.par, tytul: nazwaMiejsca(z, o), maOryginal: !!z.kor, ik });
+    if (!w) return;
+    if (w.przywroc) {
+      if (await potwierdz('Przywrócić oryginał?', 'Poprawiona wersja zniknie, w ofercie wróci zdjęcie sprzed korekty.', 'Przywróć', 'zloty')) await przywrocOryginal(oid, id);
+      return;
+    }
+    await zapiszKorekte(oid, id, w, w.par, org);
+    toast('Zdjęcie poprawione — oryginał zostaje na serwerze', 3000);
+  } catch (e) { toast(e.message || 'Nie udało się poprawić zdjęcia', 3500); }
+  finally { edycjaZdjecia = false; }
+}
+async function poprawWszystkie(oid) {
+  if (edycjaZdjecia) return;
+  const lista = (D.oferta(oid).zdj || []).filter((z) => doKorekty(z) && !z.kor);
+  if (!lista.length) return;
+  if (!(await potwierdz('Poprawić zdjęcia automatycznie?', `${lista.length} ${lista.length === 1 ? 'zdjęcie' : lista.length < 5 ? 'zdjęcia' : 'zdjęć'}: jasność, balans bieli i piony, bez retuszu. Oryginały zostają na serwerze — każde możesz potem przywrócić albo poprawić ręcznie.`, 'Popraw', 'zloty'))) return;
+  edycjaZdjecia = true;
+  let zrobione = 0, bez = 0, bledy = 0;
+  try {
+    for (let i = 0; i < lista.length; i++) {
+      S.postep = `Poprawiam zdjęcie ${i + 1} z ${lista.length}…`; odswiez();
+      const z = lista[i];
+      if (!(D.oferta(oid).zdj || []).some((x) => x.id === z.id)) continue;
+      try {
+        const blob = await D.blobZdjecia(z.id);
+        const par = await autoDlaBloba(blob);
+        if (!KZ.zmienia(par)) { bez++; continue; }
+        const w = await obrobPelne(blob, par);
+        await zapiszKorekte(oid, z.id, w, par, z.id);
+        zrobione++;
+      } catch { bledy++; }
+    }
+  } finally { edycjaZdjecia = false; S.postep = ''; odswiez(); }
+  toast(`Poprawione: ${zrobione}${bez ? ` · bez zmian: ${bez}` : ''}${bledy ? ` · nie udało się: ${bledy} (brak internetu?)` : ''}`, 4000);
+}
+
 // ---------- okna ----------
 function okno(tytul, html) {
   const tlo = document.createElement('div');
@@ -1848,12 +1922,16 @@ document.addEventListener('click', async (e) => {
     case 'zdj-usun': {
       if (!(await potwierdz('Usunąć zdjęcie?', 'Zniknie z oferty na wszystkich urządzeniach i z serwera.', 'Usuń'))) return;
       const id = b.dataset.z;
+      const org = (o.zdj || []).find((z) => z.id === id)?.kor?.org;
       const zdj = (o.zdj || []).filter((z) => z.id !== id).map((z) => (z.oryg === id ? { ...z, oryg: undefined } : z)).map((z) => JSON.parse(JSON.stringify(z)));
       if (!zdj.some((z) => z.glowne)) { const p = zdj.find(mozeBycGlowne); if (p) p.glowne = true; }
       await D.zmien(o.id, { zdj });
       D.usunZdjeciePlik(id);
+      if (org) D.usunZdjeciePlik(org);
       break;
     }
+    case 'zdj-popraw': poprawZdjecie(o.id, b.dataset.z); break;
+    case 'zdj-auto-wszystkie': poprawWszystkie(o.id); break;
     case 'pobierz-zdj': pobierzZdjecia(o); break;
     case 'menu': {
       const w = okno(o.roboczy || M.tytul(o), `<div class="menu-lista"><button data-m="historia">${ik('zegar')}Historia zmian</button><button data-m="usun" class="zly">${ik('kosz')}Usuń ofertę</button></div>`);

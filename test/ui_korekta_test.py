@@ -1,0 +1,129 @@
+# Korekta zdjęć (1.13.0): edytor (automat, suwaki, kadr), zapis z zachowaniem oryginału, przywrócenie, poprawa automatyczna wszystkich.
+# python3 test/ui_korekta_test.py [chromium|webkit] [szer wys]; serwery jak test/ui_test.py
+import sys, os, math
+from PIL import Image, ImageDraw
+from playwright.sync_api import sync_playwright
+from pomoc import zaloguj
+
+silnik = sys.argv[1] if len(sys.argv) > 1 else 'chromium'
+W, H = (int(sys.argv[2]), int(sys.argv[3])) if len(sys.argv) > 3 else (390, 844)
+TAG = f'{silnik}-{W}'
+URL = 'http://localhost:8766/?api=http://127.0.0.1:18931'
+OUT = '/tmp/amshots'; os.makedirs(OUT, exist_ok=True)
+wyniki = []
+def ok(w, t):
+    print(('OK  ' if w else 'BŁĄD'), t); wyniki.append(w); assert w, t
+shot = lambda pg, n: pg.screenshot(path=f'{OUT}/korekta-{TAG}-{n}.png')
+D = "(async()=>{const D=await import('./js/dane.js'); %s})()"
+
+# zdjęcie „zrobione krzywo”: ciemne, żółtawe, piony zbiegają się ku górze i lekko przechylone
+def krzywe(sciezka, ciemne=0.55):
+    w, h = 1600, 1200
+    im = Image.new('RGB', (w, h), (int(225 * ciemne), int(200 * ciemne), int(150 * ciemne)))
+    d = ImageDraw.Draw(im)
+    for X in range(120, w, 170):
+        dx = (X - w / 2)
+        top = X - dx * 0.14 + 0.035 * h  # zbieżność + przechył
+        d.line([(X, h), (top, 0)], fill=(int(70 * ciemne), int(60 * ciemne), int(45 * ciemne)), width=9)
+    d.rectangle([600, 700, 1000, 1000], fill=(int(160 * ciemne), int(120 * ciemne), int(90 * ciemne)))
+    im.save(sciezka, quality=92)
+krzywe('/tmp/krzywe1.jpg'); krzywe('/tmp/krzywe2.jpg', 0.7); krzywe('/tmp/krzywe3.jpg', 0.6)
+
+with sync_playwright() as p:
+    br = p.webkit.launch() if silnik == 'webkit' else p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--no-sandbox'])
+    c = br.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2 if W < 800 else 1, has_touch=W < 1000, locale='pl-PL')
+    pg = c.new_page(); bl = []
+    pg.on('pageerror', lambda e: bl.append(str(e)))
+    zaloguj(pg, URL)
+    pg.click('#dol [data-a=nowa]') if pg.locator('#dol [data-a=nowa]').is_visible() else pg.click('[data-a=nowa]')
+    pg.wait_for_selector('#sek-podstawy')
+    oid = pg.evaluate("location.hash.split('/')[2]")
+    pg.evaluate(D % f"await D.zmien('{oid}', {{roboczy:'Korekta test', transakcja:'najem', rodzaj:'mieszkanie', miasto:'Lublin'}})")
+    pg.evaluate(f"location.hash = '#/o/{oid}/zdjecia'"); pg.wait_for_selector('#dodaj-zdj', state='attached')
+    pg.set_input_files('#dodaj-zdj', ['/tmp/krzywe1.jpg']); pg.wait_for_selector('.zdj', timeout=30000)
+    id0 = pg.evaluate(D % f"return D.oferta('{oid}').zdj[0].id")
+    ok(pg.locator('.zdj [data-a=zdj-popraw]').count() == 1, 'na karcie zdjęcia jest przycisk „Popraw”')
+    ok(pg.evaluate("[...document.querySelectorAll('.zdj .akcje button')].every(b => b.getBoundingClientRect().width >= 30 && b.getBoundingClientRect().right <= b.closest('.zdj').getBoundingClientRect().right)"), 'sześć przycisków karty zdjęcia mieści się (min. 30 px)')
+    ok(pg.locator('[data-a=zdj-auto-wszystkie]').count() == 1, 'nad zdjęciami „Popraw automatycznie”')
+
+    # edytor
+    pg.click('.zdj [data-a=zdj-popraw]'); pg.wait_for_selector('.edytor-zdj.gotowy', timeout=20000); pg.wait_for_timeout(300)
+    ok(pg.locator('.ez-suwak').count() == 7 and pg.locator('[data-prop]').count() == 4, 'edytor: 7 suwaków (jasność, cienie, temperatura, odcień, prostowanie, piony, przybliżenie) i 4 proporcje')
+    ok('Bez retuszu' in pg.inner_text('.ez-info') and pg.locator('[data-ez=oryginal]').count() == 0, 'informacja „bez retuszu, oryginał zostaje”; bez „Przywróć” przy pierwszej korekcie')
+    rk = pg.locator('.ez-ramka').bounding_box(); ob = pg.locator('.ez-obraz').bounding_box()
+    ok(rk['width'] > 100 and rk['x'] >= ob['x'] - 1 and rk['x'] + rk['width'] <= ob['x'] + ob['width'] + 1 and rk['y'] + rk['height'] <= ob['y'] + ob['height'] + 1, f'podgląd mieści się w polu obrazu ({int(rk["width"])}×{int(rk["height"])})')
+    ok(pg.evaluate("[...document.querySelectorAll('.ez-panel, .ez-gora, .ez-panel *')].every(e => e.scrollWidth <= e.clientWidth + 1 || getComputedStyle(e).overflowX === 'visible' && e.getBoundingClientRect().right <= innerWidth + 1)"), 'panel edytora mieści się w szerokości ekranu')
+    shot(pg, '01-edytor')
+    pg.click('[data-ez=auto]'); pg.wait_for_timeout(500)
+    wart = {k: pg.inner_text(f'[data-wart={k}]') for k in ['ev', 'temp', 'obrot', 'piony']}
+    ok(wart['ev'].startswith('+') and 'chłodniej' in wart['temp'] and wart['obrot'].startswith('−') and wart['piony'].startswith('+'), f'automat: jaśniej, chłodniej, prostuje i poprawia piony {wart}')
+    ok(pg.inner_text('.ez-stan').startswith('Poprawione:'), 'pod podglądem opis korekty')
+    shot(pg, '02-auto')
+    # przybliżenie i przesunięcie kadru palcem
+    pg.evaluate("(()=>{const i=document.querySelector('[data-s=zoom]'); i.value=0.5; i.dispatchEvent(new Event('input',{bubbles:true}));})()")
+    pg.wait_for_timeout(200)
+    ok(pg.inner_text('[data-wart=zoom]') == '150%', 'przybliżenie 150%')
+    b = pg.locator('.ez-ramka canvas').bounding_box()
+    pg.mouse.move(b['x'] + b['width'] / 2, b['y'] + b['height'] / 2); pg.mouse.down()
+    pg.mouse.move(b['x'] + b['width'] / 2 + 60, b['y'] + b['height'] / 2, steps=5)
+    ok('siatka' in pg.get_attribute('.ez-ramka', 'class'), 'podczas przesuwania widać siatkę')
+    pg.mouse.up(); pg.wait_for_timeout(200)
+    # przytrzymanie „Przed”
+    pb = pg.locator('[data-ez=przed]').bounding_box()
+    pg.mouse.move(pb['x'] + 10, pb['y'] + 10); pg.mouse.down(); pg.wait_for_timeout(250)
+    ok(pg.inner_text('.ez-stan') == 'Przed korektą', '„Przed” pokazuje zdjęcie sprzed korekty')
+    pg.mouse.up(); pg.wait_for_timeout(250)
+    ok(pg.inner_text('.ez-stan').startswith('Poprawione'), 'po puszczeniu wraca korekta')
+    pg.click('[data-prop="4:3"]'); pg.wait_for_timeout(200)
+    shot(pg, '03-kadr')
+    pg.click('[data-ez=zapisz]'); pg.wait_for_selector('.edytor-zdj', state='detached', timeout=30000); pg.wait_for_timeout(800)
+    z = pg.evaluate(D % f"return D.oferta('{oid}').zdj[0]")
+    ok(z['id'] != id0 and z['kor']['org'] == id0 and z['kor']['par'].get('proporcje') == '4:3', 'zapis: nowe zdjęcie, oryginał zapamiętany, ustawienia w ofercie')
+    ok(abs(z['w'] / z['h'] - 4 / 3) < 0.01 and max(z['w'], z['h']) <= 2560, f'wynik w proporcjach 4:3 ({z["w"]}×{z["h"]})')
+    ok(pg.locator('.zdj .zn.kor').count() == 1 and pg.locator('.zdj [data-a=zdj-popraw].akt').count() == 1, 'na karcie znaczek „Poprawione”')
+    pg.wait_for_function(f"document.querySelector('.zdj img[data-mini=\"{z['id']}\"]')?.src", timeout=15000)
+    # serwer dostał nowe zdjęcie, oryginał został
+    pg.wait_for_function("(async()=>{const D=await import('./js/dane.js'); return !D.czekaNaWyslanie('%s');})()" % z['id'], timeout=30000)
+    pg.wait_for_timeout(500)
+    pliki = os.listdir('/tmp/amdane/zdjecia')
+    ok(f"{id0}.jpg" in pliki and f"{z['id']}.jpg" in pliki, 'na serwerze są oba: oryginał i poprawione')
+    shot(pg, '04-karta')
+
+    # ponowna edycja zaczyna od oryginału z zapisanymi ustawieniami; przywrócenie oryginału
+    pg.click('.zdj [data-a=zdj-popraw]'); pg.wait_for_selector('.edytor-zdj.gotowy', timeout=20000); pg.wait_for_timeout(300)
+    ok(pg.locator('[data-prop="4:3"].akt').count() == 1 and pg.inner_text('[data-wart=zoom]') == '150%', 'ponowna edycja: wracają poprzednie ustawienia')
+    ok(pg.locator('[data-ez=oryginal]').count() == 1, 'jest „Przywróć oryginał”')
+    pg.click('[data-ez=oryginal]'); pg.wait_for_selector('.okno-tlo [data-t]'); pg.click('.okno-tlo [data-t]'); pg.wait_for_timeout(800)
+    z2 = pg.evaluate(D % f"return D.oferta('{oid}').zdj[0]")
+    ok(z2['id'] == id0 and 'kor' not in z2 and z2['w'] == 1600, 'przywrócony oryginał (id i wymiary sprzed korekty)')
+    ok(pg.locator('.zdj .zn.kor').count() == 0, 'znaczek „Poprawione” zniknął')
+
+    # anulowanie nic nie zmienia
+    pg.click('.zdj [data-a=zdj-popraw]'); pg.wait_for_selector('.edytor-zdj.gotowy', timeout=20000)
+    pg.click('[data-ez=auto]'); pg.click('[data-ez=anuluj]'); pg.wait_for_timeout(300)
+    ok(pg.evaluate(D % f"return D.oferta('{oid}').zdj[0].id") == id0, 'zamknięcie bez zapisu nic nie zmienia')
+
+    # automatycznie wszystkie
+    pg.set_input_files('#dodaj-zdj', ['/tmp/krzywe2.jpg', '/tmp/krzywe3.jpg']); pg.wait_for_function("document.querySelectorAll('.zdj').length === 3", timeout=30000)
+    pg.click('[data-a=zdj-auto-wszystkie]'); pg.wait_for_selector('.okno-tlo [data-t]'); pg.click('.okno-tlo [data-t]')
+    pg.wait_for_function("document.querySelectorAll('.zdj .zn.kor').length === 3", timeout=60000)
+    pg.wait_for_function(f"(async()=>{{const D=await import('./js/dane.js'); return D.oferta('{oid}').zdj.every(z=>z.kor);}})()", timeout=60000)
+    ok(pg.locator('.zdj .zn.kor').count() == 3, 'automatycznie poprawione wszystkie 3 zdjęcia')
+    ok(pg.locator('[data-a=zdj-auto-wszystkie]').count() == 0, 'przycisk znika, gdy nie ma czego poprawiać')
+    zs = pg.evaluate(D % f"return D.oferta('{oid}').zdj")
+    ok(all(abs(x['kor']['par'].get('obrot', 0)) > 0.5 for x in zs), 'automat wyprostował każde zdjęcie')
+    shot(pg, '05-wszystkie')
+
+    # usunięcie poprawionego usuwa też oryginał
+    pg.wait_for_function("(async()=>{const D=await import('./js/dane.js'); return !D.oferta('%s').zdj.some(z=>D.czekaNaWyslanie(z.id));})()" % oid, timeout=30000)
+    pierwsze = zs[0]
+    pg.click('.zdj [data-a=zdj-usun]'); pg.wait_for_selector('.okno-tlo [data-t]'); pg.click('.okno-tlo [data-t]'); pg.wait_for_timeout(1500)
+    pliki = os.listdir('/tmp/amdane/zdjecia')
+    ok(f"{pierwsze['id']}.jpg" not in pliki and f"{pierwsze['kor']['org']}.jpg" not in pliki, 'usunięcie zdjęcia usuwa z serwera także oryginał')
+
+    # pobieranie w kolejności daje poprawione pliki
+    nb = pg.evaluate(D % f"const z=D.oferta('{oid}').zdj[0]; const b=await D.blobZdjecia(z.id); const i=await createImageBitmap(b); return [i.width,i.height,z.w,z.h]")
+    ok(nb[0] == nb[2] and nb[1] == nb[3], 'plik do ogłoszenia = wersja poprawiona')
+    ok(not bl, f'brak błędów strony {bl}')
+    br.close()
+print(f'\n{sum(wyniki)}/{len(wyniki)} OK ({TAG})')

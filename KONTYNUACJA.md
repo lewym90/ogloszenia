@@ -196,3 +196,11 @@ Dokumentacja (Claude Docs): „RODO — dokumentacja biura AM” https://claude.
 - E: status w pigułce w nagłówku oferty (`status-menu`, też w Kontroli zamiast selecta), AML ma ikonę legitymacji (inna niż Sprawdziliśmy), na tablecie i laptopie w sekcji lewa kolumna pokazuje spis oferty (`#spis-boczny`, `data-sekcja`).
 - Testy: `test/ui_spis_test.py [silnik] [szer wys]` 13/13 (telefon) i 15/15 (szeroki).
 - Do zrobienia na zgodę: D (krótsze formularze — „Więcej szczegółów”), łączenie krótkich sekcji.
+
+## 1.13.0 (19.11.2026) — uczciwa korekta zdjęć (punkt A4 planu)
+Decyzja: liczone na urządzeniu (nie sharp na serwerze) — działa bez aktualizacji serwera i bez internetu (gdy oryginał jest w telefonie), podgląd na żywo, serwer dalej bez bibliotek. Punkt D audytu (krótsze formularze) odrzucony przez właściciela — nie proponować.
+- `js/korekta.js` (czyste funkcje, test `test/korekta.test.mjs`): jasność (EV, rozjaśnianie bez przepalania), cienie, balans bieli (temperatura/odcień, jasność bez zmian), prostowanie (obrót), zbieżność pionów (homografia trapez → prostokąt), kadr (proporcje jak zdjęcie / 4:3 / 3:2 / 16:9, przybliżenie, przesunięcie — zawsze w obrębie zdjęcia, bez czarnych rogów). Automat: balans z jasnych mało nasyconych miejsc, jasność z mediany (jasnych wnętrz nie przyciemnia), piony z nachylenia pionowych krawędzi (Sobel po rozmyciu, kąt = a + b·x, 2 rundy). Bez retuszu — nic nie dorysowujemy ani nie usuwamy.
+- `js/edytorZdjec.js`: okno edytora (suwaki, „Automatycznie”, przytrzymaj „Przed”, „Wyzeruj”, siatka przy prostowaniu, przesuwanie kadru palcem, „Przywróć oryginał”), `obrobPelne` (pełna rozdzielczość ≤ 2560 px, JPEG 0,9), `autoDlaBloba`. Zmniejszanie po połowie (Safari).
+- Oferta: poprawione zdjęcie = nowy plik; wpis `zdj` dostaje nowe `id` i `kor: {org, par, t, w, h}` (oryginał zostaje na serwerze); wizualizacje przepinane (`oryg`). Ponowna edycja startuje od oryginału z zapisanymi ustawieniami (poprzednia poprawiona wersja usuwana). Usunięcie zdjęcia usuwa też oryginał. Nie dotyczy wizualizacji i rzutów z edytora (`doKorekty`).
+- „Popraw automatycznie” nad zdjęciami — wszystkie jeszcze niepoprawione; każde można potem przywrócić. `D.dodajGotoweZdjecie` (bez ponownej kompresji pełnej wersji).
+- Test: `test/ui_korekta_test.py` 28/28 (chromium/webkit, 320/390/820/1180/1440).
