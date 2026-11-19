@@ -34,7 +34,7 @@ with sync_playwright() as p:
     oid = pg.evaluate("location.hash.split('/')[2]")
     pg.evaluate(f"(async()=>{{const D=await import('./js/dane.js'); await D.zmien('{oid}', {{roboczy:'Lipowa 7 AML', transakcja:'sprzedaz', ulica:'Lipowa 7', miasto:'Lublin', wlImie:'Jan Właściciel', wlTel:'600111222', wlEmail:'jan@x.pl', umowaNr:'5/2027', kl_kup00001:{{imie:'Ewa Kupiec', tel:'600333444', status:'umowiony', t:Date.now()}}}})}})()")
     pg.evaluate(f"location.hash='#/o/{oid}'"); pg.wait_for_selector('.spis')
-    pod = pg.inner_text('.spis')
+    pod = pg.inner_text('#ed-tresc')
     ok('Jan Właściciel' not in pod, 'spis karty nie pokazuje nazwiska właściciela')
     ok('AML' in pod, 'kafelek AML w spisie')
     # PIN przy wejściu w klientów
@@ -83,10 +83,13 @@ with sync_playwright() as p:
     with pg.expect_download() as dl: pg.click(f'[data-a=kl-eksport][data-e="{k}"]')
     dane = json.loads(open(dl.value.path(), encoding='utf-8').read())['dane']
     ok(dane.get('pesel') == '85010112345' and 'cz_gotowka' not in dane, 'dane dla osoby: z PESEL-em, bez oceny ryzyka (art. 54)')
-    # wyjście do spisu i powrót = PIN znowu
+    # spis tej oferty: grupa otwarta; wyjście z oferty i powrót = PIN znowu
     pg.evaluate(f"location.hash='#/o/{oid}'"); pg.wait_for_selector('.spis')
+    pg.evaluate(f"location.hash='#/o/{oid}/aml'"); pg.wait_for_selector('[data-a=am-dodaj]')
+    ok(not pg.locator('#pin-dane').count(), 'przez spis tej samej oferty grupa zostaje otwarta')
+    pg.evaluate("location.hash='#/'"); pg.wait_for_timeout(300)
     pg.evaluate(f"location.hash='#/o/{oid}/aml'"); pg.wait_for_selector('#pin-dane')
-    ok(True, 'po wyjściu z danych osobowych — znowu PIN')
+    ok(True, 'po wyjściu z oferty — znowu PIN')
     pg.fill('#pin-dane', PIN); pg.wait_for_selector('[data-a=am-dodaj]', timeout=20000)
     # właściciel: PIN, RODO, karta AML właściciela
     pg.evaluate(f"location.hash='#/o/{oid}/s/wlasciciel'"); pg.wait_for_timeout(500)

@@ -623,3 +623,60 @@ input[type=date]:not(:valid)::-webkit-datetime-edit, input[type=datetime-local]:
 /* karta AML: na telefonie każde pole w całej szerokości — długie etykiety i wartości z dokumentów się nie ucinają */
 @container (max-width: 469px) { .karta-aml .siatka > .pole.pol { grid-column: 1 / -1; } }
 .karta-aml .grupa-tyt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* 1.12.0 — spis karty w grupach, karta „Co dalej”, jeden znak gotowości, status w nagłówku */
+.grupa-spisu { margin-top: 18px; }
+.grupa-spisu-tyt { display: flex; align-items: center; gap: 8px; margin: 0 4px 8px; font-family: 'Archivo', sans-serif; font-weight: 500; font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--gold-l); }
+.grupa-spisu-tyt .ik { width: 16px; height: 16px; }
+.grupa-spisu-tyt .gs-info { margin-left: auto; font-size: 11px; letter-spacing: .08em; color: var(--ash-2); }
+.spis.szklo { display: block; padding: 0; border-radius: 18px; overflow: hidden; }
+.wiersz-spisu { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 8px 12px; text-decoration: none; color: inherit; border-top: 1px solid var(--linia); }
+.wiersz-spisu:first-child { border-top: 0; }
+.wiersz-spisu:active { background: rgba(230, 206, 148, .06); }
+.wiersz-spisu.akt { background: rgba(230, 206, 148, .09); box-shadow: inset 3px 0 0 var(--gold); }
+.ws-ik { width: 30px; flex: none; display: grid; place-items: center; }
+.ws-ik .ik-zlota { width: 28px; height: 28px; object-fit: contain; }
+.ws-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ws-tyt { font-size: 16px; color: var(--bone); }
+.ws-pod { font-size: 13px; color: var(--ash); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wiersz-spisu.brak .ws-pod { color: var(--warn); }
+.ws-st { width: 24px; flex: none; display: grid; place-items: center; }
+.ws-st .sek-ok { width: 22px; height: 22px; color: var(--ok); }
+.kropka-brak { width: 9px; height: 9px; border-radius: 50%; background: var(--warn); display: block; }
+.wiersz-spisu .strz .ik { width: 16px; height: 16px; color: var(--ash-2); }
+.co-dalej { border-radius: 20px; padding: 14px 16px; margin-top: 4px; }
+.co-dalej.brak { border-color: rgba(230, 190, 106, .45); }
+.co-dalej.ok { border-color: var(--ok-ramka); }
+.cd-glowa { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.cd-glowa h2 { margin: 0; font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 22px; color: var(--gold-j); }
+.cd-glowa p { margin: 2px 0 0; font-size: 13.5px; color: var(--ash); }
+.co-dalej.ok .cd-glowa .sek-ok { width: 30px; height: 30px; color: var(--ok); }
+.co-dalej ul { list-style: none; margin: 10px 0 0; padding: 0; }
+.cd-pkt { width: 100%; display: flex; align-items: center; gap: 10px; justify-content: space-between; padding: 10px 0; border: 0; border-top: 1px solid var(--linia); background: none; color: var(--bone); font-size: 15px; text-align: left; }
+.cd-pkt .ik { width: 16px; height: 16px; flex: none; color: var(--gold-l); }
+.cd-info { display: block; font-size: 12.5px; color: var(--ash); margin-top: 2px; }
+.cd-wiecej { margin: 4px 0 0; font-size: 13px; color: var(--ash); }
+.cd-link { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 13.5px; text-decoration: none; }
+.cd-link .ik { width: 14px; height: 14px; }
+.co-dalej .btn { margin-top: 12px; }
+.pig-status { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; padding: 0; border: 0; background: none; }
+.pig-status .status { height: 32px; font-size: 13.5px; padding: 0 12px 0 10px; }
+.pig-status > .ik { width: 16px; height: 16px; color: var(--gold-l); }
+.pig-status.duza .status { height: 40px; font-size: 15px; }
+.menu-lista button.akt { border-color: var(--gold-l); }
+.menu-lista button .status { pointer-events: none; }
+.wym { display: inline-block; width: 6px; height: 6px; margin: 0 7px 2px 0; border-radius: 50%; background: var(--gold); vertical-align: middle; }
+.legenda-wym { margin: -4px 0 12px; font-size: 13px; color: var(--ash); }
+.legenda-wym .wym { margin: 0 8px 2px 0; }
+.pole.podswietl { border-radius: 14px; outline: 2px solid var(--gold-l); outline-offset: 6px; transition: outline-color .3s; }
+.spis-boczny { display: none; }
+.sb-wstecz { display: flex; align-items: center; gap: 10px; padding: 6px 4px 2px; text-decoration: none; color: var(--bone); }
+.sb-wstecz > .ik { width: 22px; height: 22px; color: var(--gold-l); flex: none; }
+.sb-wstecz b { display: block; font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 20px; color: var(--gold-j); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-wstecz > span { min-width: 0; } .sb-wstecz span span { font-size: 12.5px; color: var(--ash); }
+@media (min-width: 760px) {
+  .uklad[data-sekcja="1"] .kol-lista > .lista-gora, .uklad[data-sekcja="1"] .kol-lista > .karty { display: none; }
+  .uklad[data-sekcja="1"] .spis-boczny { display: block; padding: 4px 18px 24px; }
+  .spis-boczny .wiersz-spisu { min-height: 50px; }
+  .spis-boczny .grupa-spisu { margin-top: 14px; }
+}

@@ -23,7 +23,7 @@ with sync_playwright() as p:
     pg.click('[data-a=wybor][data-k=transakcja][data-v=najem]'); pg.fill('#f-cena','3500'); pg.locator('#f-cena').blur(); pg.wait_for_timeout(300)
     ed = lambda: pg.evaluate("(()=>{const e=document.querySelector('.kol-edytor');return [e.scrollTop,e.scrollWidth,e.clientWidth]})()")
     pg.evaluate(f"location.hash='#/o/{oid}'"); pg.wait_for_timeout(500)
-    print('spis', ed(), 'kafle', len(pg.query_selector_all('.kafel'))); assert ed()[1] <= ed()[2] and len(pg.query_selector_all('.kafel')) == 19
+    print('spis', ed(), 'kafle', len(pg.query_selector_all('.wiersz-spisu'))); assert ed()[1] <= ed()[2] and len(pg.query_selector_all('.wiersz-spisu')) == 18
     pg.screenshot(path=f'/tmp/amshots/{silnik}-spis.png')
     def srodek(sel): pg.evaluate(f"(()=>{{const e=document.querySelector('.kol-edytor'); const r=document.querySelector('{sel}').getBoundingClientRect(); e.scrollTop += r.top - 450;}})()"); pg.wait_for_timeout(200); return ed()[0]
     pg.evaluate(f"location.hash='#/o/{oid}/s/lokal'"); pg.wait_for_selector('#sek-lokal'); pg.wait_for_timeout(300)
@@ -57,7 +57,7 @@ with sync_playwright() as p:
     pg.screenshot(path=f'/tmp/amshots/{silnik}-dok.png')
     pl = pg.evaluate("[...document.querySelectorAll('.plik span')].map(x=>x.textContent)"); print('pliki', pl); assert 'tmp-akt.pdf' in ' '.join(pl) or len(pl) == 2
     pg.evaluate(f"location.hash='#/o/{oid}'"); pg.wait_for_timeout(600)
-    print('podsumowania', pg.evaluate("[...document.querySelectorAll('.kafel')].slice(-4).concat([...document.querySelectorAll('.kafel')][5]).map(k=>k.querySelector('.sek-tyt').textContent+': '+k.querySelector('.kafel-pod').textContent)"))
+    print('podsumowania', pg.evaluate("[...document.querySelectorAll('.wiersz-spisu')].slice(-5).map(k=>k.querySelector('.ws-tyt').textContent+': '+k.querySelector('.ws-pod').textContent)"))
     pg.evaluate("document.querySelector('.kol-edytor').scrollTop=99999"); pg.wait_for_timeout(300)
     pg.screenshot(path=f'/tmp/amshots/{silnik}-spis-dol.png')
     print('spis szer', ed())

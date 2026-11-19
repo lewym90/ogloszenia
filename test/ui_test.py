@@ -107,8 +107,8 @@ with sync_playwright() as p:
     # ogłoszenie z pustymi słowami -> status zablokowany
     pg.evaluate(f"location.hash = '#/o/{oid}/ogloszenie'"); pg.wait_for_selector('.uwagi')
     zrzut_kontenera(pg, '.kol-edytor', '04-telefon-ogloszenie-z-uwagami', 2)
-    pg.evaluate(f"location.hash = '#/o/{oid}/kontrola'"); pg.wait_for_selector('select[data-k=status]')
-    pg.select_option('select[data-k=status]', 'gotowa')
+    pg.evaluate(f"location.hash = '#/o/{oid}/kontrola'"); pg.wait_for_selector('[data-a=status-menu]')
+    pg.click('[data-a=status-menu]'); pg.click('.okno-tlo [data-st=gotowa]')
     pg.wait_for_timeout(500)
     assert 'kontrola' in pg.evaluate('location.hash'), 'status powinien przenieść do kontroli'
     pg.screenshot(path=f'{OUT}/05-telefon-kontrola-blokada.png')
@@ -121,8 +121,8 @@ with sync_playwright() as p:
     pg.screenshot(path=f'{OUT}/06-telefon-kontrola.png')
     braki = pg.evaluate("[...document.querySelectorAll('.check .nie')].map(e => e.closest('li').innerText)")
     print('braki wymagane:', braki)
-    pg.select_option('.check ~ * select, .karta-og select[data-k=status]', 'gotowa'); pg.wait_for_timeout(800)
-    status = pg.evaluate("document.querySelector('select[data-k=status]').value")
+    pg.click('[data-a=status-menu]'); pg.click('.okno-tlo [data-st=gotowa]'); pg.wait_for_timeout(800)
+    status = pg.evaluate(f"(async()=>{{const D=await import('./js/dane.js'); return D.oferta('{oid}').status}})()")
     print('status po ustawieniu:', status)
 
     # serwer ma dane
@@ -147,7 +147,7 @@ with sync_playwright() as p:
     pl.screenshot(path=f'{OUT}/07-laptop-karta-podglad.png')
     pl.click('[data-a=podglad][data-v=kontrola]'); pl.wait_for_timeout(400)
     pl.screenshot(path=f'{OUT}/08-laptop-kontrola.png')
-    pl.click('.kafel[href$="/zdjecia"]'); pl.wait_for_timeout(1500)
+    pl.click('.wiersz-spisu[href$="/zdjecia"]'); pl.wait_for_timeout(1500)
     pl.screenshot(path=f'{OUT}/09-laptop-zdjecia.png')
     pl.evaluate(f"location.hash = '#/o/{oid}/s/podstawy'"); pl.wait_for_selector('#f-cena')
     t0 = time.time()
@@ -178,7 +178,7 @@ with sync_playwright() as p:
     zaloguj(pt, 'marek', 'tajne123'); pt.wait_for_selector('.karta'); pt.wait_for_timeout(1000)
     pt.click('.karta'); pt.wait_for_selector('.spis'); pt.wait_for_timeout(1200)
     pt.screenshot(path=f'{OUT}/11-tablet-karta.png')
-    pt.click('.kafel[href$="/ogloszenie"]'); pt.wait_for_timeout(600)
+    pt.click('.wiersz-spisu[href$="/ogloszenie"]'); pt.wait_for_timeout(600)
     pt.screenshot(path=f'{OUT}/12-tablet-ogloszenie.png')
     # lista i ustawienia na telefonie
     pg.goto(URL + '#/'); pg.wait_for_selector('.karta'); pg.wait_for_timeout(1500)

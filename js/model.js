@@ -624,10 +624,36 @@ export function checklista(o) {
   add('zdjOpisy', 'Zdjęcia przypisane do pomieszczeń / miejsc', zdj.length > 0 && zdj.every((z) => z.pom), false, 'zdjecia');
   return L;
 }
+// jedna miara gotowości: tylko punkty wymagane do publikacji (zalecane nie obniżają procentu)
 export function gotowosc(o) {
   const L = checklista(o);
   const tw = L.filter((x) => x.twarde);
-  return { procent: Math.round((L.filter((x) => x.ok).length / Math.max(1, L.length)) * 100), braki: tw.filter((x) => !x.ok), wszystkieTwarde: tw.every((x) => x.ok) };
+  return { procent: Math.round((tw.filter((x) => x.ok).length / Math.max(1, tw.length)) * 100), braki: tw.filter((x) => !x.ok), zalecane: L.filter((x) => !x.twarde && !x.ok), wszystkieTwarde: tw.every((x) => x.ok) };
+}
+// punkt kontrolny → ekran, pole do podświetlenia i krótka nazwa braku (spis karty, „Co dalej”)
+export const CEL_PUNKTU = {
+  podstawy: ['podstawy', 'rodzaj', 'rodzaj nieruchomości'], cena: ['podstawy', 'cena', 'cena'], prowizja: ['podstawy', 'prowizjaKl', 'prowizja klienta'],
+  lokalizacja: ['lokalizacja', 'dzielnica', 'dzielnica'], pow: ['lokal', 'pow', 'powierzchnia i jej źródło'], pokoje: ['lokal', 'pokoje', 'liczba pokoi'],
+  pietro: ['lokal', 'pietro', 'piętro'], wlasnosc: ['lokal', 'wlasnosc', 'forma własności i jej źródło'], rok: ['lokal', 'rok', 'rok budowy'], ogrzewanie: ['lokal', 'ogrzewanie', 'ogrzewanie'],
+  czynsz: ['koszty', 'czynsz', 'czynsz'], kaucja: ['koszty', 'kaucja', 'kaucja'], dostepne: ['koszty', 'dostepneOd', 'dostępność od'],
+  swiad: ['energia', 'swiad', 'świadectwo energetyczne'], swiadPola: ['energia', 'eu', 'wskaźniki ze świadectwa'], pomieszczenia: ['pom', null, 'metraże pomieszczeń'],
+  zdjPom: ['zdjecia', null, 'zdjęcia każdego pomieszczenia'], zdjIlosc: ['zdjecia', null, 'liczba zdjęć'], glowne: ['zdjecia', null, 'zdjęcie główne'], wiz: ['zdjecia', null, 'oryginały wizualizacji'],
+  rzut: ['zdjecia', null, 'rzut'], zdjOpisy: ['zdjecia', null, 'przypisanie zdjęć'], kw: ['weryfikacja', null, 'księga wieczysta'], kwN: ['weryfikacja', null, 'właściciel w księdze'],
+  slowa: ['ogloszenie', null, 'słowa do poprawy'], minusy: ['minusy', null, 'uczciwa uwaga'], okolica: ['okolica', null, '3 miejsca w okolicy'], atuty: ['atuty', null, '2 atuty'], wyp: ['wyp', null, 'wyposażenie'],
+};
+// pola, które blokują publikację (złota kropka przy etykiecie) — wynikają z checklisty; właściciel i umowa: dane do umowy pośrednictwa
+export function polaWymagane(o) {
+  const z = new Set(['wlImie', 'wlTel', 'umowaNr', 'umowaData']);
+  for (const x of checklista(o)) {
+    if (!x.twarde) continue;
+    if (x.id === 'podstawy') { z.add('transakcja'); z.add('rodzaj'); continue; }
+    if (x.id === 'lokalizacja') { z.add('miasto'); z.add('dzielnica'); continue; }
+    if (x.id === 'pietro') { z.add('pietro'); z.add('pieter'); continue; }
+    if (x.id === 'swiadPola') { for (const k of ['eu', 'ek', 'ep', 'oze', 'co2']) z.add(k); continue; }
+    const c = CEL_PUNKTU[x.id];
+    if (c && c[1]) z.add(c[1]);
+  }
+  return z;
 }
 export const STATUSY_WYMAGAJACE = ['gotowa', 'opublikowana'];
 

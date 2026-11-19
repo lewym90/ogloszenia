@@ -10,7 +10,7 @@ URL = 'http://localhost:8766/?api=http://127.0.0.1:18931'
 silnik = sys.argv[1] if len(sys.argv) > 1 else 'webkit'
 JS = """() => {
   const vw = document.documentElement.clientWidth, zle = [];
-  const kont = '.w, .wejscie, .pole, .grupa, .karta-og, .szklo, .dok, .wiersz, .kafel, .nawigacja-sek, .okno';
+  const kont = '.w, .wejscie, .pole, .grupa, .karta-og, .szklo, .dok, .wiersz, .kafel, .wiersz-spisu, .co-dalej, .nawigacja-sek, .okno';
   for (const el of document.querySelectorAll('#edytor *, #pasek *, .okno *')) {
     const r = el.getBoundingClientRect();
     if (!r.width || !r.height) continue;

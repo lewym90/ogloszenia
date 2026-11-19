@@ -6,11 +6,12 @@ import { zrobZip } from './zip.js';
 import * as K from './kopia.js';
 import * as R from './rzut.js';
 
-export const WERSJA = '1.11.0';
+export const WERSJA = '1.12.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const IK = {
+  klodka: '<rect x="5.5" y="10.5" width="13" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>',
   plus: '<path d="M12 4.5v15M4.5 12h15"/>', wstecz: '<path d="M14.5 5.5L8 12l6.5 6.5"/>', prawo: '<path d="M9.5 5.5L16 12l-6.5 6.5"/>', lewo: '<path d="M14.5 5.5L8 12l6.5 6.5"/>',
   dol: '<path d="M6 9.5l6 6 6-6"/>', kopiuj: '<rect x="8.5" y="8.5" width="11" height="12" rx="2"/><path d="M15.5 8.5V5.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/>',
   tarcza: '<path d="M12 3.5l7 2.6v5.4c0 4.4-3 7.8-7 9-4-1.2-7-4.6-7-9V6.1z"/><path d="M8.8 12.2l2.2 2.2 4.3-4.6"/>',
@@ -46,7 +47,7 @@ const szeroki = matchMedia('(min-width: 1180px)');
 const telefon = matchMedia('(max-width: 759px)');
 const obrazy = new Map(); // `${id}:${rodzaj}` -> url
 let zbudowany = false;
-let odblokowane = null; // id oferty, dla której wpisano PIN do danych osobowych
+let odblok = null; // { oid, grupy } — grupy z danymi osobowymi otwarte PIN-em w tej ofercie (do wyjścia z oferty albo blokady)
 
 function toast(t, ms = 2200) {
   const el = $('#toast'); el.textContent = t; el.classList.add('wid');
@@ -60,9 +61,8 @@ function trasa() {
   }
   else if (h[0] === 'ustawienia') { S.ekran = 'ustawienia'; S.id = null; resetEdytora(); }
   else { S.ekran = 'lista'; S.id = null; resetEdytora(); }
-  // PIN do danych osobowych obowiązuje, dopóki nie wyjdziesz z ekranów z danymi tej oferty
-  const prywatny = S.ekran === 'oferta' && PRYWATNE.has(S.tab === 'sekcja' ? S.sek : S.tab);
-  if (!(prywatny && odblokowane === S.id)) odblokowane = null;
+  // PIN otwiera grupę z danymi osobowymi („Umowa i formalności” albo „Sprzedaż”) do wyjścia z oferty
+  if (S.ekran !== 'oferta' || odblok?.oid !== S.id) odblok = null;
   odswiez();
 }
 const idzDo = (h) => { if (location.hash !== h) location.hash = h; else trasa(); };
@@ -245,6 +245,7 @@ function szkielet() {
         <div id="przyp" data-wstaw></div>
       </div>
       <div class="karty" id="karty" data-wstaw></div>
+      <div class="spis-boczny" id="spis-boczny" data-wstaw></div>
     </aside>
     <main class="kol-edytor" id="edytor"></main>
     <section class="kol-podglad" id="podglad"></section>
@@ -263,7 +264,8 @@ function odswiez() {
   if (!zbudowany && $('.logowanie')) return; // trwa logowanie: kod, nowe hasło albo PIN — nie przykrywamy ekranu
   if (!zbudowany) szkielet();
   $('#uklad').dataset.ekran = S.ekran;
-  odswiezPasek(); odswiezListe(); odswiezDol();
+  $('#uklad').dataset.sekcja = S.ekran === 'oferta' && S.tab !== 'karta' ? '1' : '';
+  odswiezPasek(); odswiezListe(); odswiezSpisuBocznego(); odswiezDol();
   if (S.ekran === 'oferta') odswiezOferte();
   else if (S.ekran === 'ustawienia') odswiezUstawienia();
   else odswiezPusty();
@@ -292,6 +294,11 @@ function odswiezDol() {
 // ---------- lista ----------
 const FILTRY_GL = { aktywne: 'Aktywne', przygotowanie: 'W przygotowaniu', opublikowana: 'Opublikowane' };
 const FILTRY_DOD = { gotowa: 'Gotowe do publikacji', rezerwacja: 'Rezerwacja', zakonczona: 'Zakończone', wszystkie: 'Wszystkie' };
+// tablet i laptop: w sekcji oferty lewa kolumna pokazuje spis tej oferty zamiast listy ofert
+function odswiezSpisuBocznego() {
+  const o = S.ekran === 'oferta' && S.tab !== 'karta' && !telefon.matches ? D.oferta(S.id) : null;
+  wstaw($('#spis-boczny'), o ? `<a class="sb-wstecz" href="#/o/${o.id}">${ik('wstecz')}<span><b>${esc(o.roboczy || M.tytul(o))}</b><span>Spis karty</span></span></a>${grupySpisu(o, S.tab === 'sekcja' ? S.sek : S.tab)}` : '');
+}
 function odswiezListe() {
   const f = { ...FILTRY_GL, ...(S.wiecej || FILTRY_DOD[S.filtr] ? FILTRY_DOD : {}) };
   wstaw($('#filtry'), Object.entries(f).map(([k, v]) => `<button class="chip ${S.filtr === k ? 'akt' : ''}" data-a="filtr" data-v="${k}">${esc(v)}</button>`).join(''));
@@ -347,8 +354,16 @@ const SEK_KARTY = [
   ['wlasciciel', 'Właściciel i umowa'],
 ];
 const ZAKLADKI = ['zdjecia', 'ogloszenie', 'kontrola', 'klienci', 'wizyty', 'dokumenty', 'aml'];
-const EKRANY = [...SEK_KARTY.map(([k, n]) => ({ k, n, sek: true })), { k: 'zdjecia', n: 'Zdjęcia' }, { k: 'ogloszenie', n: 'Ogłoszenie' }, { k: 'kontrola', n: 'Kontrola' },
-  { k: 'klienci', n: 'Klienci' }, { k: 'wizyty', n: 'Wizyty' }, { k: 'dokumenty', n: 'Dokumenty' }, { k: 'aml', n: 'AML' }];
+// spis karty w trzech grupach, w kolejności pracy; Kontrola nie jest w spisie (jej rolę pełni karta „Co dalej”)
+const GRUPY_SPISU = [
+  { id: 'ogl', n: 'Oferta', ek: ['podstawy', 'lokalizacja', 'lokal', 'pom', 'koszty', 'energia', 'wyp', 'atuty', 'minusy', 'okolica', 'weryfikacja', 'zdjecia', 'ogloszenie'] },
+  { id: 'form', n: 'Umowa i formalności', pryw: true, ek: ['wlasciciel', 'dokumenty', 'aml'] },
+  { id: 'sprz', n: 'Sprzedaż', pryw: true, ek: ['klienci', 'wizyty'] },
+];
+const NAZWY_EKR = { ...Object.fromEntries(SEK_KARTY), zdjecia: 'Zdjęcia', ogloszenie: 'Ogłoszenie', kontrola: 'Kontrola', klienci: 'Klienci', wizyty: 'Wizyty', dokumenty: 'Dokumenty', aml: 'AML' };
+const EKRANY = [...GRUPY_SPISU.flatMap((g) => g.ek.map((k) => ({ k, n: NAZWY_EKR[k], sek: SEK_KARTY.some(([x]) => x === k), grupa: g.id }))), { k: 'kontrola', n: 'Kontrola', ukryty: true }];
+const EKRANY_NAW = EKRANY.filter((x) => !x.ukryty);
+const GRUPA_EKR = Object.fromEntries(EKRANY.map((x) => [x.k, x.grupa]));
 // ekrany z danymi osobowymi: tylko dla wspólników, każde otwarcie wymaga PIN-u
 const PRYWATNE = new Set(['wlasciciel', 'klienci', 'wizyty', 'dokumenty', 'aml']);
 const hashEkranu = (oid, k) => (ZAKLADKI.includes(k) ? `#/o/${oid}/${k}` : `#/o/${oid}/s/${k}`);
@@ -365,7 +380,7 @@ function dataWizyty(k, krotko = false) {
 }
 // ikony kafelków bez grafiki z arkusza — złota linia w tym samym stylu
 // wszystkie kafelki mają ikony z arkuszy właściciela (img/ikony/<klucz>.png); tu tylko awaryjne
-const IK_ZLOTE = { aml: '<path d="M12 3.2l7.2 2.7v5.6c0 4.5-3.1 8-7.2 9.3-4.1-1.3-7.2-4.8-7.2-9.3V5.9z"/><path d="M8.6 12.1l2.3 2.3 4.5-4.8"/>' };
+const IK_ZLOTE = { aml: '<rect x="3.2" y="5.2" width="17.6" height="13.6" rx="2.2"/><circle cx="8.9" cy="10.9" r="2.2"/><path d="M5.6 16.2c.6-1.6 1.8-2.5 3.3-2.5s2.7.9 3.3 2.5M14.2 9.8h4.2M14.2 12.6h3.2"/>' };
 const ikonaEkranu = (k) => (IK_ZLOTE[k]
   ? `<svg class="ik-zlota" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="url(#zloto)" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">${IK_ZLOTE[k]}</g></svg>`
   : `<img class="ik-zlota" src="img/ikony/${k}.png" alt="">`);
@@ -462,10 +477,11 @@ function odswiezOferte() {
     if (!ekr) { idzDo(`#/o/${o.id}`); return; }
     const prawy = k === 'ogloszenie'
       ? `<button class="btn kontur maly kopiuj-nagl" data-a="kopiuj" data-co="opis" aria-label="Kopiuj całe ogłoszenie">${ik('kopiuj')}<span>Kopiuj</span></button>`
-      : k === 'kontrola' ? pierscien(M.gotowosc(o).procent) : `<span class="licz-ekranu">${(() => { const l = licznikSekcji(k, o); return l ? `${wsk(l)}` : ''; })()}</span>`;
+      : k === 'kontrola' ? pierscien(M.gotowosc(o).procent) : `<span class="licz-ekranu">${stanSekcji(k, o).s === 'ok' ? ik('okKolo', 'sek-ok') : ''}</span>`;
     wstaw($('#of-gora'), `<div class="naglowek-ekranu"><a class="okragly" href="#/o/${o.id}" aria-label="Wróć do karty">${ik('wstecz')}</a>${ikonaEkranu(k)}<h1 class="zloty-tekst ${ekr.n.length > 13 ? 'dlugi' : ''}">${esc(ekr.n)}</h1>${prawy}</div>`);
-    if (PRYWATNE.has(k) && odblokowane !== o.id && D.sejfUstawiony()) {
-      wstaw(t, ekranPinDanych(o.id)); wstaw($('#of-dol'), '');
+    const zamkniete = PRYWATNE.has(k) && !(odblok?.oid === o.id && odblok.grupy.has(GRUPA_EKR[k])) && D.sejfUstawiony();
+    if (zamkniete) {
+      wstaw(t, ekranPinDanych(o.id, GRUPA_EKR[k])); wstaw($('#of-dol'), '');
       if (!t.contains(document.activeElement)) setTimeout(() => $('#pin-dane')?.focus(), 60);
     } else
     if (k === 'zdjecia') tabZdjecia(t, o);
@@ -476,11 +492,12 @@ function odswiezOferte() {
     else if (k === 'dokumenty') { wstaw(t, htmlDokumenty(o)); D.przygotujKluczPlikow(); }
     else if (k === 'aml') { D.zapiszDostep(o.id, 'aml', 'aml'); wstaw(t, htmlAml(o)); }
     else { if (k === 'wlasciciel') D.zapiszDostep(o.id, 'wlasciciel', 'wlasciciel'); wstaw(t, ekranSekcji(k, o)); }
-    if (!(PRYWATNE.has(k) && odblokowane !== o.id && D.sejfUstawiony())) {
-    const i = EKRANY.findIndex((x) => x.k === k);
-    const pop = EKRANY[i - 1], nast = EKRANY[i + 1];
-    wstaw($('#of-dol'), `<nav class="nawigacja-sek">${pop ? `<a class="btn kontur" href="${hashEkranu(o.id, pop.k)}">${ik('lewo')}<span class="nr">${String(i).padStart(2, '0')}</span><span class="tx">${esc(pop.n)}</span></a>` : '<span></span>'}
-      ${nast ? `<a class="btn kontur" href="${hashEkranu(o.id, nast.k)}"><span class="nr">${String(i + 2).padStart(2, '0')}</span><span class="tx">${esc(nast.n)}</span>${ik('prawo')}</a>` : `<a class="btn kontur" href="#/o/${o.id}"><span class="tx">Spis karty</span>${ik('prawo')}</a>`}</nav>`);
+    if (!zamkniete) {
+    const i = EKRANY_NAW.findIndex((x) => x.k === k);
+    const pop = i >= 0 ? EKRANY_NAW[i - 1] : null, nast = i >= 0 ? EKRANY_NAW[i + 1] : null;
+    wstaw($('#of-dol'), `<nav class="nawigacja-sek">${pop ? `<a class="btn kontur" href="${hashEkranu(o.id, pop.k)}">${ik('lewo')}<span class="tx">${esc(pop.n)}</span></a>` : '<span></span>'}
+      ${nast ? `<a class="btn kontur" href="${hashEkranu(o.id, nast.k)}"><span class="tx">${esc(nast.n)}</span>${ik('prawo')}</a>` : `<a class="btn kontur" href="#/o/${o.id}"><span class="tx">Spis karty</span>${ik('prawo')}</a>`}</nav>`);
+    if (S.fokus) pokazPole();
     }
   }
   const p = $('#podglad');
@@ -494,19 +511,80 @@ function naglowekSpisu(o) {
   return `<div class="naglowek-spisu"><a class="marka" href="#/" aria-label="Wróć do listy ofert"><span class="wstecz-maly">${ik('wstecz')}</span><img src="img/monogram.png" alt="AM"><i></i><h1 class="zloty-tekst">Karta</h1></a><span class="rozp"></span>
     <button class="dzwonek" data-a="aktywnosc" aria-label="Zmiany wspólnika">${ik('dzwonek')}${D.nowaAktywnosc() ? '<b></b>' : ''}</button></div>
     <div class="pasek-oferty">${fotoHTML(o)}
-      <div class="pasek-oferty-tresc"><h2>${esc(o.roboczy || M.tytul(o))}</h2><div class="zlota-linia"></div>${cenaHTML(o, 'pasek-cena')}</div>
+      <div class="pasek-oferty-tresc"><h2>${esc(o.roboczy || M.tytul(o))}</h2><div class="zlota-linia"></div>${cenaHTML(o, 'pasek-cena')}
+        <button class="pig-status" data-a="status-menu" aria-label="Zmień status oferty">${statusHTML(o.status)}${ik('dol')}</button></div>
       <div class="pasek-oferty-akcje"><button class="okragly" data-a="menu" aria-label="Więcej">${ik('kropki')}</button><button class="serce ${o.ulubiona ? 'akt' : ''}" data-a="ulub" data-oid="${o.id}" aria-label="Wyróżnij">${ik('serce')}</button></div>
     </div>`;
 }
+// stan sekcji w spisie: ok (✓), brak (czego brakuje do publikacji / do umowy), zal (zalecane), '' (tylko informacja)
+function stanSekcji(k, o) {
+  const pod = () => { const t = podsumowanie(k, o); return t !== 'brak' ? t : k === 'klienci' ? 'nikt się jeszcze nie zgłosił' : k === 'wizyty' ? 'nic zaplanowanego' : 'nic nie wpisano'; };
+  if (k === 'wlasciciel') {
+    const b = [['wlImie', 'imię i nazwisko'], ['wlTel', 'telefon'], ['umowaNr', 'numer umowy'], ['umowaData', 'data umowy']].filter(([p]) => puste(o[p])).map(([, n]) => n);
+    return b.length ? { s: 'brak', t: `brakuje: ${b.join(', ')}` } : { s: 'ok', t: pod() };
+  }
+  if (k === 'aml') {
+    const a = M.amlKarty(o), nk = a.filter((x) => M.amlBraki(x).length).length;
+    if (nk) return { s: 'brak', t: nk === 1 ? '1 karta niekompletna' : `${nk} karty niekompletne` };
+    if (!a.length && o.transakcja !== 'najem' && (o.umowaNr || o.umowaData)) return { s: 'brak', t: 'brakuje karty właściciela' };
+    return { s: a.length ? 'ok' : '', t: pod() };
+  }
+  if (k === 'dokumenty') { const d = M.dokumenty(o); return { s: d.length && d.every((x) => ['jest', 'nd'].includes(x.s)) ? 'ok' : '', t: pod() }; }
+  if (k === 'klienci' || k === 'wizyty') return { s: '', t: pod() };
+  const L = M.checklista(o).filter((x) => (M.CEL_PUNKTU[x.id] || [])[0] === k);
+  const tw = L.filter((x) => x.twarde && !x.ok), zal = L.filter((x) => !x.twarde && !x.ok);
+  const naz = (x) => M.CEL_PUNKTU[x.id][2];
+  if (tw.length) return { s: 'brak', t: `brakuje: ${tw.map(naz).join(', ')}` };
+  if (zal.length) return { s: 'zal', t: `zalecane: ${zal.map(naz).join(', ')}` };
+  return { s: L.length ? 'ok' : '', t: pod() };
+}
+function wierszSpisu(o, x, akt = '') {
+  const st = stanSekcji(x.k, o);
+  const znak = st.s === 'ok' ? ik('okKolo', 'sek-ok') : st.s === 'brak' ? '<i class="kropka-brak" aria-label="Brakuje"></i>' : '';
+  return `<a class="wiersz-spisu ${st.s} ${akt === x.k ? 'akt' : ''}" href="${hashEkranu(o.id, x.k)}">
+    <span class="ws-ik">${ikonaEkranu(x.k)}</span>
+    <span class="ws-tx"><span class="ws-tyt">${esc(x.n)}</span><span class="ws-pod">${esc(st.t || '')}</span></span>
+    <span class="ws-st">${znak}</span><span class="strz">${ik('prawo')}</span></a>`;
+}
+function grupySpisu(o, akt = '') {
+  return GRUPY_SPISU.map((g) => {
+    const otw = !g.pryw || (odblok?.oid === o.id && odblok.grupy.has(g.id)) || !D.sejfUstawiony();
+    return `<section class="grupa-spisu"><h2 class="grupa-spisu-tyt">${g.pryw ? ik(otw ? 'oko' : 'klodka') : ''}<span>${esc(g.n)}</span>${g.pryw ? `<span class="gs-info">${otw ? 'otwarte' : 'PIN'}</span>` : ''}</h2>
+      <div class="spis szklo">${EKRANY.filter((x) => x.grupa === g.id).map((x) => wierszSpisu(o, x, akt)).join('')}</div></section>`;
+  }).join('');
+}
+// karta „Co dalej”: co blokuje publikację — stuknięcie prowadzi prosto do pola
+function coDalejHTML(o) {
+  const g = M.gotowosc(o);
+  const nazwa = (x) => { const n = M.CEL_PUNKTU[x.id]?.[2]; return n ? n[0].toUpperCase() + n.slice(1) : x.tekst; };
+  const pkt = (x, kl = '') => `<li><button class="cd-pkt ${kl}" data-a="idz" data-id="${x.id}" data-zak="${x.zakladka}"><span>${esc(nazwa(x))}${x.info ? `<span class="cd-info">${esc(x.info)}</span>` : ''}</span>${ik('prawo')}</button></li>`;
+  const zal = g.zalecane.length ? `<a class="cd-link" href="#/o/${o.id}/kontrola">${g.zalecane.length === 1 ? '1 rzecz zalecana' : `Zalecane: ${g.zalecane.length}`} — pełna lista kontrolna${ik('prawo')}</a>` : `<a class="cd-link" href="#/o/${o.id}/kontrola">Pełna lista kontrolna${ik('prawo')}</a>`;
+  if (g.braki.length) {
+    return `<section class="co-dalej szklo brak"><div class="cd-glowa"><div><h2>Przed publikacją uzupełnij</h2><p>Do uzupełnienia: ${g.braki.length} · gotowe ${g.procent}%</p></div>${pierscien(g.procent, 'maly')}</div>
+      <ul>${g.braki.slice(0, 5).map((x) => pkt(x)).join('')}</ul>${g.braki.length > 5 ? `<p class="cd-wiecej">i jeszcze ${g.braki.length - 5} — na pełnej liście.</p>` : ''}${zal}</section>`;
+  }
+  const przyc = o.status === 'przygotowanie' ? `<button class="btn zloty maly" data-a="status-ustaw" data-v="gotowa">Oznacz: gotowa do publikacji</button>` : '';
+  return `<section class="co-dalej szklo ok"><div class="cd-glowa"><div><h2>Wszystko wymagane jest</h2><p>${o.status === 'przygotowanie' ? 'Oferta nadaje się do publikacji.' : esc(M.STATUSY[o.status] || '')}</p></div>${ik('okKolo', 'sek-ok')}</div>${przyc}${zal}</section>`;
+}
 function spisHTML(o) {
-  return `<div class="spis">${EKRANY.map((x, i) => {
-    const l = licznikSekcji(x.k, o);
-    return `<a class="kafel szklo ${PRYWATNE.has(x.k) ? 'prywatna' : ''}" href="${hashEkranu(o.id, x.k)}">
-      <span class="kafel-ik">${ikonaEkranu(x.k)}</span><i class="kafel-kreska"></i>
-      <span class="sek-nr">${String(i + 1).padStart(2, '0')}</span>
-      <span class="kafel-tx"><span class="sek-tyt">${esc(x.n)}</span><span class="kafel-pod">${esc(podsumowanie(x.k, o))}</span></span>
-      ${wsk(l)}<span class="strz">${ik('prawo')}</span></a>`;
-  }).join('')}</div>`;
+  return `${coDalejHTML(o)}${grupySpisu(o)}`;
+}
+// pole wskazane z „Co dalej” albo z listy kontrolnej: przewiń, podświetl, ustaw kursor
+function pokazPole() {
+  const k = S.fokus; S.fokus = null;
+  setTimeout(() => {
+    const el = k && ($(`#ed-tresc [data-k="${k}"]`) || $(`#ed-tresc #f-${k}`));
+    const cel = el?.closest('.pole') || el;
+    if (!cel) return;
+    cel.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    cel.classList.add('podswietl'); setTimeout(() => cel.classList.remove('podswietl'), 2200);
+    if (el.matches('input, textarea') && !telefon.matches) el.focus({ preventScroll: true });
+  }, 80);
+}
+function oknoStatusu(o) {
+  const w = okno('Status oferty', `<div class="menu-lista">${Object.entries(M.STATUSY).map(([k, v]) => `<button data-st="${k}" class="${o.status === k ? 'akt' : ''}">${statusHTML(k)}${o.status === k ? ik('ok') : ''}</button>`).join('')}</div>
+    <p class="info-pola" style="margin:10px 0 0">„Gotowa do publikacji” i „Opublikowana” da się ustawić dopiero, gdy wszystkie wymagane punkty są spełnione.</p>`);
+  w.addEventListener('click', (ev) => { const el = ev.target.closest('[data-st]'); if (!el) return; w.remove(); const teraz = D.oferta(o.id); if (teraz && teraz.status !== el.dataset.st) zmienStatus(teraz, el.dataset.st); });
 }
 function ekranSekcji(k, o) {
   const opisy = {
@@ -515,6 +593,7 @@ function ekranSekcji(k, o) {
     wlasciciel: 'Te dane widzicie tylko Wy dwaj. Nigdy nie trafiają do ogłoszenia.',
   };
   let h = opisy[k] ? `<p class="sek-opis">${opisy[k]}</p>` : '';
+  if (GRUPY[k] && GRUPY[k].some(([, kl]) => kl.some((x) => wymagane(o).has(x)))) h += '<p class="legenda-wym"><i class="wym"></i>wymagane do publikacji — reszta jest opcjonalna i niczego nie blokuje</p>';
   if (GRUPY[k]) {
     for (const [nazwa, klucze] of GRUPY[k]) {
       const pola = klucze.map((x) => POLE[x]).filter((p) => p && M.poleWidoczne(p, o));
@@ -547,6 +626,9 @@ function wartoscPola(p, o) {
 }
 const ZR_IK = { dok: 'dok', pom: 'linijka', ogl: 'oko', wl: 'osoba' };
 function pigulkiPasuja(p) { const w = Object.values(p.o); return w.length <= 3 && w.join('').length <= 30; }
+let _wym = { o: null, z: null };
+const wymagane = (o) => { if (_wym.o !== o) _wym = { o, z: M.polaWymagane(o) }; return _wym.z; };
+const kropkaWym = (k, o) => (wymagane(o).has(k) ? '<i class="wym" title="Wymagane do publikacji" aria-label="wymagane"></i>' : '');
 function poleHTML(p, o, calaSzerokosc = false) {
   const id = `f-${p.k}`;
   const v = wartoscPola(p, o);
@@ -556,7 +638,7 @@ function poleHTML(p, o, calaSzerokosc = false) {
     return `<div class="pole pelna"><label class="przel"><span class="tekst">${esc(p.e)}</span><input type="checkbox" data-k="${p.k}" data-t="b" ${o[p.k] ? 'checked' : ''}><span class="suwak"></span></label>${inf ? `<div class="info-pola">${esc(inf)}</div>` : ''}</div>`;
   }
   if (p.t === 'w' && pigulkiPasuja(p)) {
-    return `<div class="pole pelna"><span class="et">${esc(p.e)}</span><div class="pigulki" role="group" aria-label="${esc(p.e)}">${Object.entries(p.o).map(([k, n]) => `<button type="button" data-a="wybor" data-k="${p.k}" data-v="${k}" class="${v === k ? 'akt' : ''}" aria-pressed="${v === k}">${esc(n)}</button>`).join('')}</div></div>`;
+    return `<div class="pole pelna"><span class="et">${kropkaWym(p.k, o)}${esc(p.e)}</span><div class="pigulki" role="group" aria-label="${esc(p.e)}">${Object.entries(p.o).map(([k, n]) => `<button type="button" data-a="wybor" data-k="${p.k}" data-v="${k}" class="${v === k ? 'akt' : ''}" aria-pressed="${v === k}">${esc(n)}</button>`).join('')}</div></div>`;
   }
   let we;
   const jedn = p.k === 'cena' && o.transakcja === 'najem' ? p.jNajem : p.j;
@@ -575,7 +657,7 @@ function poleHTML(p, o, calaSzerokosc = false) {
   const et = (pol && KROTKIE[p.k]) || p.e;
   // długa jednostka w polu połówkowym zjadałaby miejsce na liczbę — idzie do etykiety
   const jednWEtykiecie = pol && jedn && jedn.length > 5;
-  return `<div class="pole ${p.dlugi || p.zr ? 'pelna' : pol}"><label class="et" for="${id}" title="${esc(p.e)}">${esc(et)}${jednWEtykiecie ? ` <span class="et-j">${esc(jedn)}</span>` : ''}</label><div class="wejscie">${we}${jedn && !jednWEtykiecie ? `<span class="jedn">${esc(jedn)}</span>` : ''}${zr}</div>${nieWiem}</div>`;
+  return `<div class="pole ${p.dlugi || p.zr ? 'pelna' : pol}"><label class="et" for="${id}" title="${esc(p.e)}">${kropkaWym(p.k, o)}${esc(et)}${jednWEtykiecie ? ` <span class="et-j">${esc(jedn)}</span>` : ''}</label><div class="wejscie">${we}${jedn && !jednWEtykiecie ? `<span class="jedn">${esc(jedn)}</span>` : ''}${zr}</div>${nieWiem}</div>`;
 }
 function sekcjaPom(o) {
   const pom = o.pom || [];
@@ -969,31 +1051,34 @@ function htmlKontrola(o) {
   const g = M.gotowosc(o);
   const li = (x) => `<li data-a="idz" data-id="${x.id}" data-zak="${x.zakladka}"><span class="znak ${x.ok ? 'ok' : x.twarde ? 'nie' : 'zal'}">${ik(x.ok ? 'ok' : x.twarde ? 'x' : 'uwaga')}</span><span>${esc(x.tekst)}${x.info && !x.ok ? `<span class="info">${esc(x.info)}</span>` : ''}</span>${x.ok ? '' : `<span class="strz">${ik('prawo')}</span>`}</li>`;
   return `<div class="karta-og szklo"><div class="blok-og"><div class="blok-glowa"><h3>Status</h3></div>
-      <div class="wejscie"><select data-k="status" aria-label="Status oferty">${Object.entries(M.STATUSY).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>
-      <p class="info-pola">„Gotowa do publikacji” i „Opublikowana” da się ustawić dopiero, gdy wszystkie wymagane punkty są spełnione.</p></div></div>
+      <button class="pig-status duza" data-a="status-menu">${statusHTML(o.status)}${ik('dol')}</button></div></div>
     <div class="karta-og szklo"><div class="blok-og"><div class="blok-glowa"><h3>Wymagane</h3><span class="sek-licz">${tw.filter((x) => x.ok).length}/${tw.length}</span>${pierscien(Math.round((tw.filter((x) => x.ok).length / Math.max(1, tw.length)) * 100), 'maly')}</div><ul class="check">${tw.map(li).join('')}</ul></div></div>
     <div class="karta-og szklo"><div class="blok-og"><div class="blok-glowa"><h3>Zalecane</h3></div><ul class="check">${zal.map(li).join('')}</ul></div></div>`;
 }
 
 // ----- PIN przy każdym otwarciu danych osobowych (właściciel, klienci, wizyty, dokumenty, AML, historia, archiwum) -----
 const dataKrotka = (v) => { const d = new Date(typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? `${v}T12:00` : v); return Number.isNaN(+d) ? '' : d.toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' }); };
-function ekranPinDanych(oid) {
+function ekranPinDanych(oid, grupa) {
+  const g = GRUPY_SPISU.find((x) => x.id === grupa);
   return `<form class="pin-dane szklo" id="f-pin-dane" autocomplete="off">
-    <span class="pin-dane-ik">${ik('tarcza')}</span>
-    <h2>Dane osobowe</h2>
-    <p>Ta część zawiera dane klientów i właścicieli. Wpisz PIN, żeby ją otworzyć.</p>
-    <div class="wejscie"><input id="pin-dane" data-oid="${esc(oid)}" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" aria-label="PIN"></div>
+    <span class="pin-dane-ik">${ik('klodka')}</span>
+    <h2>${esc(g?.n || 'Dane osobowe')}</h2>
+    <p>Tu są dane osobowe klientów i właścicieli. Wpisz PIN — otworzy całą grupę „${esc(g?.n || '')}” w tej ofercie.</p>
+    <div class="wejscie"><input id="pin-dane" data-oid="${esc(oid)}" data-grupa="${esc(grupa || '')}" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" aria-label="PIN"></div>
     <p class="blad" id="pin-dane-blad"></p>
     <button class="btn zloty" type="submit">Otwórz</button>
   </form>`;
 }
 const komunikatPinu = (r) => (r.zostalo === 1 ? 'Zły PIN. Została 1 próba — potem dane znikną z tego urządzenia.' : `Zły PIN. Zostały ${r.zostalo} próby.`);
+function otworzGrupe(oid, grupa) {
+  odblok = { oid, grupy: new Set([...(odblok?.oid === oid ? odblok.grupy : []), grupa]) };
+}
 async function sprawdzPinDanych(pole) {
   if (pole.dataset.trwa || !/^\d{6}$/.test(pole.value)) return;
   pole.dataset.trwa = '1';
   const r = await D.odblokuj(pole.value);
   delete pole.dataset.trwa;
-  if (r.ok) { odblokowane = pole.dataset.oid; Z.aktywnosc(); pole.blur(); odswiez(); return; }
+  if (r.ok) { otworzGrupe(pole.dataset.oid, pole.dataset.grupa); Z.aktywnosc(); pole.blur(); odswiez(); return; }
   if (r.wyczyszczono) return;
   pole.value = ''; $('#pin-dane-blad').textContent = komunikatPinu(r);
 }
@@ -1552,6 +1637,7 @@ document.addEventListener('click', async (e) => {
       const z = b.dataset.e, najem = o.transakcja === 'najem';
       const jest = M.amlKarty(o).find((a) => (z === 'wlasciciel' ? a.wlasciciel : a.klient === z));
       if (!jest) await nowaKartaAml(o, JSON.parse(JSON.stringify(z === 'wlasciciel' ? { wlasciciel: true, imie: o.wlImie, rola: najem ? 'wynajmujacy' : 'sprzedajacy', umowa: !!(o.umowaNr || o.umowaData) } : { klient: z, imie: o[z]?.imie, rola: najem ? 'najemca' : 'kupujacy' })));
+      if (odblok?.oid === o.id) otworzGrupe(o.id, 'form');
       idzDo(`#/o/${o.id}/aml`);
       break;
     }
@@ -1784,12 +1870,15 @@ document.addEventListener('click', async (e) => {
     }
     case 'idz': {
       const id = b.dataset.id, zak = b.dataset.zak;
-      const sekc = SEK_DLA[id];
+      const [sekc, poleK] = M.CEL_PUNKTU[id] || [SEK_DLA[id]];
+      S.fokus = poleK || null;
       if (zak === 'zdjecia') idzDo(`#/o/${o.id}/zdjecia`);
       else if (zak === 'ogloszenie') idzDo(`#/o/${o.id}/ogloszenie`);
-      else idzDo(sekc ? `#/o/${o.id}/s/${sekc}` : `#/o/${o.id}`);
+      else idzDo(sekc ? hashEkranu(o.id, sekc) : `#/o/${o.id}`);
       break;
     }
+    case 'status-menu': oknoStatusu(o); break;
+    case 'status-ustaw': zmienStatus(o, b.dataset.v); break;
     case 'kopia-folder':
       try { const w = await K.wybierzFolder(); toast(w?.nowe ? `Kopia gotowa: ${w.nowe} plików` : 'Kopia gotowa', 3000); }
       catch (er) { if (er.name !== 'AbortError') toast(er.message || 'Kopia się nie udała', 4000); }
