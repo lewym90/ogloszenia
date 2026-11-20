@@ -10,7 +10,7 @@ import { otworzEdytor, obrobPelne, rozkoduj } from './edytorZdjec.js';
 import * as U from './urzadzenia.js';
 import * as HY from './hybryda.js';
 
-export const WERSJA = '1.15.0';
+export const WERSJA = '1.15.1';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1806,7 +1806,8 @@ async function obrobkaAI(oid, id) {
       const r = await silnik.przygotuj(pel, ai, ust, U.podglad());
       orgPodglad = r.org; wynikPodglad = r.wynik; naCanvas(cv, wynikPodglad);
       $w('.ai-stan').hidden = true; $w('[data-ai="zapisz"]').disabled = false;
-      $w('.ai-info').textContent = `Dopasowanie do zdjęcia: ${Math.round(r.zgodnosc * 100)}%.${r.pokrycie < 0.5 ? ' AI mocno zmieniła część zdjęcia — tam zostaje światło oryginału.' : ''}`;
+      const zg = r.zgodnosc >= 0.8 ? 'bardzo dobre (AI nie zmieniła kadru)' : r.zgodnosc >= 0.6 ? 'dobre (AI przerysowała drobne szczegóły — te zostają z twojego zdjęcia)' : r.zgodnosc >= 0.4 ? 'wystarczające (AI przerysowała część zdjęcia — tam zostaje światło oryginału)' : 'słabe (AI mocno zmieniła zdjęcie — sprawdź podgląd, najlepiej poproś AI jeszcze raz)';
+      $w('.ai-info').textContent = `Dopasowanie: ${zg}.${r.pokrycie < 0.5 && r.zgodnosc >= 0.4 ? ' Część zdjęcia AI zmieniła mocniej — tam zostaje światło oryginału.' : ''}`;
     } catch (er) { $w('.ai-stan').textContent = er.message || 'Nie udało się połączyć zdjęć.'; zamknij(); }
   });
   w.addEventListener('click', async (e) => {

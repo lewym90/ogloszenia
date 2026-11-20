@@ -1,5 +1,5 @@
 // AM Oferty — praca offline i powiadomienia.
-const WERSJA = 'amoferty-1.15.0';
+const WERSJA = 'amoferty-1.15.1';
 // edytor rzutów (rzut/) ma osobną pamięć: pliki z hashem w nazwie, raz pobrane działają też bez internetu
 const RZUT = 'amoferty-rzut';
 const PLIKI = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'js/app.js', 'js/dane.js', 'js/sejf.js', 'js/model.js', 'js/zip.js', 'js/kopia.js', 'js/rzut.js', 'js/korekta.js', 'js/hybryda.js', 'js/hybrydaWorker.js', 'js/edytorZdjec.js', 'js/urzadzenia.js', 'plan.html', 'css/plan.css', 'js/plan/edytor.js', 'js/plan/rysuj.js', 'js/plan/rysuj3d.js', 'js/plan/dopasuj.js', 'js/plan/biblioteka.js', 'js/plan/geom.js',

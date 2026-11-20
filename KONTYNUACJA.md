@@ -224,3 +224,6 @@ Ustalenia z właścicielem: formuły (1.14.0) dają za małą różnicę; efekt 
 - Zapis: `kor.ai` = id hybrydy (pełne zdjęcie bez geometrii). „Wyrównaj”, „Obróbka” i edytor liczą od `kor.ai || kor.org`; „Przywróć oryginał” usuwa też hybrydę; `podepnijWersje` pilnuje, żeby nie skasować oryginału ani hybrydy.
 - Testy: `test/hybryda.test.mjs` 15/15 (dopasowanie, światło, odcień drewna i granatu, zmyślony promień nie przechodzi, „napis” piksel w piksel, suwaki, odmowy, 12,6 Mpx w ~5 s), `test/ui_ai_test.py` 15–16/16 (chromium/webkit, 320/390/820/1440). Pozostałe: korekta 44, model 13, serwer 26, ui_korekta 39, ui_spis 13, ui_aml 25, bezpieczeństwo 23, audyt 69/69, ui_test OK. `ui_safari_test.py` pada na `select kto='Marek'` także BEZ tych zmian (dane testowe kont) — do poprawienia w teście.
 - Zdjęcia właściciela (salon, wynik z Gemini) tylko w /tmp — NIE commitować.
+
+## 1.15.1 (20.11.2026)
+- Okno „Obróbka AI”: dopasowanie opisane słownie zamiast procentów (właściciel odczytał „91%” jako słaby wynik): ≥0,8 bardzo dobre, ≥0,6 dobre, ≥0,4 wystarczające, niżej słabe (odmowa < 0,25 bez zmian).

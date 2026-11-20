@@ -63,7 +63,7 @@ with sync_playwright() as p:
     pg.set_input_files('[data-ai=plik]', ['/tmp/ai-wynik.jpg'])
     pg.wait_for_selector('[data-ai=zapisz]:not([disabled])', timeout=90000)
     info = pg.inner_text('.ai-info')
-    ok('Dopasowanie' in info, f'dopasowanie policzone: „{info}”')
+    ok(info.startswith('Dopasowanie: ') and '%' not in info, f'dopasowanie opisane słownie: „{info}”')
     jas = "(()=>{const c=document.querySelector('.ai-obraz canvas'),g=c.getContext('2d'),d=g.getImageData(0,0,c.width,c.height).data;let s=0;for(let i=0;i<d.length;i+=40)s+=d[i]+d[i+1]+d[i+2];return s/(d.length/40)/3})()"
     po = pg.evaluate(jas)
     pb = pg.locator('[data-ai=przed]').bounding_box()
