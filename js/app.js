@@ -8,8 +8,9 @@ import * as R from './rzut.js';
 import * as KZ from './korekta.js';
 import { otworzEdytor, obrobPelne, rozkoduj } from './edytorZdjec.js';
 import * as U from './urzadzenia.js';
+import * as HY from './hybryda.js';
 
-export const WERSJA = '1.14.0';
+export const WERSJA = '1.15.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -863,6 +864,7 @@ function kafleZdjecia(z) {
   return `<div class="zdj-kafle">
       <button class="kafel-zdj ${maGeom ? 'akt' : ''}" data-a="zdj-wyrownaj" data-z="${z.id}" ${trwa ? 'disabled' : ''}>${ik('linijka')}<span>Wyrównaj<small>${trwa ? 'liczę…' : maGeom ? 'piony proste' : 'piony i poziom'}</small></span></button>
       <button class="kafel-zdj ${wyg ? 'akt' : ''}" data-a="zdj-obrobka" data-z="${z.id}" ${trwa ? 'disabled' : ''}>${ik('wiz')}<span>Obróbka<small>${trwa ? 'liczę…' : wyg || 'światło i kolor'}</small></span></button>
+      <button class="kafel-zdj szeroki ${z.kor?.ai ? 'akt' : ''}" data-a="zdj-ai" data-z="${z.id}" ${trwa ? 'disabled' : ''}>${ik('gwiazda')}<span>Obróbka AI<small>${trwa ? 'liczę…' : z.kor?.ai ? 'światło z AI, reszta prawdziwa' : 'jak od retuszera — przez Gemini'}</small></span></button>
     </div>${uw.length ? `<div class="uwagi-zdj">${uw.map((u) => `<span>${ik('uwaga')}${esc(UWAGI[u])}</span>`).join('')}</div>` : ''}`;
 }
 
@@ -1562,13 +1564,19 @@ async function podgladZdjecia(id) {
 
 // ---------- korekta zdjęć (jasność, kolor, piony, kadr — bez retuszu; oryginał zostaje) ----------
 // wpis zdjęcia po korekcie: nowy plik, w `kor` — id oryginału i ustawienia; odwołania wizualizacji przepięte
+// `kor.ai` — id hybrydy z „Obróbki AI” (pełne zdjęcie bez geometrii); dalsze korekty liczą się od niej
 async function zapiszKorekte(oid, stareId, wynik, par, org) {
   const nowe = await D.dodajGotoweZdjecie(oid, wynik.blob, wynik.w, wynik.h);
-  const o = D.oferta(oid);
-  const zdj = (o.zdj || []).map((z) => (z.id === stareId ? { ...z, id: nowe.id, w: nowe.w, h: nowe.h, kor: { org, par: wezPar(par), t: Date.now(), w: z.kor?.w ?? z.w, h: z.kor?.h ?? z.h } }
+  return podepnijWersje(oid, stareId, nowe, par, org);
+}
+async function podepnijWersje(oid, stareId, nowe, par, org, ai) {
+  const o = D.oferta(oid), z0 = (o.zdj || []).find((z) => z.id === stareId);
+  const staraAi = z0?.kor?.ai, noweAi = ai === undefined ? staraAi : ai || undefined;
+  const zdj = (o.zdj || []).map((z) => (z.id === stareId ? { ...z, id: nowe.id, w: nowe.w, h: nowe.h, kor: { org, ...(noweAi ? { ai: noweAi } : {}), par: wezPar(par), t: Date.now(), w: z.kor?.w ?? z.w, h: z.kor?.h ?? z.h } }
     : z.oryg === stareId ? { ...z, oryg: nowe.id } : z));
   await D.zmien(oid, { zdj });
-  if (stareId !== org) D.usunZdjeciePlik(stareId); // poprzednia wersja poprawionego — oryginał zostaje
+  if (stareId !== org && stareId !== noweAi && stareId !== nowe.id) D.usunZdjeciePlik(stareId); // poprzednia wersja poprawionego — oryginał zostaje
+  if (staraAi && staraAi !== noweAi && staraAi !== nowe.id) D.usunZdjeciePlik(staraAi);
   return nowe.id;
 }
 // tylko ustawienia różne od domyślnych (krócej w bazie)
@@ -1577,9 +1585,11 @@ async function przywrocOryginal(oid, id) {
   const o = D.oferta(oid), z0 = (o.zdj || []).find((z) => z.id === id);
   if (!z0?.kor) return;
   const org = z0.kor.org;
+  const ai = z0.kor.ai;
   const zdj = (o.zdj || []).map((z) => (z.id === id ? JSON.parse(JSON.stringify({ ...z, id: org, kor: undefined, w: z.kor.w || z.w, h: z.kor.h || z.h })) : z.oryg === id ? { ...z, oryg: org } : z));
   await D.zmien(oid, { zdj });
-  D.usunZdjeciePlik(id);
+  if (id !== org) D.usunZdjeciePlik(id);
+  if (ai && ai !== id) D.usunZdjeciePlik(ai);
   toast('Przywrócono oryginał');
 }
 let edycjaZdjecia = false;
@@ -1591,7 +1601,7 @@ async function poprawZdjecie(oid, id) {
   try {
     const org = z.kor?.org || id;
     let blob;
-    try { blob = await D.blobZdjecia(org); } catch { return toast('Oryginał jest na serwerze — połącz się z internetem, żeby poprawić zdjęcie.', 4000); }
+    try { blob = await D.blobZdjecia(z.kor?.ai || org); } catch { return toast('Oryginał jest na serwerze — połącz się z internetem, żeby poprawić zdjęcie.', 4000); }
     const w = await otworzEdytor({ blob, par: z.kor?.par, tytul: nazwaMiejsca(z, o), maOryginal: !!z.kor, ik, podglad: U.podglad(), wariant: ulubiona() || 'naturalna' });
     if (!w) return;
     if (w.przywroc) {
@@ -1607,13 +1617,17 @@ async function poprawZdjecie(oid, id) {
 const liczy = new Set(); // id zdjęć, które właśnie się liczą
 const tylko = (par, klucze) => Object.fromEntries(Object.entries(KZ.normuj(par)).filter(([k]) => klucze.includes(k)));
 async function oryginalZdjecia(z) {
-  try { return await D.blobZdjecia(z.kor?.org || z.id); }
+  try { return await D.blobZdjecia(z.kor?.ai || z.kor?.org || z.id); }
   catch { toast('Oryginał jest na serwerze — połącz się z internetem, żeby obrobić zdjęcie.', 4000); return null; }
 }
 async function zapiszParametry(oid, id, blob, par) {
   const z = (D.oferta(oid).zdj || []).find((x) => x.id === id);
   if (!z) return;
-  if (!KZ.zmienia(par)) { if (z.kor) await przywrocOryginal(oid, id); return; }
+  if (!KZ.zmienia(par)) {
+    if (z.kor?.ai) { if (id !== z.kor.ai) await podepnijWersje(oid, id, { id: z.kor.ai, w: z.kor.w || z.w, h: z.kor.h || z.h }, {}, z.kor.org); }
+    else if (z.kor) await przywrocOryginal(oid, id);
+    return;
+  }
   const w = await obrobPelne(blob, par);
   await zapiszKorekte(oid, id, w, par, z.kor?.org || id);
 }
@@ -1684,6 +1698,153 @@ async function obrobkaZdjecia(oid, id) {
       toast(k === 'oryginal' ? 'Bez obróbki' : `Obróbka: ${KZ.WARIANTY[k]} — oryginał zostaje na serwerze`, 3000);
     } catch (er) { toast(er.message || 'Nie udało się zapisać zdjęcia', 3500); }
     finally { liczy.delete(id); odswiez(); }
+  });
+}
+// ----- „Obróbka AI”: AI (np. Gemini) robi ładne światło, my bierzemy z niej tylko światło i kolor -----
+// piksele, geometria, napisy i przedmioty zostają z oryginału; kolory materiałów nie mogą uciec od prawdziwych
+const POLECENIE_AI = `Edit this real estate interior photo. Improve ONLY the light and colour, like a professional real estate photo retoucher in Lightroom.
+
+Make it bright, airy and warm: walls and ceiling clean warm white (soft cream), wood warm and rich, natural soft daylight look, open the shadows, keep blacks deep, crisp and clean.
+
+STRICT RULES:
+- Keep the exact same framing, crop, camera angle and aspect ratio. Do not zoom, rotate or reframe.
+- Do not add, remove, move or redesign any object.
+- Do not change any text, lettering or logos.
+- Do not add sun rays, light beams, shadows of blinds, reflections or glossy floor effects.
+- Do not turn on lamps that are off, do not add light fixtures.
+- Do not change materials, patterns, marble veins or wood grain.
+- Output in the highest resolution possible.`;
+function silnikHybrydy() {
+  let w = null, zepsuty = false;
+  try { w = new Worker(new URL('./hybrydaWorker.js', import.meta.url), { type: 'module' }); w.onerror = () => { zepsuty = true; }; } catch { w = null; }
+  const czekaj = (typ) => new Promise((ok, zle) => {
+    const f = (e) => { if (e.data.typ === 'blad') { off(); zle(new Error(e.data.blad)); } else if (e.data.typ === typ) { off(); ok(e.data); } };
+    const er = () => { off(); zle(Object.assign(new Error('worker'), { worker: true })); };
+    const off = () => { w.removeEventListener('message', f); w.removeEventListener('error', er); };
+    w.addEventListener('message', f); w.addEventListener('error', er);
+  });
+  // zapas bez workera (stare przeglądarki)
+  let org = null, podglad = null, nauka = null;
+  const lokalnie = {
+    async przygotuj(o, ai, ust, bok) { org = o; nauka = HY.przygotuj(o, ai); podglad = HY.zmniejsz(o, bok); return { zgodnosc: nauka.zgodnosc, pokrycie: nauka.pokrycie, org: podglad, wynik: HY.naloz(podglad, nauka, ust) }; },
+    async podglad(ust) { return { wynik: HY.naloz(podglad, nauka, ust) }; },
+    async pelne(ust) { return { wynik: HY.naloz(org, nauka, ust) }; },
+  };
+  let tryb = w ? 'worker' : 'lokalnie';
+  return {
+    async przygotuj(o, ai, ust, bok) {
+      if (tryb === 'worker' && !zepsuty) {
+        const kopia = { data: new Uint8ClampedArray(o.data), width: o.width, height: o.height }; // gdyby worker padł — mamy z czego liczyć
+        try { const p = czekaj('gotowe'); w.postMessage({ typ: 'przygotuj', org: o, ai, ust, bokPodgladu: bok }, [o.data.buffer]); return await p; }
+        catch (e) { if (!e.worker) throw e; tryb = 'lokalnie'; w.terminate(); return lokalnie.przygotuj(kopia, ai, ust, bok); }
+      }
+      tryb = 'lokalnie'; return lokalnie.przygotuj(o, ai, ust, bok);
+    },
+    podglad(ust) { if (tryb === 'lokalnie') return lokalnie.podglad(ust); const p = czekaj('podglad'); w.postMessage({ typ: 'podglad', ust }); return p; },
+    pelne(ust) { if (tryb === 'lokalnie') return lokalnie.pelne(ust); const p = czekaj('pelne'); w.postMessage({ typ: 'pelne', ust }); return p; },
+    zamknij() { w?.terminate(); },
+  };
+}
+const naCanvas = (cv, img) => { cv.width = img.width; cv.height = img.height; cv.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(img.data.buffer, img.data.byteOffset, img.data.length), img.width, img.height), 0, 0); };
+async function doJpeg(img, jakosc = 0.92) {
+  const c = document.createElement('canvas'); naCanvas(c, img);
+  const b = await new Promise((ok) => c.toBlob(ok, 'image/jpeg', jakosc));
+  c.width = c.height = 0;
+  if (!b) throw new Error('Nie udało się zapisać zdjęcia.');
+  return b;
+}
+async function obrobkaAI(oid, id) {
+  if (liczy.has(id)) return;
+  const o = D.oferta(oid), z = (o.zdj || []).find((x) => x.id === id);
+  if (!z || !doKorekty(z)) return;
+  const org = z.kor?.org || id;
+  let blobOrg;
+  try { blobOrg = await D.blobZdjecia(org); } catch { return toast('Oryginał jest na serwerze — połącz się z internetem.', 4000); }
+  const ust = { ...HY.DOMYSLNE };
+  const w = okno('Obróbka AI', `<div class="ai-kroki">
+      <div class="ai-krok"><b>1</b><div><p>Wyślij oryginał do AI (np. aplikacja Gemini) z gotowym poleceniem — skopiuj je, udostępnij zdjęcie, wklej polecenie.</p>
+        <div class="ai-przyciski"><button class="btn kontur maly" data-ai="kopiuj">${ik('dok')}Kopiuj polecenie</button><button class="btn kontur maly" data-ai="udostepnij">${ik('obraz')}Udostępnij zdjęcie</button></div></div></div>
+      <div class="ai-krok"><b>2</b><div><p>Zapisz wynik z AI w telefonie i wgraj go tutaj.</p>
+        <div class="ai-przyciski"><label class="btn zloty maly">${ik('plus')}Wgraj wynik z AI<input type="file" accept="image/*" data-ai="plik" hidden></label></div></div></div>
+    </div>
+    <div class="ai-wynik" hidden>
+      <div class="ai-obraz"><canvas aria-label="Podgląd po obróbce"></canvas><span class="ai-stan">Liczę…</span></div>
+      <p class="wyc male ai-info"></p>
+      <label class="ai-suwak"><span>Siła <i data-ai-w="sila"></i></span><input type="range" min="0" max="1" step="0.05" value="${ust.sila}" data-ai-s="sila"></label>
+      <label class="ai-suwak"><span>Kolory materiałów <i data-ai-w="kolor"></i></span><input type="range" min="1" max="1.8" step="0.05" value="${ust.kolor}" data-ai-s="kolor"></label>
+      <div class="ai-przyciski"><button class="btn kontur maly" data-ai="przed">${ik('oko')}Przytrzymaj: przed</button><button class="btn zloty" data-ai="zapisz" disabled>${ik('ok')}Zapisz</button></div>
+    </div>
+    ${z.kor?.ai ? `<button class="dodaj" data-ai="usun">${ik('cofnij')}Usuń obróbkę AI z tego zdjęcia</button>` : ''}
+    <p class="wyc male" style="margin:10px 0 0">Z wyniku AI bierzemy tylko światło i kolor. Kształty, napisy i przedmioty zostają z twojego zdjęcia, a kolory drewna, płytek i tkanin nie mogą odjechać od prawdziwych. Oryginał zostaje na serwerze.</p>`);
+  w.classList.add('okno-ai');
+  const $w = (q) => w.querySelector(q);
+  const opisz = () => { $w('[data-ai-w="sila"]').textContent = `${Math.round(ust.sila * 100)}%`; $w('[data-ai-w="kolor"]').textContent = ust.kolor <= 1.05 ? 'wierne' : ust.kolor >= 1.6 ? 'żywe' : 'cieplejsze'; };
+  opisz();
+  let silnik = null, orgPodglad = null, wynikPodglad = null, liczyPodglad = false, znowu = false;
+  const zamknij = () => { silnik?.zamknij(); silnik = null; };
+  new MutationObserver((_, ob) => { if (!document.body.contains(w)) { zamknij(); ob.disconnect(); } }).observe(document.body, { childList: true });
+  const cv = $w('.ai-obraz canvas');
+  const odswiezPodglad = async () => {
+    if (!silnik || !orgPodglad) return;
+    if (liczyPodglad) { znowu = true; return; }
+    liczyPodglad = true;
+    try { wynikPodglad = (await silnik.podglad(ust)).wynik; naCanvas(cv, wynikPodglad); }
+    catch (e) { toast(e.message, 3500); }
+    finally { liczyPodglad = false; if (znowu) { znowu = false; odswiezPodglad(); } }
+  };
+  w.addEventListener('input', (e) => { const k = e.target.dataset?.aiS; if (!k) return; ust[k] = Number(e.target.value); opisz(); odswiezPodglad(); });
+  const przed = (tak) => { if (orgPodglad && wynikPodglad) naCanvas(cv, tak ? orgPodglad : wynikPodglad); };
+  const bp = $w('[data-ai="przed"]');
+  for (const [ev, v] of [['pointerdown', true], ['pointerup', false], ['pointerleave', false], ['pointercancel', false]]) bp.addEventListener(ev, () => przed(v));
+  w.addEventListener('change', async (e) => {
+    if (e.target.dataset?.ai !== 'plik' || !e.target.files?.[0]) return;
+    const plikAI = e.target.files[0];
+    $w('.ai-wynik').hidden = false; $w('.ai-stan').hidden = false; $w('.ai-stan').textContent = 'Dopasowuję wynik z AI do zdjęcia…'; $w('[data-ai="zapisz"]').disabled = true;
+    zamknij(); silnik = silnikHybrydy();
+    try {
+      const [pel, ai] = await Promise.all([rozkoduj(blobOrg, 4096), rozkoduj(plikAI, 1024)]);
+      const r = await silnik.przygotuj(pel, ai, ust, U.podglad());
+      orgPodglad = r.org; wynikPodglad = r.wynik; naCanvas(cv, wynikPodglad);
+      $w('.ai-stan').hidden = true; $w('[data-ai="zapisz"]').disabled = false;
+      $w('.ai-info').textContent = `Dopasowanie do zdjęcia: ${Math.round(r.zgodnosc * 100)}%.${r.pokrycie < 0.5 ? ' AI mocno zmieniła część zdjęcia — tam zostaje światło oryginału.' : ''}`;
+    } catch (er) { $w('.ai-stan').textContent = er.message || 'Nie udało się połączyć zdjęć.'; zamknij(); }
+  });
+  w.addEventListener('click', async (e) => {
+    const a = e.target.closest('[data-ai]')?.dataset.ai;
+    if (a === 'kopiuj') {
+      await kopiuj(POLECENIE_AI); toast('Polecenie skopiowane — wklej je w AI razem ze zdjęciem', 3000);
+    } else if (a === 'udostepnij') {
+      const plik = new File([blobOrg], 'zdjecie.jpg', { type: blobOrg.type || 'image/jpeg' });
+      if (navigator.canShare?.({ files: [plik] })) { try { await navigator.share({ files: [plik] }); } catch { /* anulowane */ } }
+      else { const l = document.createElement('a'); l.href = URL.createObjectURL(plik); l.download = 'zdjecie.jpg'; document.body.appendChild(l); l.click(); l.remove(); toast('Zdjęcie pobrane — wgraj je do AI', 3000); }
+    } else if (a === 'zapisz') {
+      const b = e.target.closest('button'); b.disabled = true; $w('.ai-stan').hidden = false; $w('.ai-stan').textContent = 'Liczę pełne zdjęcie…';
+      liczy.add(id); odswiez();
+      try {
+        const pel = (await silnik.pelne(ust)).wynik;
+        const baza = await D.dodajGotoweZdjecie(oid, await doJpeg(pel), pel.width, pel.height);
+        const zz = (D.oferta(oid).zdj || []).find((x) => x.id === id);
+        const geom = tylko(zz?.kor?.par, KZ.GEOMETRIA);
+        let nowe = baza;
+        if (KZ.zmienia(geom)) { const wy = await obrobPelne(await doJpeg(pel, 0.95), geom); nowe = await D.dodajGotoweZdjecie(oid, wy.blob, wy.w, wy.h); }
+        await podepnijWersje(oid, id, nowe, geom, org, baza.id);
+        w.remove();
+        toast('Obróbka AI zapisana — oryginał zostaje na serwerze', 3000);
+      } catch (er) { toast(er.message || 'Nie udało się zapisać zdjęcia', 3500); b.disabled = false; $w('.ai-stan').hidden = true; }
+      finally { liczy.delete(id); odswiez(); }
+    } else if (a === 'usun') {
+      w.remove();
+      const zz = (D.oferta(oid).zdj || []).find((x) => x.id === id);
+      if (!zz?.kor?.ai) return;
+      const geom = tylko(zz.kor.par, KZ.GEOMETRIA);
+      liczy.add(id); odswiez();
+      try {
+        if (KZ.zmienia(geom)) { const wy = await obrobPelne(blobOrg, geom); await podepnijWersje(oid, id, await D.dodajGotoweZdjecie(oid, wy.blob, wy.w, wy.h), geom, org, null); }
+        else await przywrocOryginal(oid, id);
+        toast('Obróbka AI usunięta', 2500);
+      } catch (er) { toast(er.message || 'Nie udało się', 3500); }
+      finally { liczy.delete(id); odswiez(); }
+    }
   });
 }
 // asystent: zaraz po dodaniu — krzywo, ciemno, przepalone (nieostrości nie zgadujemy)
@@ -2043,6 +2204,7 @@ document.addEventListener('click', async (e) => {
     case 'zdj-popraw': poprawZdjecie(o.id, b.dataset.z); break;
     case 'zdj-wyrownaj': wyrownajZdjecie(o.id, b.dataset.z); break;
     case 'zdj-obrobka': obrobkaZdjecia(o.id, b.dataset.z); break;
+    case 'zdj-ai': obrobkaAI(o.id, b.dataset.z); break;
     case 'pobierz-zdj': pobierzZdjecia(o); break;
     case 'menu': {
       const w = okno(o.roboczy || M.tytul(o), `<div class="menu-lista"><button data-m="historia">${ik('zegar')}Historia zmian</button><button data-m="usun" class="zly">${ik('kosz')}Usuń ofertę</button></div>`);

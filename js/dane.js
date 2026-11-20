@@ -381,7 +381,7 @@ export async function przygotujZdjecia(oid, pliki, naPostep) {
   for (const plik of pliki) {
     i++; naPostep?.(i, pliki.length);
     const id = noweId(12);
-    const pelne = await przeskaluj(plik, 2560, 0.88);
+    const pelne = await przeskaluj(plik, 4096, 0.92); // pełna jakość (limit płótna Safari); jedna kompresja
     const sr = await przeskaluj(pelne.blob, 1400, 0.84);
     const mini = await przeskaluj(sr.blob, 520, 0.8);
     await idbPut('pliki', pelne.blob, `${id}:pelne`);
@@ -397,7 +397,7 @@ export async function przygotujZdjecia(oid, pliki, naPostep) {
   wyslijZdjecia();
   return nowe;
 }
-// gotowy JPEG (np. po korekcie, już ≤ 2560 px) — bez ponownej kompresji pełnej wersji
+// gotowy JPEG (np. po korekcie, już ≤ 4096 px) — bez ponownej kompresji pełnej wersji
 export async function dodajGotoweZdjecie(oid, blob, w, h) {
   const id = noweId(12);
   const sr = await przeskaluj(blob, 1400, 0.84);

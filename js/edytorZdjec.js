@@ -46,13 +46,14 @@ export async function rozkoduj(blob, maks) {
   return { data: d.data, width: w, height: h };
 }
 // obróbka pełnego zdjęcia → JPEG
+export const MAKS_ZDJECIA = 4096; // więcej Safari na iPhonie nie narysuje na jednym płótnie (limit ~16,7 Mpx)
 export async function obrobPelne(blob, par) {
-  const pel = await rozkoduj(blob, 2560);
-  const [w, h] = KZ.rozmiarWyniku(pel.width, pel.height, par, 2560);
+  const pel = await rozkoduj(blob, MAKS_ZDJECIA);
+  const [w, h] = KZ.rozmiarWyniku(pel.width, pel.height, par, MAKS_ZDJECIA);
   const wyn = KZ.obrob(pel, par, w, h);
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   c.getContext('2d').putImageData(new ImageData(wyn.data, w, h), 0, 0);
-  const out = await new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.9));
+  const out = await new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.92));
   c.width = c.height = 0;
   if (!out) throw new Error('Nie udało się zapisać zdjęcia.');
   return { blob: out, w, h };
