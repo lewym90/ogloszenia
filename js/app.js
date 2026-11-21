@@ -9,8 +9,10 @@ import * as KZ from './korekta.js';
 import { otworzEdytor, obrobPelne, rozkoduj } from './edytorZdjec.js';
 import * as U from './urzadzenia.js';
 import * as HY from './hybryda.js';
+import * as AM from './obrobkaAM.js';
+import * as SN from './obrobkaSiec.js';
 
-export const WERSJA = '1.15.1';
+export const WERSJA = '1.16.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -864,7 +866,8 @@ function kafleZdjecia(z) {
   return `<div class="zdj-kafle">
       <button class="kafel-zdj ${maGeom ? 'akt' : ''}" data-a="zdj-wyrownaj" data-z="${z.id}" ${trwa ? 'disabled' : ''}>${ik('linijka')}<span>Wyrównaj<small>${trwa ? 'liczę…' : maGeom ? 'piony proste' : 'piony i poziom'}</small></span></button>
       <button class="kafel-zdj ${wyg ? 'akt' : ''}" data-a="zdj-obrobka" data-z="${z.id}" ${trwa ? 'disabled' : ''}>${ik('wiz')}<span>Obróbka<small>${trwa ? 'liczę…' : wyg || 'światło i kolor'}</small></span></button>
-      <button class="kafel-zdj szeroki ${z.kor?.ai ? 'akt' : ''}" data-a="zdj-ai" data-z="${z.id}" ${trwa ? 'disabled' : ''}>${ik('gwiazda')}<span>Obróbka AI<small>${trwa ? 'liczę…' : z.kor?.ai ? 'światło z AI, reszta prawdziwa' : 'jak od retuszera — przez Gemini'}</small></span></button>
+      <button class="kafel-zdj szeroki ${z.kor?.zrodlo === 'am' ? 'akt' : ''}" data-a="zdj-am" data-z="${z.id}" ${trwa ? 'disabled' : ''}>${ik('gwiazda')}<span>Obróbka AM<small>${trwa ? 'liczę…' : z.kor?.zrodlo === 'am' ? 'zrobiona — stuknij, żeby zmienić' : 'automatycznie, jak od retuszera'}</small></span></button>
+      <button class="kafel-zdj szeroki ${z.kor?.ai && z.kor?.zrodlo !== 'am' ? 'akt' : ''}" data-a="zdj-ai" data-z="${z.id}" ${trwa ? 'disabled' : ''}>${ik('obraz')}<span>Obróbka AI<small>${trwa ? 'liczę…' : z.kor?.ai && z.kor?.zrodlo !== 'am' ? 'światło z AI, reszta prawdziwa' : 'przez zewnętrzne AI (Gemini, ChatGPT)'}</small></span></button>
     </div>${uw.length ? `<div class="uwagi-zdj">${uw.map((u) => `<span>${ik('uwaga')}${esc(UWAGI[u])}</span>`).join('')}</div>` : ''}`;
 }
 
@@ -967,6 +970,7 @@ function tabZdjecia(t, o) {
   const brakRzutu = L.find((x) => x.id === 'rzut' && !x.ok);
   wstaw($('#zdj-rzut', t), panelRzutu(o));
   wstaw($('#zdj-licznik', t), `<div class="zdj-licznik"><b>${zdj.length}</b><span class="wyc">zdjęć · prawdziwych ${zwykle}, minimum ${M.minZdjec(o)}</span><span class="rozp"></span>
+    ${zdj.some(doKorekty) ? `<button class="btn kontur maly" data-a="zdj-am-wszystkie" ${S.amWszystkie ? 'disabled' : ''}>${ik('gwiazda')}${S.amWszystkie ? 'Obrabiam…' : 'Obróbka AM — wszystkie'}</button>` : ''}
     ${zdj.length ? `<button class="btn kontur maly" data-a="pobierz-zdj">${ik('pobierz')}Pobierz w kolejności</button>` : ''}</div>`);
   // pole wyboru plików — odświeżane tylko, gdy zmieni się lista pomieszczeń
   wstaw($('#zdj-dodaj', t), `<div class="siatka" style="padding-top:0">
@@ -1569,10 +1573,12 @@ async function zapiszKorekte(oid, stareId, wynik, par, org) {
   const nowe = await D.dodajGotoweZdjecie(oid, wynik.blob, wynik.w, wynik.h);
   return podepnijWersje(oid, stareId, nowe, par, org);
 }
-async function podepnijWersje(oid, stareId, nowe, par, org, ai) {
+// `kor.zrodlo` — 'am' gdy bazą jest „Obróbka AM” (własny model), brak — „Obróbka AI” (zewnętrzne AI)
+async function podepnijWersje(oid, stareId, nowe, par, org, ai, zrodlo) {
   const o = D.oferta(oid), z0 = (o.zdj || []).find((z) => z.id === stareId);
   const staraAi = z0?.kor?.ai, noweAi = ai === undefined ? staraAi : ai || undefined;
-  const zdj = (o.zdj || []).map((z) => (z.id === stareId ? { ...z, id: nowe.id, w: nowe.w, h: nowe.h, kor: { org, ...(noweAi ? { ai: noweAi } : {}), par: wezPar(par), t: Date.now(), w: z.kor?.w ?? z.w, h: z.kor?.h ?? z.h } }
+  const noweZr = noweAi ? (ai === undefined ? z0?.kor?.zrodlo : zrodlo) : undefined;
+  const zdj = (o.zdj || []).map((z) => (z.id === stareId ? { ...z, id: nowe.id, w: nowe.w, h: nowe.h, kor: { org, ...(noweAi ? { ai: noweAi } : {}), ...(noweZr ? { zrodlo: noweZr } : {}), par: wezPar(par), t: Date.now(), w: z.kor?.w ?? z.w, h: z.kor?.h ?? z.h } }
     : z.oryg === stareId ? { ...z, oryg: nowe.id } : z));
   await D.zmien(oid, { zdj });
   if (stareId !== org && stareId !== noweAi && stareId !== nowe.id) D.usunZdjeciePlik(stareId); // poprzednia wersja poprawionego — oryginał zostaje
@@ -1774,7 +1780,7 @@ async function obrobkaAI(oid, id) {
       <label class="ai-suwak"><span>Kolory materiałów <i data-ai-w="kolor"></i></span><input type="range" min="1" max="1.8" step="0.05" value="${ust.kolor}" data-ai-s="kolor"></label>
       <div class="ai-przyciski"><button class="btn kontur maly" data-ai="przed">${ik('oko')}Przytrzymaj: przed</button><button class="btn zloty" data-ai="zapisz" disabled>${ik('ok')}Zapisz</button></div>
     </div>
-    ${z.kor?.ai ? `<button class="dodaj" data-ai="usun">${ik('cofnij')}Usuń obróbkę AI z tego zdjęcia</button>` : ''}
+    ${z.kor?.ai && z.kor?.zrodlo !== 'am' ? `<button class="dodaj" data-ai="usun">${ik('cofnij')}Usuń obróbkę AI z tego zdjęcia</button>` : ''}
     <p class="wyc male" style="margin:10px 0 0">Z wyniku AI bierzemy tylko światło i kolor. Kształty, napisy i przedmioty zostają z twojego zdjęcia, a kolory drewna, płytek i tkanin nie mogą odjechać od prawdziwych. Oryginał zostaje na serwerze.</p>`);
   w.classList.add('okno-ai');
   const $w = (q) => w.querySelector(q);
@@ -1847,6 +1853,149 @@ async function obrobkaAI(oid, id) {
       finally { liczy.delete(id); odswiez(); }
     }
   });
+}
+// ---------- „Obróbka AM” — własny model, liczony w telefonie ----------
+function silnikAM() {
+  let w = null, zepsuty = false;
+  try { w = new Worker(new URL('./hybrydaWorker.js', import.meta.url), { type: 'module' }); w.onerror = () => { zepsuty = true; }; } catch { w = null; }
+  const czekaj = (typ) => new Promise((ok, zle) => {
+    const f = (e) => { if (e.data.typ === 'blad') { off(); zle(new Error(e.data.blad)); } else if (e.data.typ === typ) { off(); ok(e.data); } };
+    const er = () => { off(); zle(Object.assign(new Error('worker'), { worker: true })); };
+    const off = () => { w.removeEventListener('message', f); w.removeEventListener('error', er); };
+    w.addEventListener('message', f); w.addEventListener('error', er);
+  });
+  let wagi = null, st = null; // zapas bez workera
+  const zaladuj = async () => {
+    if (!wagi) { const [j, b] = await Promise.all([fetch('modele/am1.json').then((r) => r.json()), fetch('modele/am1.bin').then((r) => r.arrayBuffer())]); wagi = SN.wczytajWagi(j, b); }
+    return wagi;
+  };
+  const lokalnie = {
+    async przygotuj(o, ust, bok) { const przyg = AM.przygotujAM(await zaladuj(), o); st = { org: o, przyg, orgP: HY.zmniejsz(o, bok), preP: HY.zmniejsz(przyg.pre, bok) }; return { org: st.orgP, wynik: AM.nalozAM(st.orgP, st.preP, przyg, ust) }; },
+    async podglad(ust) { return { wynik: AM.nalozAM(st.orgP, st.preP, st.przyg, ust) }; },
+    async pelne(ust) { return { wynik: AM.nalozAM(st.org, st.przyg.pre, st.przyg, ust) }; },
+    async auto(o, ust) { const przyg = AM.przygotujAM(await zaladuj(), o); return { wynik: AM.nalozAM(o, przyg.pre, przyg, ust) }; },
+  };
+  let tryb = w ? 'worker' : 'lokalnie';
+  const przez = async (typ, dane, zapas, przenies) => {
+    if (tryb === 'worker' && !zepsuty) {
+      const kopia = dane.org ? { data: new Uint8ClampedArray(dane.org.data), width: dane.org.width, height: dane.org.height } : null;
+      try { const p = czekaj(typ === 'am-przygotuj' ? 'am-gotowe' : typ); w.postMessage({ typ, ...dane }, przenies ? [dane.org.data.buffer] : []); return await p; }
+      catch (e) { if (!e.worker) throw e; tryb = 'lokalnie'; w.terminate(); if (kopia) dane.org = kopia; return zapas(); }
+    }
+    tryb = 'lokalnie'; return zapas();
+  };
+  return {
+    przygotuj(o, ust, bok) { const d = { org: o, ust, bokPodgladu: bok }; return przez('am-przygotuj', d, () => lokalnie.przygotuj(d.org, ust, bok), true); },
+    podglad(ust) { return tryb === 'lokalnie' ? lokalnie.podglad(ust) : przez('am-podglad', { ust }, () => lokalnie.podglad(ust)); },
+    pelne(ust) { return tryb === 'lokalnie' ? lokalnie.pelne(ust) : przez('am-pelne', { ust }, () => lokalnie.pelne(ust)); },
+    auto(o, ust) { const d = { org: o, ust }; return przez('am-auto', d, () => lokalnie.auto(d.org, ust), true); },
+    zamknij() { w?.terminate(); },
+  };
+}
+// zapis wyniku: baza (bez geometrii) + ewentualnie wyrównanie z kafelka „Wyrównaj”
+async function zapiszAM(oid, id, pel, org) {
+  const baza = await D.dodajGotoweZdjecie(oid, await doJpeg(pel), pel.width, pel.height);
+  const zz = (D.oferta(oid).zdj || []).find((x) => x.id === id);
+  const geom = tylko(zz?.kor?.par, KZ.GEOMETRIA);
+  let nowe = baza;
+  if (KZ.zmienia(geom)) { const wy = await obrobPelne(await doJpeg(pel, 0.95), geom); nowe = await D.dodajGotoweZdjecie(oid, wy.blob, wy.w, wy.h); }
+  await podepnijWersje(oid, id, nowe, geom, org, baza.id, 'am');
+}
+async function obrobkaAMZdjecia(oid, id) {
+  if (liczy.has(id) || S.amWszystkie) return;
+  const o = D.oferta(oid), z = (o.zdj || []).find((x) => x.id === id);
+  if (!z || !doKorekty(z)) return;
+  const org = z.kor?.org || id;
+  let blobOrg;
+  try { blobOrg = await D.blobZdjecia(org); } catch { return toast('Oryginał jest na serwerze — połącz się z internetem.', 4000); }
+  const ust = { ...AM.DOMYSLNE_AM };
+  const w = okno('Obróbka AM', `<div class="ai-wynik">
+      <div class="ai-obraz"><canvas aria-label="Podgląd po obróbce"></canvas><span class="ai-stan">Obrabiam zdjęcie…</span></div>
+      <label class="ai-suwak"><span>Siła <i data-ai-w="sila"></i></span><input type="range" min="0" max="1" step="0.05" value="${ust.sila}" data-ai-s="sila"></label>
+      <label class="ai-suwak"><span>Jasność <i data-ai-w="jasnosc"></i></span><input type="range" min="-1" max="1" step="0.1" value="${ust.jasnosc}" data-ai-s="jasnosc"></label>
+      <label class="ai-suwak"><span>Kolory materiałów <i data-ai-w="kolor"></i></span><input type="range" min="1" max="1.8" step="0.05" value="${ust.kolor}" data-ai-s="kolor"></label>
+      <div class="ai-przyciski"><button class="btn kontur maly" data-ai="przed">${ik('oko')}Przytrzymaj: przed</button><button class="btn zloty" data-ai="zapisz" disabled>${ik('ok')}Zapisz</button></div>
+    </div>
+    ${z.kor?.zrodlo === 'am' ? `<button class="dodaj" data-ai="usun">${ik('cofnij')}Usuń obróbkę AM z tego zdjęcia</button>` : ''}
+    <p class="wyc male" style="margin:10px 0 0">Nasz model liczy w telefonie, bez internetu i opłat. Zmienia tylko światło i kolor — niczego nie dorysowuje, napisy i przedmioty zostają prawdziwe, kolory materiałów nie mogą odjechać, ciemne ściany (np. granatowe) zostają ciemne. Oryginał zostaje na serwerze.</p>`);
+  w.classList.add('okno-ai');
+  const $w = (q) => w.querySelector(q);
+  const opisz = () => {
+    $w('[data-ai-w="sila"]').textContent = `${Math.round(ust.sila * 100)}%`;
+    $w('[data-ai-w="jasnosc"]').textContent = Math.abs(ust.jasnosc) < 0.05 ? 'auto' : ust.jasnosc > 0 ? `jaśniej +${Math.round(ust.jasnosc * 10)}` : `ciemniej ${Math.round(ust.jasnosc * 10)}`;
+    $w('[data-ai-w="kolor"]').textContent = ust.kolor <= 1.05 ? 'wierne' : ust.kolor >= 1.55 ? 'żywe' : 'cieplejsze';
+  };
+  opisz();
+  let silnik = silnikAM(), orgPodglad = null, wynikPodglad = null, liczyPodglad = false, znowu = false;
+  new MutationObserver((_, ob) => { if (!document.body.contains(w)) { silnik?.zamknij(); silnik = null; ob.disconnect(); } }).observe(document.body, { childList: true });
+  const cv = $w('.ai-obraz canvas');
+  const odswiezPodglad = async () => {
+    if (!silnik || !orgPodglad) return;
+    if (liczyPodglad) { znowu = true; return; }
+    liczyPodglad = true;
+    try { wynikPodglad = (await silnik.podglad(ust)).wynik; naCanvas(cv, wynikPodglad); }
+    catch (e) { toast(e.message, 3500); }
+    finally { liczyPodglad = false; if (znowu) { znowu = false; odswiezPodglad(); } }
+  };
+  w.addEventListener('input', (e) => { const k = e.target.dataset?.aiS; if (!k) return; ust[k] = Number(e.target.value); opisz(); odswiezPodglad(); });
+  const przed = (tak) => { if (orgPodglad && wynikPodglad) naCanvas(cv, tak ? orgPodglad : wynikPodglad); };
+  const bp = $w('[data-ai="przed"]');
+  for (const [ev, v] of [['pointerdown', true], ['pointerup', false], ['pointerleave', false], ['pointercancel', false]]) bp.addEventListener(ev, () => przed(v));
+  (async () => {
+    try {
+      const r = await silnik.przygotuj(await rozkoduj(blobOrg, 4096), ust, U.podglad());
+      if (!silnik) return;
+      orgPodglad = r.org; wynikPodglad = r.wynik; naCanvas(cv, wynikPodglad);
+      $w('.ai-stan').hidden = true; $w('[data-ai="zapisz"]').disabled = false;
+    } catch (er) { $w('.ai-stan').textContent = er.message || 'Nie udało się obrobić zdjęcia.'; }
+  })();
+  w.addEventListener('click', async (e) => {
+    const a = e.target.closest('[data-ai]')?.dataset.ai;
+    if (a === 'zapisz') {
+      const b = e.target.closest('button'); b.disabled = true; $w('.ai-stan').hidden = false; $w('.ai-stan').textContent = 'Liczę pełne zdjęcie…';
+      liczy.add(id); odswiez();
+      try {
+        await zapiszAM(oid, id, (await silnik.pelne(ust)).wynik, org);
+        w.remove();
+        toast('Obróbka AM zapisana — oryginał zostaje na serwerze', 3000);
+      } catch (er) { toast(er.message || 'Nie udało się zapisać zdjęcia', 3500); b.disabled = false; $w('.ai-stan').hidden = true; }
+      finally { liczy.delete(id); odswiez(); }
+    } else if (a === 'usun') {
+      w.remove();
+      const zz = (D.oferta(oid).zdj || []).find((x) => x.id === id);
+      if (!zz?.kor?.ai) return;
+      const geom = tylko(zz.kor.par, KZ.GEOMETRIA);
+      liczy.add(id); odswiez();
+      try {
+        if (KZ.zmienia(geom)) { const wy = await obrobPelne(blobOrg, geom); await podepnijWersje(oid, id, await D.dodajGotoweZdjecie(oid, wy.blob, wy.w, wy.h), geom, org, null); }
+        else await przywrocOryginal(oid, id);
+        toast('Obróbka AM usunięta', 2500);
+      } catch (er) { toast(er.message || 'Nie udało się', 3500); }
+      finally { liczy.delete(id); odswiez(); }
+    }
+  });
+}
+// wszystkie prawdziwe zdjęcia oferty po kolei (bez tych już obrobionych AM albo zewnętrznym AI)
+async function obrobkaAMWszystkie(oid) {
+  if (S.amWszystkie) return;
+  const lista = (D.oferta(oid).zdj || []).filter((z) => doKorekty(z) && !z.kor?.ai && !liczy.has(z.id));
+  if (!lista.length) return toast('Wszystkie zdjęcia są już obrobione (AM albo AI).', 3000);
+  if (!await potwierdz(`Obrobić ${lista.length} ${lista.length === 1 ? 'zdjęcie' : lista.length < 5 ? 'zdjęcia' : 'zdjęć'}?`, 'Nasz model poprawi światło i kolor każdego zdjęcia. Oryginały zostają na serwerze — każde możesz potem cofnąć albo dostroić kafelkiem „Obróbka AM”.', 'Obrób', 'zloty')) return;
+  S.amWszystkie = true; const silnik = silnikAM(); let ok = 0, bl = 0;
+  try {
+    for (let i = 0; i < lista.length; i++) {
+      const z = (D.oferta(oid).zdj || []).find((x) => x.id === lista[i].id);
+      if (!z || z.kor?.ai) continue;
+      S.postep = `Obróbka AM: zdjęcie ${i + 1} z ${lista.length}…`; liczy.add(z.id); odswiez();
+      try {
+        const org = z.kor?.org || z.id;
+        const pel = (await silnik.auto(await rozkoduj(await D.blobZdjecia(org), 4096), {})).wynik;
+        await zapiszAM(oid, z.id, pel, org); ok++;
+      } catch { bl++; }
+      finally { liczy.delete(z.id); }
+    }
+  } finally { silnik.zamknij(); S.amWszystkie = false; S.postep = ''; odswiez(); }
+  toast(`Obrobione: ${ok}${bl ? ` · nie udało się: ${bl} (sprawdź internet)` : ''}`, 3500);
 }
 // asystent: zaraz po dodaniu — krzywo, ciemno, przepalone (nieostrości nie zgadujemy)
 async function ocenDodane(oid, nowe, pliki) {
@@ -2206,6 +2355,8 @@ document.addEventListener('click', async (e) => {
     case 'zdj-wyrownaj': wyrownajZdjecie(o.id, b.dataset.z); break;
     case 'zdj-obrobka': obrobkaZdjecia(o.id, b.dataset.z); break;
     case 'zdj-ai': obrobkaAI(o.id, b.dataset.z); break;
+    case 'zdj-am': obrobkaAMZdjecia(o.id, b.dataset.z); break;
+    case 'zdj-am-wszystkie': obrobkaAMWszystkie(o.id); break;
     case 'pobierz-zdj': pobierzZdjecia(o); break;
     case 'menu': {
       const w = okno(o.roboczy || M.tytul(o), `<div class="menu-lista"><button data-m="historia">${ik('zegar')}Historia zmian</button><button data-m="usun" class="zly">${ik('kosz')}Usuń ofertę</button></div>`);

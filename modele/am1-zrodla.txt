@@ -1,0 +1,4 @@
+Model „Obróbka AM” (modele/am1.*) — skąd się wziął
+- 552 zdjęcia wnętrz z licencją CC0 (domena publiczna; rawpixel, StockSnap przez Openverse) — bez wymogu podawania autorów.
+- 4 pary przed/po z mieszkania właściciela aplikacji (oryginał z telefonu → wersja z ChatGPT, z której wzięto tylko światło i kolor).
+Zdjęcia nie są częścią aplikacji. Model ich nie zawiera ani nie odtwarza — uczy się tylko, jak poprawiać światło i kolor.

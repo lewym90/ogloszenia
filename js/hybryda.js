@@ -57,6 +57,7 @@ function rozmyj(s, w, h, sigma) {
   }
   return o;
 }
+export const rozmyjKanal = rozmyj;
 function gradient(s, w, h) {
   const gx = new Float32Array(w * h), gy = new Float32Array(w * h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -239,6 +240,8 @@ const COS5 = Math.cos((5 * Math.PI) / 180), SIN5 = Math.sin((5 * Math.PI) / 180)
 // org → nowy obraz tej samej wielkości; ustawienia: sila 0..1 (ile obróbki), kolor 1..1.8 (o ile żywsze mogą być kolory)
 export function naloz(org, nauka, ust = {}) {
   const sila = Math.max(0, Math.min(1, ust.sila ?? DOMYSLNE.sila)), kolor = Math.max(1, Math.min(1.8, ust.kolor ?? DOMYSLNE.kolor));
+  const minA = ust.minA ?? -3, minB = ust.minB ?? -2;
+  const och = Math.max(0, Math.min(1, ust.ochronaCiemnych ?? 0)), mo = och > 0 ? (ust.mapaOchrony || mapaOchrony(org, 1024)) : null;
   const { width: W, height: H, data: d } = org, [gy, gx] = nauka.siatka, M = nauka.modele, K = CECHY * 3;
   const out = new Uint8ClampedArray(W * H * 4);
   const wiersz = new Float32Array(gx * K), f = new Float64Array(CECHY);
@@ -261,8 +264,10 @@ export function naloz(org, nauka, ust = {}) {
       }
       // Lab oryginału i światła z AI
       const [Lo, Ao, Bo] = lab(LIN[R], LIN[G], LIN[B]);
-      const [Lt, At, Bt] = lab(lin01(tr), lin01(tg), lin01(tb));
+      let [Lt, At, Bt] = lab(lin01(tr), lin01(tg), lin01(tb));
       const Co = Math.hypot(Ao, Bo), Ct = Math.hypot(At, Bt);
+      // ciemny, wyraźnie kolorowy materiał (np. granatowa ściana) to kolor, nie brak światła — rozjaśniaj go ostrożnie
+      if (mo && Lt > Lo) Lt = Lo + (Lt - Lo) * (1 - och * probkuj(mo, x, y, W, H));
       // barwne materiały: odcień z oryginału (najwyżej ±5°), nasycenie rośnie z jasnością, ale z limitem
       const kom = Math.max(1, Math.min(1.8, (Lt + 5) / (Lo + 5)));
       const Cc = Math.min(Ct, Co * kom * kolor + 1);
@@ -277,12 +282,28 @@ export function naloz(org, nauka, ust = {}) {
       const Am = Cc * ux, Bm = Cc * uy;
       // biel i szarości (ściany, sufit, rolety): kolor z AI, najwyżej ciepły krem
       const neu = Math.max(0, Math.min(1, (12 - Co) / 6));
-      const An = Math.max(-3, Math.min(4, At)), Bn = Math.max(-2, Math.min(9, Bt));
+      const An = Math.max(minA, Math.min(4, At)), Bn = Math.max(minB, Math.min(9, Bt));
       const [r, g, b] = rgb(Math.max(0, Math.min(100, Lt)), neu * An + (1 - neu) * Am, neu * Bn + (1 - neu) * Bm);
       out[i] = R + (r - R) * sila; out[i + 1] = G + (g - G) * sila; out[i + 2] = B + (b - B) * sila; out[i + 3] = 255;
     }
   }
   return { data: out, width: W, height: H };
+}
+// Mapa ochrony ciemnych materiałów (0..1): granatowa ściana, czarne nogi krzeseł, ciemna roślina — to kolor przedmiotu,
+// nie brak światła. Liczona z wygładzonego, zmniejszonego obrazu, więc jest gładka (bez „kaszy” na szumie).
+export function mapaOchrony(org, bok = 512) {
+  const m = zmniejsz(org, bok), { width: w, height: h, data: d } = m, M = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const [L, a, b] = lab(LIN[d[i * 4]], LIN[d[i * 4 + 1]], LIN[d[i * 4 + 2]]), C = Math.hypot(a, b);
+    const mat = Math.max(0, Math.min(1, (C / (L + 3) - 0.5) / 0.7)), czern = 0.6 * Math.max(0, Math.min(1, (14 - L) / 10));
+    M[i] = Math.max(mat, czern);
+  }
+  return { w, h, m: rozmyj(M, w, h, Math.max(1, bok / 400)) };
+}
+function probkuj(mo, x, y, W, H) {
+  const fx = Math.max(0, Math.min(mo.w - 1, ((x + 0.5) / W) * mo.w - 0.5)), fy = Math.max(0, Math.min(mo.h - 1, ((y + 0.5) / H) * mo.h - 0.5));
+  const x0 = Math.min(mo.w - 2, fx | 0), y0 = Math.min(mo.h - 2, fy | 0), ax = Math.min(1, fx - x0), ay = Math.min(1, fy - y0), m = mo.m, i = y0 * mo.w + x0;
+  return (m[i] * (1 - ax) + m[i + 1] * ax) * (1 - ay) + (m[i + mo.w] * (1 - ax) + m[i + mo.w + 1] * ax) * ay;
 }
 function lin01(v) { v = v < 0 ? 0 : v > 1 ? 1 : v; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }
 function lab(r, g, b) {
