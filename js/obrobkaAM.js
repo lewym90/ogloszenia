@@ -9,6 +9,10 @@ import * as S from './obrobkaSiec.js';
 
 export const DOMYSLNE_AM = { sila: 1, kolor: 1.6, jasnosc: 0 };
 const OCHRONA = 0.7;
+// styl domu — ADAPTACYJNY (zależny od tego, czego zdjęcie potrzebuje, nie stałe cele):
+// biel: globalny balans bieli tylko gdy jasne neutralne powierzchnie są zimne/szare (cel b≈5,5) albo zbyt żółte (> 9);
+// kolory: „żywość” tylko gdy materiały są blade (cel mediany nasycenia ≈ 30), słabe kolory mocniej, mocne wcale.
+const BIEL_B = 5.5, BIEL_A = 1.2, ZOLTA_MAX = 9, CEL_NAS = 30, ZYW_MAX = 0.6;
 
 const smooth = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 function lab8(r, g, b) { // przybliżone L*a*b* z sRGB 0..255 (do pomiarów)
@@ -75,12 +79,53 @@ function pomniejszKanal(s, W, H, f) { // średnia z pól f×f
 export function nalozAM(org, pre, przyg, ust = {}) {
   const sila = Math.max(0, Math.min(1, ust.sila ?? DOMYSLNE_AM.sila)), j = Math.max(-1, Math.min(1, ust.jasnosc ?? 0));
   const t = HY.naloz(pre, przyg.nauka, { sila: 1, kolor: ust.kolor ?? DOMYSLNE_AM.kolor, ochronaCiemnych: OCHRONA, mapaOchrony: przyg.mo, minA: -1, minB: 0.5 });
-  return wykoncz(org, t, sila, j);
+  const st = ocenStyl(t, ust);
+  return wykoncz(org, t, sila, j, st, przyg.mo);
+}
+
+// pomiar na zmniejszonym wyniku: wzmocnienia kanałów (balans bieli) i siła „żywości”
+export function ocenStyl(img, ust = {}) {
+  const m = HY.zmniejsz(img, 256), d = m.data, n = m.width * m.height;
+  const LIN = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  let sr = 0, sg = 0, sb = 0, k = 0; const As = [], Bs = [], Cm = [];
+  for (let i = 0; i < n; i++) {
+    const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2], [L, a, bb] = lab8(r, g, b), C = Math.hypot(a, bb);
+    if (L > 60 && C < 12) { As.push(a); Bs.push(bb); sr += LIN(r); sg += LIN(g); sb += LIN(b); k++; }
+    if (C > 12 && L > 20) Cm.push(C);
+  }
+  const med = (t) => { t.sort((x, y) => x - y); return t[t.length >> 1]; };
+  let zyski = [1, 1, 1];
+  if (k > n * 0.03) {
+    const a0 = med(As), b0 = med(Bs);
+    const db = b0 < BIEL_B ? Math.min(6, BIEL_B - b0) : b0 > ZOLTA_MAX ? Math.max(-6, ZOLTA_MAX - b0) : 0;
+    const da = a0 < 0 ? Math.min(3, BIEL_A - a0) : a0 > 4 ? Math.max(-3, 4 - a0) : 0;
+    if (db || da) {
+      const R = sr / k, G = sg / k, B = sb / k; // średnia jasna neutralna barwa (liniowo) → ta sama jasność, przesunięte a/b
+      const X = (0.412453 * R + 0.35758 * G + 0.180423 * B) / 0.950456, Yl = 0.212671 * R + 0.71516 * G + 0.072169 * B, Z = (0.019334 * R + 0.119193 * G + 0.950227 * B) / 1.088754;
+      const q = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116), qi = (t) => (t > 0.206893 ? t * t * t : (t - 16 / 116) / 7.787);
+      const fx = q(X) + da / 500, fy = q(Yl), fz = q(Z) - db / 200;
+      const X2 = qi(fx) * 0.950456, Z2 = qi(fz) * 1.088754;
+      const R2 = 3.240479 * X2 - 1.53715 * Yl - 0.498535 * Z2, G2 = -0.969256 * X2 + 1.875992 * Yl + 0.041556 * Z2, B2 = 0.055648 * X2 - 0.204043 * Yl + 1.057311 * Z2;
+      zyski = [R2 / R, G2 / G, B2 / B];
+      const sk = 0.212671 * zyski[0] * R / Yl + 0.71516 * zyski[1] * G / Yl + 0.072169 * zyski[2] * B / Yl; // bez zmiany jasności
+      zyski = zyski.map((z) => z / sk);
+    }
+  }
+  const cmed = Cm.length > n * 0.03 ? med(Cm) : CEL_NAS;
+  const zyw = Math.max(0, Math.min(ZYW_MAX, (CEL_NAS - cmed) / cmed)) * (ust.zywosc ?? 1);
+  return { zyski, zyw };
 }
 
 // odszumienie koloru w rozjaśnionych cieniach + jasność + klarowność + wyostrzenie + siła
-export function wykoncz(org, img, sila = 1, jasnosc = 0) {
-  const { width: W, height: H } = img, d = img.data, o = org.data, N = W * H, dl = Math.max(W, H);
+export function wykoncz(org, img, sila = 1, jasnosc = 0, st = { zyski: [1, 1, 1], zyw: 0 }, mo = null) {
+  const { width: W, height: H } = img, o = org.data, N = W * H, dl = Math.max(W, H);
+  let d = img.data;
+  if (st.zyski.some((z) => Math.abs(z - 1) > 0.002)) { // balans bieli: wzmocnienia kanałów w świetle liniowym
+    const T = st.zyski.map((z) => { const t = new Uint8ClampedArray(256); for (let i = 0; i < 256; i++) { let c = i / 255; c = c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; c = Math.min(1, c * z); t[i] = Math.round(255 * (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055)); } return t; });
+    const d2 = new Uint8ClampedArray(d.length);
+    for (let i = 0; i < d.length; i += 4) { d2[i] = T[0][d[i]]; d2[i + 1] = T[1][d[i + 1]]; d2[i + 2] = T[2][d[i + 2]]; d2[i + 3] = 255; }
+    d = d2;
+  }
   const Y = new Float32Array(N), Cb = new Float32Array(N), Cr = new Float32Array(N), Lo = new Float32Array(N);
   for (let p = 0, i = 0; p < N; p++, i += 4) {
     const r = d[i], g = d[i + 1], b = d[i + 2];
@@ -106,8 +151,12 @@ export function wykoncz(org, img, sila = 1, jasnosc = 0) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const p = y * W + x, i = p * 4;
     const wd = Math.max(0, Math.min(1, (40 - probka(loR, lo.w, lo.h, x, y, f)) / 25));
-    const cbv = Cb[p] + (probka(cbR, cb.w, cb.h, x, y, f) - Cb[p]) * wd, crv = Cr[p] + (probka(crR, cr.w, cr.h, x, y, f) - Cr[p]) * wd;
+    let cbv = Cb[p] + (probka(cbR, cb.w, cb.h, x, y, f) - Cb[p]) * wd, crv = Cr[p] + (probka(crR, cr.w, cr.h, x, y, f) - Cr[p]) * wd;
     let yv = Y[p];
+    if (st.zyw > 0) { // żywość: blade kolory mocniej, mocne wcale, ciemne kolorowe materiały (granat) bez zmian
+      const Cl = Math.hypot(cbv, crv) / 1.8, w = Math.max(0, Math.min(1, (Cl - 3) / 6)) * Math.max(0, Math.min(1, 1 - Cl / 60)) * (mo ? 1 - probkuj(mo, x, y, W, H) : 1);
+      const kz = 1 + st.zyw * w; cbv *= kz; crv *= kz;
+    }
     const L = L_Z_LUMY[yv < 0 ? 0 : yv > 255 ? 255 : yv | 0], wk = Math.max(0, Math.min(1, L / 25)) * Math.max(0, Math.min(1, (100 - L) / 20));
     yv += 0.18 * (yv - probka(duze, yy.w, yy.h, x, y, f2)) * wk;
     let dm = Y[p] - male[p]; const prog = 1.3; dm = dm > prog ? dm - prog : dm < -prog ? dm + prog : 0;
