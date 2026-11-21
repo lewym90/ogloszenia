@@ -269,6 +269,9 @@ a { color: var(--gold-l); }
 /* ---------- zdjęcia ---------- */
 .panel { padding: 16px; margin-bottom: 14px; }
 .zdj-licznik { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 4px 4px 14px; }
+.zdj-wszystkie { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex-basis: 100%; }
+.zdj-wszystkie > span { grid-column: 1 / -1; }
+.zdj-wszystkie .btn { width: 100%; justify-content: center; white-space: nowrap; padding-inline: 8px; }
 .zdj-licznik b { font-family: var(--display); font-size: 30px; font-weight: 600; color: var(--gold-l); }
 .braki-zdj { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; margin-bottom: 12px; border-radius: 14px; border: 1px solid rgba(230, 190, 106, .4); background: rgba(60, 46, 18, .35); font-size: 14.5px; }
 .braki-zdj .ik { color: var(--warn); }

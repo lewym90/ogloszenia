@@ -43,7 +43,7 @@ with sync_playwright() as p:
     pg.set_input_files('#dodaj-zdj', ['/tmp/am-org.jpg']); pg.wait_for_selector('.zdj', timeout=60000)
     z0 = pg.evaluate(D % f"return D.oferta('{oid}').zdj[0]")
 
-    ok(pg.locator('.zdj [data-a=zdj-am]').count() == 1 and pg.locator('.zdj [data-a=zdj-ai]').count() == 1, 'kafelki „Obróbka AM” i „Obróbka AI”')
+    ok(pg.locator('.zdj [data-a=zdj-am]').count() == 1 and pg.locator('.zdj [data-a=zdj-wyrownaj]').count() == 1 and pg.locator('.zdj .kafel-zdj').count() == 2, 'dwa kafelki: „Wyrównaj” i „Obróbka AM”')
     ok(pg.evaluate("[...document.querySelectorAll('.zdj-kafle *')].every(e => e.getBoundingClientRect().right <= e.closest('.zdj').getBoundingClientRect().right + 1)"), 'kafelki mieszczą się na karcie')
     ok(pg.evaluate("[...document.querySelectorAll('.zdj-licznik *')].every(e => e.getBoundingClientRect().right <= innerWidth + 1)"), 'pasek z „Obróbka AM — wszystkie” mieści się w szerokości')
     shot(pg, '01-kafle')
@@ -68,19 +68,19 @@ with sync_playwright() as p:
     z1 = pg.evaluate(D % f"return D.oferta('{oid}').zdj[0]")
     ok(z1.get('kor', {}).get('ai') and z1['kor'].get('zrodlo') == 'am' and z1['kor']['org'] == z0['id'], 'zapisane: oryginał zostaje, wersja AM zapamiętana (kor.org, kor.ai, zrodlo=am)')
     ok(max(z1['w'], z1['h']) == 4096, f'wynik w pełnej rozdzielczości {z1["w"]}×{z1["h"]}')
-    ok(pg.locator('.zdj [data-a=zdj-am].akt').count() == 1 and pg.locator('.zdj [data-a=zdj-ai].akt').count() == 0, 'oznaczony kafelek „Obróbka AM” (nie „AI”)')
+    ok(pg.locator('.zdj [data-a=zdj-am].akt').count() == 1, 'oznaczony kafelek „Obróbka AM”')
     # napis na tabliczce zostaje: czarne paski nadal ciemne, biel jasna (kontrast nie zniknął)
     kon = pg.evaluate(D % f"""const b=await D.blobZdjecia('{z1["id"]}');const bm=await createImageBitmap(b);const c=document.createElement('canvas');c.width=bm.width;c.height=bm.height;const g=c.getContext('2d');g.drawImage(bm,0,0);
       const sr=(x0,y0,x1,y1)=>{{const d=g.getImageData(Math.round(x0*c.width),Math.round(y0*c.height),Math.max(1,Math.round((x1-x0)*c.width)),Math.max(1,Math.round((y1-y0)*c.height))).data;let s=0;for(let i=0;i<d.length;i+=4)s+=d[i]+d[i+1]+d[i+2];return s/(d.length/4)/3}};
       return [sr(.371,.26,.375,.29), sr(.40,.36,.55,.42), sr(.86,.3,.98,.6)]""")
     ok(kon[1] - kon[0] > 120, f'„napis” zostaje wyraźny (pasek {kon[0]:.0f}, biel {kon[1]:.0f})')
     ok(kon[2] < 80, f'granatowa ściana zostaje ciemna ({kon[2]:.0f})')
-    # wyrównanie po AM liczy się od wersji AM
+    # wyrównanie zostaje przy ponownej obróbce AM (geometria liczona od wersji AM)
     pg.evaluate(D % f"""const o=D.oferta('{oid}');await D.zmien('{oid}',{{zdj:o.zdj.map(z=>({{...z,kor:{{...z.kor,par:{{obrot:1.5}}}}}}))}})""")
-    pg.click('.zdj [data-a=zdj-obrobka]'); pg.wait_for_selector('.ob-wersja[data-w=naturalna]:not([disabled])', timeout=60000)
-    pg.click('.ob-wersja[data-w=naturalna]'); pg.wait_for_timeout(500); pg.wait_for_selector('.zdj [data-a=zdj-obrobka]:not([disabled])', timeout=60000); pg.wait_for_timeout(500)
+    pg.click('.zdj [data-a=zdj-am]'); pg.wait_for_selector('[data-ai=zapisz]:not([disabled])', timeout=120000)
+    pg.click('[data-ai=zapisz]'); pg.wait_for_selector('.okno-ai', state='detached', timeout=180000); pg.wait_for_timeout(500)
     z2 = pg.evaluate(D % f"return D.oferta('{oid}').zdj[0]")
-    ok(z2['kor'].get('ai') == z1['kor']['ai'] and z2['kor'].get('zrodlo') == 'am' and z2['id'] != z1['id'], '„Obróbka” po AM: liczona od wersji AM, AM zostaje')
+    ok(z2['kor'].get('zrodlo') == 'am' and z2['kor'].get('par', {}).get('obrot') == 1.5 and z2['id'] != z2['kor']['ai'], 'AM ponownie: wyrównanie zostaje, wersja AM pod spodem')
     # usunięcie AM
     pg.click('.zdj [data-a=zdj-am]'); pg.wait_for_selector('[data-ai=usun]')
     pg.click('[data-ai=usun]'); pg.wait_for_timeout(500); pg.wait_for_selector('.zdj [data-a=zdj-am]:not([disabled])', timeout=60000); pg.wait_for_timeout(500)
